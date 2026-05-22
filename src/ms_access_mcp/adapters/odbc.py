@@ -9,6 +9,7 @@ from ..models.database import (
     MacroInfo,
     ModuleInfo,
     ControlInfo,
+    RelationshipInfo,
 )
 
 
@@ -278,3 +279,7 @@ class OdbcAdapter(AccessAdapter):
     def get_object_metadata(self, object_name: str) -> dict:
         """Get object metadata - not available via ODBC."""
         return {}
+
+    def get_relationships(self) -> list[RelationshipInfo]:
+        """Get relationships - not available via ODBC."""
+        return []

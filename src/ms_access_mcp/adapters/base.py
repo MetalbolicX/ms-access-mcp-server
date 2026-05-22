@@ -6,6 +6,7 @@ from ..models.database import (
     MacroInfo,
     ModuleInfo,
     ControlInfo,
+    RelationshipInfo,
 )
 
 
@@ -64,3 +65,5 @@ class AccessAdapter(Protocol):
     def compile_vba(self) -> bool: ...
 
     def get_object_metadata(self, object_name: str) -> dict: ...
+
+    def get_relationships(self) -> list[RelationshipInfo]: ...

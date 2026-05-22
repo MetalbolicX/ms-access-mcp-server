@@ -425,11 +425,59 @@ def transfer_data(target_type: str, connection_string: str, database_path: str, 
 @mcp.tool()
 def get_migration_status(job_id: str) -> dict:
     """Get status of a migration job.
-    
+
     Args:
         job_id: Migration job ID returned from transfer_data
     """
     return migration_service.get_job_status(job_id)
+
+
+# ============================================================================
+# ER DIAGRAM TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def get_er_diagram() -> dict:
+    """
+    Get the database schema as nodes and edges for ER diagram visualization.
+
+    Returns:
+        nodes: List of table nodes with columns
+        edges: List of relationship edges (FK connections)
+    """
+    tables = schema_service.get_tables()
+    relationships = schema_service.get_relationships()
+
+    nodes = []
+    for table in tables:
+        nodes.append({
+            "id": table.name,
+            "type": "table",
+            "data": {
+                "label": table.name,
+                "columns": [f.model_dump() for f in table.fields],
+                "record_count": table.record_count,
+            },
+        })
+
+    edges = []
+    for rel in relationships:
+        edges.append({
+            "id": rel.name,
+            "source": rel.foreign_table,
+            "target": rel.table,
+            "label": rel.name,
+            "animated": False,
+        })
+
+    return {
+        "success": True,
+        "nodes": nodes,
+        "edges": edges,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+    }
 
 
 if __name__ == "__main__":

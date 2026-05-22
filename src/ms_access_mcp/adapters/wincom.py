@@ -8,6 +8,7 @@ from ..models.database import (
     MacroInfo,
     ModuleInfo,
     ControlInfo,
+    RelationshipInfo,
 )
 
 
@@ -523,6 +524,36 @@ class WinComAdapter(AccessAdapter):
             pass
 
         return tables
+
+    # ========================================================================
+    # RELATIONSHIPS (Foreign Keys)
+    # ========================================================================
+
+    def get_relationships(self) -> list[RelationshipInfo]:
+        """Get all foreign key relationships from DAO Relations collection."""
+        if not self.is_connected():
+            return []
+
+        relationships: list[RelationshipInfo] = []
+        try:
+            dao = self._access_app.DAo
+            db = dao.DBEngine.OpenDatabase(self._db_path)
+            for i in range(db.Relations.Count):
+                rel = db.Relations(i)
+                # Skip hidden/system relationships
+                if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
+                    continue
+                relationships.append(RelationshipInfo(
+                    name=rel.Name,
+                    table=rel.Table,
+                    foreign_table=rel.ForeignTable,
+                    attributes=str(rel.Attributes),
+                ))
+            db.Close()
+        except Exception:
+            pass
+
+        return relationships
 
     # ========================================================================
     # OBJECT METADATA

@@ -49,8 +49,7 @@ class SchemaService:
         """Get all foreign key relationships."""
         if self._adapter is None:
             return []
-        # Stub implementation - requires COM
-        return []
+        return self._adapter.get_relationships()
 
     # COM-only operations (delegate to adapter)
 
