@@ -19,7 +19,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
-addopts = "-v --cov=src"
+addopts = "-v"
 testpaths = ["tests"]
 
 [tool.ruff]
