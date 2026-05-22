@@ -1,0 +1,157 @@
+# MS Access MCP Server
+
+A Model Context Protocol (MCP) server for Microsoft Access that enables AI assistants to interact with Access databases through a complete set of tools.
+
+## Features
+
+- **Connection Management** — Connect/disconnect to `.accdb` and `.mdb` files
+- **Schema Exploration** — List tables, queries, relationships, and column metadata
+- **Data Access** — Execute SQL queries and export data
+- **COM Automation** — Launch Access, manage forms, reports, macros, and modules
+- **VBA Extensibility** — Read, write, and compile VBA code
+- **Versioning** — Export forms/reports/VBA to text files for Git version control
+- **Migration** — Extract schema and transfer data to other databases
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│              AI Assistant (MCP Client)       │
+└──────────────────────┬──────────────────────┘
+                       │ MCP Protocol (stdio)
+                       ▼
+┌─────────────────────────────────────────────┐
+│           FastMCP Server (Python)           │
+├─────────────────────────────────────────────┤
+│  Tools: connect_access, get_tables,          │
+│  execute_query, set_vba_code, migrate_to... │
+├─────────────────────────────────────────────┤
+│            Adapter Layer                     │
+│  ┌─────────────┐    ┌─────────────┐         │
+│  │ WinComAdapter│    │ OdbcAdapter │         │
+│  │ (pywin32)   │    │ (pyodbc)    │         │
+│  └──────┬──────┘    └──────┬──────┘         │
+│         │                 │                  │
+│         ▼                 ▼                  │
+│  ┌─────────────────┐  ┌──────────┐         │
+│  │ MS Access (COM) │  │ .accdb   │         │
+│  └─────────────────┘  └──────────┘         │
+└─────────────────────────────────────────────┘
+```
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| MCP Server | Python 3.11+ / FastMCP |
+| COM Automation | pywin32 |
+| Data Access | pyodbc (ACE OLEDB driver) |
+| CLI | Typer |
+| Frontend | Vue 3 + TypeScript + Element Plus |
+| State Management | TanStack Query (Vue) |
+
+## Setup
+
+### Prerequisites
+
+- Python 3.11 or higher
+- Microsoft Access installed (for COM automation)
+- Node.js 18+ (for frontend development)
+
+### Backend Installation
+
+```bash
+cd ms-access-mcp-server
+pip install -e ".[windows]"  # Install with Windows dependencies
+```
+
+### Running the MCP Server
+
+```bash
+# Run directly (stdio transport for MCP clients)
+python -m ms_access_mcp.mcp.server
+
+# Or use the CLI
+ms-access-mcp --help
+```
+
+### Frontend Development
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## MCP Tools
+
+### Connection Management
+- `connect_access` — Connect to a database
+- `disconnect_access` — Disconnect from current database
+- `is_connected` — Check connection status
+
+### Schema & Data
+- `get_tables` — List all tables
+- `get_table_schema` — Get table column details
+- `get_queries` — List saved queries
+- `get_relationships` — List foreign key relationships
+- `execute_query` — Run SQL queries
+
+### COM Automation
+- `launch_access` — Start Access application
+- `close_access` — Close Access
+- `get_forms`, `get_reports`, `get_macros`, `get_modules`
+- `open_form`, `close_form`
+
+### VBA Extensibility
+- `get_vba_projects`, `get_vba_code`, `set_vba_code`
+- `add_vba_procedure`, `compile_vba`
+
+### Versioning
+- `export_form_to_text`, `import_form_from_text`
+- `export_report_to_text`, `import_report_from_text`
+- `export_module` / `import_module` for VBA
+
+### Migration
+- `list_migration_targets` — Supported target databases
+- `extract_schema` — Get portable schema definition
+- `migrate_to` — Transfer schema and data
+- `upload_sql_schema` — Import `.sql` DDL files
+
+## Configuration
+
+### Trust Center Settings
+
+For VBA code manipulation, enable Trust Center access:
+
+1. Open Access
+2. File → Options → Trust Center
+3. Trust Center Settings → Macro Settings
+4. Check "Trust access to the VBA project object model"
+
+### Python/Office Bitness
+
+Ensure Python and Microsoft Office have matching bitness (both 32-bit or both 64-bit).
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Lint
+ruff check .
+
+# Format
+ruff format .
+
+# Type check
+pyright
+```
+
+## License
+
+MIT

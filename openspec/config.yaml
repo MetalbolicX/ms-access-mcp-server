@@ -1,0 +1,28 @@
+context: |
+  Project: ms-access-mcp-server
+  Stack: Python 3.11+, FastAPI, MCP SDK, pywin32, pyodbc, Typer; Vue 3, TypeScript, Vite, Element Plus, Vue Flow.
+  Conventions: Use native fetch and CSS Nesting in frontend. Export Access artifacts as text for versioning.
+strict_tdd: true
+testing:
+  runner:
+    command: pytest
+    framework: pytest
+  layers:
+    unit: { available: true, tool: pytest }
+    integration: { available: true, tool: pytest }
+    e2e: { available: false, tool: null }
+  coverage:
+    available: true
+    command: pytest --cov=src
+  quality:
+    linter: { available: true, command: ruff check . }
+    type_checker: { available: true, command: pyright }
+    formatter: { available: true, command: ruff format . }
+rules:
+  propose: Explore codebase, propose intent, scope, and technical approach.
+  spec: Write strict, testable behavioral specifications.
+  design: Write modular technical design derived from spec.
+  tasks: Break design into small, independently verifiable steps.
+  apply: Implement tasks following strict TDD.
+  verify: Prove implementation works with test output.
+  archive: Sync artifacts to archive and clear active change state.

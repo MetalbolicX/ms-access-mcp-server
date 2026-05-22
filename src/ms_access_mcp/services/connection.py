@@ -1,0 +1,35 @@
+from typing import Optional
+from ..adapters.base import AccessAdapter
+
+
+class ConnectionService:
+    """Manages connection state and lifecycle for Access databases."""
+
+    def __init__(self, adapter: Optional[AccessAdapter] = None):
+        self._adapter = adapter
+        self._current_database: Optional[str] = None
+
+    def connect(self, db_path: str, adapter: AccessAdapter) -> bool:
+        """Connect to an Access database using the provided adapter."""
+        self._adapter = adapter
+        result = self._adapter.connect(db_path)
+        if result:
+            self._current_database = db_path
+        return result
+
+    def disconnect(self) -> None:
+        """Disconnect from the current database."""
+        if self._adapter:
+            self._adapter.disconnect()
+            self._current_database = None
+
+    def is_connected(self) -> bool:
+        """Check if currently connected to a database."""
+        if self._adapter is None:
+            return False
+        return self._adapter.is_connected()
+
+    @property
+    def current_database(self) -> Optional[str]:
+        """Get the path of the currently connected database."""
+        return self._current_database

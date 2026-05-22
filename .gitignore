@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+htmlcov/
+*.cov
+dist-new/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+.npm
+*.log
+.env
+.env.local
+.env.*.local
+dist/
+dist-ssr/
+*.tgz
+.yarn-integrity
+
+# Build artifacts
+frontend/dist/
+frontend/.DS_Store
+*.sass-cache
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.#*
+
+# Access lock files (created when .accdb is open)
+*.laccdb
+~$*
+
+# MCP server
+.mcp/
+.mcp_cache/
+
+# Logs
+*.log
+logs/
+
+# TypeScript
+*.tsbuildinfo
+
+# Test / Coverage
+htmlcov/
+.nyc_output/
