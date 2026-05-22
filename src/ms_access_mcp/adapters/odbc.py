@@ -2,7 +2,14 @@ import os
 from typing import Optional
 import pyodbc
 from .base import AccessAdapter
-from ..models.database import TableInfo
+from ..models.database import (
+    TableInfo,
+    FormInfo,
+    ReportInfo,
+    MacroInfo,
+    ModuleInfo,
+    ControlInfo,
+)
 
 
 # Connection string templates for Access databases
@@ -196,3 +203,78 @@ class OdbcAdapter(AccessAdapter):
     def set_vba_code(self, module_name: str, code: str) -> bool:
         """Modify VBA code - not supported via ODBC."""
         raise NotImplementedError("OdbcAdapter cannot modify VBA")
+
+    # ========================================================================
+    # COM-only operations (not available via ODBC - return empty/false)
+    # ========================================================================
+
+    def get_forms(self) -> list[FormInfo]:
+        """Get forms - not available via ODBC."""
+        return []
+
+    def get_reports(self) -> list[ReportInfo]:
+        """Get reports - not available via ODBC."""
+        return []
+
+    def get_macros(self) -> list[MacroInfo]:
+        """Get macros - not available via ODBC."""
+        return []
+
+    def get_modules(self) -> list[ModuleInfo]:
+        """Get modules - not available via ODBC."""
+        return []
+
+    def get_vba_code(self, module_name: str) -> str:
+        """Get VBA code - not available via ODBC."""
+        return ""
+
+    def get_system_tables(self) -> list[TableInfo]:
+        """Get system tables - limited via ODBC."""
+        if not self.is_connected():
+            return []
+        # ODBC can't easily enumerate system tables
+        return []
+
+    def form_exists(self, form_name: str) -> bool:
+        """Form existence check - not available via ODBC."""
+        return False
+
+    def get_form_controls(self, form_name: str) -> list[ControlInfo]:
+        """Get form controls - not available via ODBC."""
+        return []
+
+    def export_form_to_text(self, form_name: str) -> str:
+        """Export form - not available via ODBC."""
+        return ""
+
+    def import_form_from_text(self, form_data: str) -> bool:
+        """Import form - not available via ODBC."""
+        return False
+
+    def delete_form(self, form_name: str) -> bool:
+        """Delete form - not available via ODBC."""
+        return False
+
+    def export_report_to_text(self, report_name: str) -> str:
+        """Export report - not available via ODBC."""
+        return ""
+
+    def import_report_from_text(self, report_data: str) -> bool:
+        """Import report - not available via ODBC."""
+        return False
+
+    def delete_report(self, report_name: str) -> bool:
+        """Delete report - not available via ODBC."""
+        return False
+
+    def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
+        """Add VBA procedure - not available via ODBC."""
+        return False
+
+    def compile_vba(self) -> bool:
+        """Compile VBA - not available via ODBC."""
+        return False
+
+    def get_object_metadata(self, object_name: str) -> dict:
+        """Get object metadata - not available via ODBC."""
+        return {}

@@ -125,43 +125,46 @@ def close_access() -> dict:
 @mcp.tool()
 def get_forms() -> dict:
     """Get all forms in the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    forms = schema_service.get_forms()
+    return {"success": True, "forms": [f.model_dump() for f in forms], "count": len(forms)}
 
 
 @mcp.tool()
 def get_reports() -> dict:
     """Get all reports in the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    reports = schema_service.get_reports()
+    return {"success": True, "reports": [r.model_dump() for r in reports], "count": len(reports)}
 
 
 @mcp.tool()
 def get_macros() -> dict:
     """Get all macros in the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    macros = schema_service.get_macros()
+    return {"success": True, "macros": [m.model_dump() for m in macros], "count": len(macros)}
 
 
 @mcp.tool()
 def get_modules() -> dict:
     """Get all VBA modules in the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    modules = schema_service.get_modules()
+    return {"success": True, "modules": [m.model_dump() for m in modules], "count": len(modules)}
 
 
 @mcp.tool()
 def open_form(form_name: str) -> dict:
     """Open a form in Access."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    # Form opening requires Access UI - not implemented in adapter
+    return {"success": False, "error": "Not implemented - requires Access UI"}
 
 
 @mcp.tool()
 def close_form(form_name: str) -> dict:
     """Close a form in Access."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    return {"success": False, "error": "Not implemented - requires Access UI"}
 
 
 # ============================================================================
@@ -172,8 +175,9 @@ def close_form(form_name: str) -> dict:
 @mcp.tool()
 def get_vba_projects() -> dict:
     """Get list of VBA projects."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    modules = schema_service.get_modules()
+    projects = list(set(m.type for m in modules))
+    return {"success": True, "projects": projects, "count": len(projects)}
 
 
 @mcp.tool()
@@ -184,8 +188,10 @@ def get_vba_code(module_name: str) -> dict:
     Args:
         module_name: Name of the VBA module
     """
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    code = schema_service.get_vba_code(module_name)
+    if not code:
+        return {"success": False, "error": f"Module '{module_name}' not found or empty"}
+    return {"success": True, "module": module_name, "code": code}
 
 
 @mcp.tool()
@@ -207,15 +213,21 @@ def set_vba_code(module_name: str, code: str) -> dict:
 @mcp.tool()
 def add_vba_procedure(module_name: str, procedure_name: str, code: str) -> dict:
     """Add a VBA procedure to a module."""
-    # Stub
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.add_vba_procedure(module_name, procedure_name, code)
+    return {"success": result, "module": module_name, "procedure": procedure_name}
 
 
 @mcp.tool()
 def compile_vba() -> dict:
     """Compile VBA code."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.compile_vba()
+    return {"success": result, "message": "VBA compiled successfully" if result else "Compile failed"}
 
 
 # ============================================================================
@@ -226,15 +238,20 @@ def compile_vba() -> dict:
 @mcp.tool()
 def get_system_tables() -> dict:
     """Get system tables from the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    tables = schema_service.get_system_tables()
+    return {"success": True, "system_tables": [t.model_dump() for t in tables], "count": len(tables)}
 
 
 @mcp.tool()
 def get_object_metadata(object_name: str) -> dict:
     """Get metadata for a database object."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    metadata = schema_service.get_object_metadata(object_name)
+    if not metadata:
+        return {"success": False, "error": f"Object '{object_name}' not found"}
+    return {"success": True, "metadata": metadata}
 
 
 # ============================================================================
@@ -245,29 +262,34 @@ def get_object_metadata(object_name: str) -> dict:
 @mcp.tool()
 def form_exists(form_name: str) -> dict:
     """Check if a form exists."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    exists = schema_service.form_exists(form_name)
+    return {"success": True, "exists": exists, "form": form_name}
 
 
 @mcp.tool()
 def get_form_controls(form_name: str) -> dict:
     """Get all controls in a form."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented - requires COM"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    controls = schema_service.get_form_controls(form_name)
+    return {"success": True, "controls": [c.model_dump() for c in controls], "count": len(controls)}
 
 
 @mcp.tool()
 def get_control_properties(form_name: str, control_name: str) -> dict:
     """Get properties of a control."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    # Control properties require opening form in design view - limited via COM
+    return {"success": False, "error": "Not implemented - requires form design view"}
 
 
 @mcp.tool()
 def set_control_property(form_name: str, control_name: str, property_name: str, value: str) -> dict:
     """Set a property of a control."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    return {"success": False, "error": "Not implemented - requires form design view"}
 
 
 # ============================================================================
@@ -278,43 +300,65 @@ def set_control_property(form_name: str, control_name: str, property_name: str, 
 @mcp.tool()
 def export_form_to_text(form_name: str) -> dict:
     """Export a form to text representation."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.export_form_to_text(form_name)
+    if not result:
+        return {"success": False, "error": f"Failed to export form '{form_name}'"}
+    return {"success": True, "form": form_name, "data": result}
 
 
 @mcp.tool()
 def import_form_from_text(form_data: str) -> dict:
     """Import a form from text representation."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.import_form_from_text(form_data)
+    return {"success": result, "message": "Form imported" if result else "Import failed"}
 
 
 @mcp.tool()
 def delete_form(form_name: str) -> dict:
     """Delete a form from the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.delete_form(form_name)
+    return {"success": result, "form": form_name}
 
 
 @mcp.tool()
 def export_report_to_text(report_name: str) -> dict:
     """Export a report to text representation."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.export_report_to_text(report_name)
+    if not result:
+        return {"success": False, "error": f"Failed to export report '{report_name}'"}
+    return {"success": True, "report": report_name, "data": result}
 
 
 @mcp.tool()
 def import_report_from_text(report_data: str) -> dict:
     """Import a report from text representation."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.import_report_from_text(report_data)
+    return {"success": result, "message": "Report imported" if result else "Import failed"}
 
 
 @mcp.tool()
 def delete_report(report_name: str) -> dict:
     """Delete a report from the database."""
-    # Stub - requires COM
-    return {"success": False, "error": "Not implemented"}
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.delete_report(report_name)
+    return {"success": result, "report": report_name}
 
 
 if __name__ == "__main__":
