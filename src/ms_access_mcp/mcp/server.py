@@ -363,6 +363,24 @@ def delete_report(report_name: str) -> dict:
     return {"success": result, "report": report_name}
 
 
+@mcp.tool()
+def execute_sql_script(script_path: str) -> dict:
+    """
+    Execute a Jet SQL script file against the connected Access database.
+
+    Reads a .sql file, splits statements on ';', executes each via DAO.
+    All statements run in one transaction - rollback on any failure.
+
+    Args:
+        script_path: Path to the .sql file containing Jet SQL statements
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.execute_sql_script(script_path)
+    return result
+
+
 # ============================================================================
 # MIGRATION TOOLS
 # ============================================================================

@@ -596,3 +596,90 @@ class WinComAdapter(AccessAdapter):
         except Exception:
             pass
         return props
+
+    # ========================================================================
+    # SQL SCRIPT EXECUTION (Jet SQL pass-through)
+    # ========================================================================
+
+    def execute_sql_script(self, script_path: str) -> dict:
+        """Execute a Jet SQL script file against the connected database.
+
+        Reads a .sql file, splits on ';', executes each statement via DAO Execute.
+        All statements run in one transaction - rollback on any failure.
+        """
+        if not os.path.exists(script_path):
+            return {
+                "success": False,
+                "error": f"File not found: {script_path}",
+                "statements_executed": 0,
+            }
+
+        if not self.is_connected():
+            return {
+                "success": False,
+                "error": "Not connected to database",
+                "statements_executed": 0,
+            }
+
+        try:
+            with open(script_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to read file: {e}",
+                "statements_executed": 0,
+            }
+
+        # Split into statements on semicolon
+        statements = [s.strip() for s in content.split(";")]
+        # Filter out empty statements
+        statements = [s for s in statements if s]
+
+        if not statements:
+            return {
+                "success": True,
+                "statements_executed": 0,
+                "message": "No statements to execute",
+            }
+
+        executed = 0
+        dao_db = None
+
+        try:
+            dao_db = self._access_app.Dao.DBEngine.OpenDatabase(self._db_path)
+
+            for stmt in statements:
+                if not stmt:
+                    continue
+                try:
+                    dao_db.Execute(stmt, 128)  # dbFailOnError = 128
+                    executed += 1
+                except Exception as e:
+                    # Rollback is automatic on dbFailOnError error
+                    return {
+                        "success": False,
+                        "statements_executed": executed,
+                        "error": str(e),
+                        "failing_statement": stmt,
+                    }
+
+            dao_db.Close()
+            return {
+                "success": True,
+                "statements_executed": executed,
+                "message": f"{executed} statement(s) executed successfully",
+            }
+
+        except Exception as e:
+            if dao_db:
+                try:
+                    dao_db.Close()
+                except Exception:
+                    pass
+            return {
+                "success": False,
+                "statements_executed": executed,
+                "error": str(e),
+                "failing_statement": stmt if executed < len(statements) else "",
+            }

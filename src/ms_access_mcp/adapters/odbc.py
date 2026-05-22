@@ -283,3 +283,7 @@ class OdbcAdapter(AccessAdapter):
     def get_relationships(self) -> list[RelationshipInfo]:
         """Get relationships - not available via ODBC."""
         return []
+
+    def execute_sql_script(self, script_path: str) -> dict:
+        """Execute SQL script - not available via ODBC."""
+        raise NotImplementedError("execute_sql_script requires COM (WinComAdapter)")

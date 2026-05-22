@@ -154,3 +154,9 @@ class SchemaService:
         if self._adapter is None:
             return {}
         return self._adapter.get_object_metadata(object_name)
+
+    def execute_sql_script(self, script_path: str) -> dict:
+        """Execute a Jet SQL script file against the connected database."""
+        if self._adapter is None:
+            return {"success": False, "error": "No adapter connected", "statements_executed": 0}
+        return self._adapter.execute_sql_script(script_path)
