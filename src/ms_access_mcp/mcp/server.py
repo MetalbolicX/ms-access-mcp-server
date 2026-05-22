@@ -4,6 +4,7 @@ from ..services.schema import SchemaService
 from ..services.com_automation import COMAutomationService
 from ..adapters.wincom import WinComAdapter
 from ..adapters.odbc import OdbcAdapter
+from ..services.migration import MigrationService
 
 # Create FastMCP server
 mcp = FastMCP("MS Access MCP Server")
@@ -12,6 +13,7 @@ mcp = FastMCP("MS Access MCP Server")
 connection_service = ConnectionService()
 schema_service = SchemaService()
 com_automation_service = COMAutomationService()
+migration_service = MigrationService()
 
 # ============================================================================
 # CONNECTION MANAGEMENT TOOLS
@@ -359,6 +361,75 @@ def delete_report(report_name: str) -> dict:
 
     result = schema_service.delete_report(report_name)
     return {"success": result, "report": report_name}
+
+
+# ============================================================================
+# MIGRATION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def extract_schema(database_path: str) -> dict:
+    """Extract schema from an Access database."""
+    from ..adapters.wincom import WinComAdapter
+    adapter = WinComAdapter()
+    if not adapter.connect(database_path):
+        return {"success": False, "error": "Failed to connect to database"}
+    schema = migration_service.extract_schema(adapter, database_path)
+    adapter.disconnect()
+    return {"success": True, "schema": schema.model_dump()}
+
+
+@mcp.tool()
+def upload_schema(target_type: str, connection_string: str, schema_json: dict) -> dict:
+    """Upload schema to target database.
+    
+    Args:
+        target_type: Target database type (postgres, mysql, mariadb, sqlite, sqlserver)
+        connection_string: Connection string for target database
+        schema_json: ExtractedSchema as dict
+    """
+    from ..models.migration import ExtractedSchema
+    schema = ExtractedSchema(**schema_json)
+    result = migration_service.upload_schema(target_type, connection_string, schema)
+    return result
+
+
+@mcp.tool()
+def transfer_data(target_type: str, connection_string: str, database_path: str, schema_json: dict | None = None) -> dict:
+    """Transfer data from Access to target database.
+    
+    Args:
+        target_type: Target database type (postgres, mysql, mariadb, sqlite, sqlserver)
+        connection_string: Connection string for target database
+        database_path: Path to Access database
+        schema_json: Optional ExtractedSchema dict (will extract if not provided)
+    """
+    from ..adapters.wincom import WinComAdapter
+    from ..models.migration import ExtractedSchema
+    
+    adapter = WinComAdapter()
+    if not adapter.connect(database_path):
+        return {"success": False, "error": "Failed to connect to Access database"}
+    
+    if schema_json:
+        schema = ExtractedSchema(**schema_json)
+    else:
+        schema = migration_service.extract_schema(adapter, database_path)
+    
+    result = migration_service.transfer_data(target_type, connection_string, schema, adapter)
+    adapter.disconnect()
+    return result
+
+
+@mcp.tool()
+def get_migration_status(job_id: str) -> dict:
+    """Get status of a migration job.
+    
+    Args:
+        job_id: Migration job ID returned from transfer_data
+    """
+    return migration_service.get_job_status(job_id)
 
 
 if __name__ == "__main__":
