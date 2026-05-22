@@ -10,6 +10,7 @@ import App from './App.vue'
 import DashboardView from './views/DashboardView.vue'
 import SchemaExplorerView from './views/SchemaExplorerView.vue'
 import JobMonitorView from './views/JobMonitorView.vue'
+import ErDiagramView from './views/ErDiagramView.vue'
 
 // Router configuration
 const router = createRouter({
@@ -18,6 +19,7 @@ const router = createRouter({
     { path: '/', redirect: '/dashboard' },
     { path: '/dashboard', component: DashboardView, name: 'dashboard' },
     { path: '/schema', component: SchemaExplorerView, name: 'schema' },
+    { path: '/er-diagram', component: ErDiagramView, name: 'er-diagram' },
     { path: '/jobs', component: JobMonitorView, name: 'jobs' },
   ],
 })

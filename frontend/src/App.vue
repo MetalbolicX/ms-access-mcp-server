@@ -24,6 +24,9 @@ import { RouterLink, RouterView } from 'vue-router'
         <RouterLink to="/schema" class="nav-item" active-class="active">
           <span>Schema Explorer</span>
         </RouterLink>
+        <RouterLink to="/er-diagram" class="nav-item" active-class="active">
+          <span>ER Diagram</span>
+        </RouterLink>
       </div>
 
       <div class="nav-section">

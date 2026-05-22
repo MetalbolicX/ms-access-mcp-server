@@ -55,6 +55,33 @@ export interface RelationshipsResponse {
   count: number
 }
 
+// ER Diagram types
+export interface ERNode {
+  id: string
+  type: 'table'
+  data: {
+    label: string
+    columns: TableField[]
+    record_count: number
+  }
+}
+
+export interface EREdge {
+  id: string
+  source: string
+  target: string
+  label: string
+  animated: boolean
+}
+
+export interface ERDiagramResponse {
+  success: boolean
+  nodes: ERNode[]
+  edges: EREdge[]
+  node_count: number
+  edge_count: number
+}
+
 export interface Job {
   id: string
   type: string

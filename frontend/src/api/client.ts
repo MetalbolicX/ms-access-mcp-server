@@ -74,6 +74,12 @@ export const schemaApi = {
       method: 'POST',
       body: { name: 'get_relationships', arguments: {} },
     }),
+
+  getErDiagram: () =>
+    apiRequest<{ success: boolean; nodes: any[]; edges: any[]; node_count: number; edge_count: number }>('/mcp/tools/call', {
+      method: 'POST',
+      body: { name: 'get_er_diagram', arguments: {} },
+    }),
 }
 
 // Jobs API
