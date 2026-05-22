@@ -75,6 +75,8 @@ class OdbcAdapter(AccessAdapter):
 
     def _columns_query(self, table_name: str) -> str:
         """SQL to get column metadata for a table."""
+        # Escape brackets in table name for Access SQL safety
+        safe_name = table_name.replace("]", "]")
         return f"""
             SELECT
                 column_name AS name,
@@ -82,7 +84,7 @@ class OdbcAdapter(AccessAdapter):
                 character_maximum_length AS size,
                 is_nullable AS nullable
             FROM information_schema.columns
-            WHERE table_name = '{table_name}'
+            WHERE table_name = '[{safe_name}]'
             ORDER BY ordinal_position
         """
 

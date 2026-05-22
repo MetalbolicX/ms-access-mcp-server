@@ -652,37 +652,27 @@ class WinComAdapter(AccessAdapter):
             for stmt in statements:
                 if not stmt:
                     continue
-                try:
-                    dao_db.Execute(stmt, 128)  # dbFailOnError = 128
-                    executed += 1
-                except Exception as e:
-                    # Rollback is automatic on dbFailOnError error
-                    return {
-                        "success": False,
-                        "statements_executed": executed,
-                        "error": str(e),
-                        "failing_statement": stmt,
-                    }
+                dao_db.Execute(stmt, 128)  # dbFailOnError = 128
+                executed += 1
 
-            dao_db.Close()
             return {
                 "success": True,
                 "statements_executed": executed,
                 "message": f"{executed} statement(s) executed successfully",
             }
-
         except Exception as e:
-            if dao_db:
-                try:
-                    dao_db.Close()
-                except Exception:
-                    pass
             return {
                 "success": False,
                 "statements_executed": executed,
                 "error": str(e),
                 "failing_statement": stmt if executed < len(statements) else "",
             }
+        finally:
+            if dao_db is not None:
+                try:
+                    dao_db.Close()
+                except Exception:
+                    pass
 
     # ========================================================================
     # VERSIONING EXPORT (git-friendly text export)

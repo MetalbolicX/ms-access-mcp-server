@@ -155,11 +155,12 @@ class MigrationService:
 
             try:
                 rows = adapter.execute_query(f"SELECT * FROM [{table.name}]")
+                source_count = len(rows)
                 if rows:
                     inserted = connector.insert_rows(table.name, rows)
                     result = TableResult(
                         table=table.name,
-                        source_rows=inserted,
+                        source_rows=source_count,
                         rows_transferred=inserted,
                         duration_ms=0,
                         success=True,
