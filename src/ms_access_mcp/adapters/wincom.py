@@ -683,3 +683,140 @@ class WinComAdapter(AccessAdapter):
                 "error": str(e),
                 "failing_statement": stmt if executed < len(statements) else "",
             }
+
+    # ========================================================================
+    # VERSIONING EXPORT (git-friendly text export)
+    # ========================================================================
+
+    def export_module_to_text(self, module_name: str) -> str:
+        """Export VBA module code as plain text."""
+        if not self.is_connected():
+            return ""
+
+        try:
+            vbe = self._access_app.VBE
+            vb_project = vbe.ActiveVBProject
+            if vb_project is None:
+                return ""
+
+            for comp in vb_project.VBComponents:
+                if comp.Name == module_name:
+                    return comp.CodeModule.Lines(1, comp.CodeModule.CountOfLines)
+            return ""
+        except Exception:
+            return ""
+
+    def export_macro_to_text(self, macro_name: str) -> str:
+        """Export macro metadata as text (macros can't export as code)."""
+        if not self.is_connected():
+            return ""
+
+        try:
+            all_macros = self._access_app.CurrentProject.AllMacros
+            for i in range(all_macros.Count):
+                if all_macros(i).Name == macro_name:
+                    return f"Macro: {macro_name}\nType: Access Macro"
+            return ""
+        except Exception:
+            return ""
+
+    def export_all_versioning(self, output_dir: str) -> dict:
+        """Export all forms, reports, modules, and macros to a directory structure.
+
+        Creates subdirectories: forms/, reports/, modules/, macros/
+        Files named: {type}_{name}.txt
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to database", "exported": {}}
+
+        # Create output directory if needed
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            return {"success": False, "error": f"Cannot create directory: {e}", "exported": {}}
+
+        def safe_filename(name: str) -> str:
+            """Replace invalid filename chars with underscore."""
+            for ch in '\\/:*?"<>|':
+                name = name.replace(ch, '_')
+            return name
+
+        exported = {"forms": [], "reports": [], "modules": [], "macros": []}
+
+        # Export forms using Access SaveAsText
+        try:
+            forms = self.get_forms()
+            forms_dir = os.path.join(output_dir, "forms")
+            os.makedirs(forms_dir, exist_ok=True)
+            for form in forms:
+                try:
+                    safe_name = safe_filename(form.name)
+                    out_path = os.path.join(forms_dir, f"forms_{safe_name}.txt")
+                    # Use Access.SaveAsText - acForm = 2
+                    self._access_app.SaveAsText(2, form.name, out_path)
+                    exported["forms"].append(form.name)
+                except Exception:
+                    pass  # Skip failed exports
+        except Exception:
+            pass
+
+        # Export reports using Access SaveAsText
+        try:
+            reports = self.get_reports()
+            reports_dir = os.path.join(output_dir, "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            for report in reports:
+                try:
+                    safe_name = safe_filename(report.name)
+                    out_path = os.path.join(reports_dir, f"reports_{safe_name}.txt")
+                    # Use Access.SaveAsText - acReport = 4
+                    self._access_app.SaveAsText(4, report.name, out_path)
+                    exported["reports"].append(report.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Export VBA modules using CodeModule
+        try:
+            modules = self.get_modules()
+            modules_dir = os.path.join(output_dir, "modules")
+            os.makedirs(modules_dir, exist_ok=True)
+            for mod in modules:
+                try:
+                    safe_name = safe_filename(mod.name)
+                    out_path = os.path.join(modules_dir, f"modules_{safe_name}.txt")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        f.write(mod.code or "")
+                    exported["modules"].append(mod.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Export macros (metadata only)
+        try:
+            macros = self.get_macros()
+            macros_dir = os.path.join(output_dir, "macros")
+            os.makedirs(macros_dir, exist_ok=True)
+            for macro in macros:
+                try:
+                    safe_name = safe_filename(macro.name)
+                    out_path = os.path.join(macros_dir, f"macros_{safe_name}.txt")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        f.write(f"Macro: {macro.name}\nType: Access Macro\n")
+                    exported["macros"].append(macro.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        total = (len(exported["forms"]) + len(exported["reports"]) +
+                 len(exported["modules"]) + len(exported["macros"]))
+
+        return {
+            "success": True,
+            "exported": exported,
+            "output_dir": output_dir,
+            "file_count": total,
+        }

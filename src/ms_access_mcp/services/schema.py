@@ -160,3 +160,21 @@ class SchemaService:
         if self._adapter is None:
             return {"success": False, "error": "No adapter connected", "statements_executed": 0}
         return self._adapter.execute_sql_script(script_path)
+
+    def export_module_to_text(self, module_name: str) -> str:
+        """Export VBA module code as plain text."""
+        if self._adapter is None:
+            return ""
+        return self._adapter.export_module_to_text(module_name)
+
+    def export_macro_to_text(self, macro_name: str) -> str:
+        """Export macro metadata as plain text."""
+        if self._adapter is None:
+            return ""
+        return self._adapter.export_macro_to_text(macro_name)
+
+    def export_all_versioning(self, output_dir: str) -> dict:
+        """Export all forms, reports, modules, and macros to a directory structure."""
+        if self._adapter is None:
+            return {"success": False, "error": "No adapter connected", "exported": {}}
+        return self._adapter.export_all_versioning(output_dir)

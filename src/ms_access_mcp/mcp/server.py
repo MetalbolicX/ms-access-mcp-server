@@ -364,6 +364,57 @@ def delete_report(report_name: str) -> dict:
 
 
 @mcp.tool()
+def export_module_to_text(module_name: str) -> dict:
+    """Export VBA module code as plain text.
+
+    Args:
+        module_name: Name of the VBA module to export
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.export_module_to_text(module_name)
+    if not result:
+        return {"success": False, "error": f"Module '{module_name}' not found or empty"}
+    return {"success": True, "module": module_name, "data": result}
+
+
+@mcp.tool()
+def export_macro_to_text(macro_name: str) -> dict:
+    """Export macro metadata as plain text.
+
+    Note: Access macros cannot export as code. This returns metadata only.
+
+    Args:
+        macro_name: Name of the macro to export
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.export_macro_to_text(macro_name)
+    if not result:
+        return {"success": False, "error": f"Macro '{macro_name}' not found"}
+    return {"success": True, "macro": macro_name, "data": result}
+
+
+@mcp.tool()
+def export_all_versioning(output_dir: str) -> dict:
+    """Export all forms, reports, modules, and macros to a directory structure.
+
+    Creates subdirectories: forms/, reports/, modules/, macros/
+    Files named: {type}_{name}.txt
+
+    Args:
+        output_dir: Directory to export files to
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    result = schema_service.export_all_versioning(output_dir)
+    return result
+
+
+@mcp.tool()
 def execute_sql_script(script_path: str) -> dict:
     """
     Execute a Jet SQL script file against the connected Access database.

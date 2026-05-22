@@ -287,3 +287,23 @@ class OdbcAdapter(AccessAdapter):
     def execute_sql_script(self, script_path: str) -> dict:
         """Execute SQL script - not available via ODBC."""
         raise NotImplementedError("execute_sql_script requires COM (WinComAdapter)")
+
+    def export_form_to_text(self, form_name: str) -> str:
+        """Export form - not available via ODBC."""
+        return ""
+
+    def export_report_to_text(self, report_name: str) -> str:
+        """Export report - not available via ODBC."""
+        return ""
+
+    def export_module_to_text(self, module_name: str) -> str:
+        """Export module - not available via ODBC."""
+        return ""
+
+    def export_macro_to_text(self, macro_name: str) -> str:
+        """Export macro - not available via ODBC."""
+        return ""
+
+    def export_all_versioning(self, output_dir: str) -> dict:
+        """Export versioning - not available via ODBC."""
+        raise NotImplementedError("export_all_versioning requires COM (WinComAdapter)")
