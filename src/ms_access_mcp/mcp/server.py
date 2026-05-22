@@ -13,9 +13,6 @@ connection_service = ConnectionService()
 schema_service = SchemaService()
 com_automation_service = COMAutomationService()
 
-# Track which adapter is active
-_active_adapter = None
-
 # ============================================================================
 # CONNECTION MANAGEMENT TOOLS
 # ============================================================================
@@ -30,9 +27,7 @@ def connect_access(database_path: str, use_com: bool = False) -> dict:
         database_path: Path to .accdb or .mdb file
         use_com: Use COM automation (True) or ODBC only (False)
     """
-    global _active_adapter
     adapter = WinComAdapter() if use_com else OdbcAdapter()
-    _active_adapter = adapter
 
     result = connection_service.connect(database_path, adapter)
     if result:
@@ -45,9 +40,7 @@ def connect_access(database_path: str, use_com: bool = False) -> dict:
 @mcp.tool()
 def disconnect_access() -> dict:
     """Disconnect from the current Access database."""
-    global _active_adapter
     connection_service.disconnect()
-    _active_adapter = None
     return {"success": True, "message": "Disconnected"}
 
 
@@ -133,28 +126,28 @@ def close_access() -> dict:
 def get_forms() -> dict:
     """Get all forms in the database."""
     # Stub - requires COM
-    return {"success": True, "forms": [], "count": 0}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
 def get_reports() -> dict:
     """Get all reports in the database."""
     # Stub - requires COM
-    return {"success": True, "reports": [], "count": 0}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
 def get_macros() -> dict:
     """Get all macros in the database."""
     # Stub - requires COM
-    return {"success": True, "macros": [], "count": 0}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
 def get_modules() -> dict:
     """Get all VBA modules in the database."""
     # Stub - requires COM
-    return {"success": True, "modules": [], "count": 0}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
@@ -180,7 +173,7 @@ def close_form(form_name: str) -> dict:
 def get_vba_projects() -> dict:
     """Get list of VBA projects."""
     # Stub - requires COM
-    return {"success": True, "projects": []}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
@@ -234,7 +227,7 @@ def compile_vba() -> dict:
 def get_system_tables() -> dict:
     """Get system tables from the database."""
     # Stub - requires COM
-    return {"success": True, "system_tables": [], "count": 0}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
@@ -253,14 +246,14 @@ def get_object_metadata(object_name: str) -> dict:
 def form_exists(form_name: str) -> dict:
     """Check if a form exists."""
     # Stub - requires COM
-    return {"success": True, "exists": False}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
 def get_form_controls(form_name: str) -> dict:
     """Get all controls in a form."""
     # Stub - requires COM
-    return {"success": True, "controls": [], "count": 0}
+    return {"success": False, "error": "Not implemented - requires COM"}
 
 
 @mcp.tool()
