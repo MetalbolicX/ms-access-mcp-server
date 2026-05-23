@@ -248,12 +248,19 @@ def add_vba_procedure(module_name: str, procedure_name: str, code: str) -> dict:
 
 @mcp.tool()
 def compile_vba() -> dict:
-    """Compile VBA code."""
+    """Compile VBA code.
+
+    Note: Access COM automation does not reliably expose a stable compile command
+    across environments in this project setup, so this operation is currently
+    treated as unsupported.
+    """
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
 
-    result = schema_service.compile_vba()
-    return {"success": result, "message": "VBA compiled successfully" if result else "Compile failed"}
+    return {
+        "success": False,
+        "error": "Not supported in current Access automation context",
+    }
 
 
 # ============================================================================
@@ -465,12 +472,24 @@ def execute_sql_script(script_path: str) -> dict:
 def extract_schema(database_path: str) -> dict:
     """Extract schema from an Access database."""
     from ..adapters.wincom import WinComAdapter
+
+    # Reuse active connection when possible to avoid opening the same Access DB
+    # in a second COM adapter instance (can fail due to Access COM singleton behavior).
+    active_adapter = connection_service.adapter
+    active_db = connection_service.current_database
+    if active_adapter is not None and active_db and connection_service.is_connected():
+        norm_active = active_db.replace("\\", "/").lower()
+        norm_target = database_path.replace("\\", "/").lower()
+        if norm_active == norm_target:
+            schema = migration_service.extract_schema(active_adapter, database_path)
+            return {"success": True, "schema": schema.model_dump(), "reused_connection": True}
+
     adapter = WinComAdapter()
     if not adapter.connect(database_path):
         return {"success": False, "error": "Failed to connect to database"}
     schema = migration_service.extract_schema(adapter, database_path)
     adapter.disconnect()
-    return {"success": True, "schema": schema.model_dump()}
+    return {"success": True, "schema": schema.model_dump(), "reused_connection": False}
 
 
 @mcp.tool()

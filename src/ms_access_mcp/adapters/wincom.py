@@ -24,7 +24,7 @@ class ComDispatcher:
     any async worker can drive the adapter without thread-affinity errors.
     """
 
-    DISPATCH_TIMEOUT = 30.0  # seconds
+    DISPATCH_TIMEOUT = 120.0  # seconds (cold Access start + large DB open can take 60s+)
 
     def __init__(self) -> None:
         self._call_queue: queue.Queue[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any], concurrent.futures.Future[Any]]] = queue.Queue()
@@ -295,7 +295,12 @@ class WinComAdapter(AccessAdapter):
             import win32com.client
             if self._dispatcher._access_app is None:
                 self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
-            self._dispatcher._access_app.Visible = visible
+            try:
+                self._dispatcher._access_app.Visible = visible
+            except AttributeError:
+                # Some Access versions/configs don't allow setting Visible
+                # via COM dispatch. Not critical — Access opens regardless.
+                pass
 
         if not self._dispatcher._started:
             self._dispatcher.start()
@@ -914,93 +919,90 @@ class WinComAdapter(AccessAdapter):
         if not self.is_connected():
             return {"success": False, "error": "Not connected to database", "exported": {}}
 
-        def _do() -> dict:
-            try:
-                os.makedirs(output_dir, exist_ok=True)
-            except Exception as e:
-                return {"success": False, "error": f"Cannot create directory: {e}", "exported": {}}
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            return {"success": False, "error": f"Cannot create directory: {e}", "exported": {}}
 
-            def safe_filename(name: str) -> str:
-                for ch in '\\/:*?"<>|':
-                    name = name.replace(ch, '_')
-                return name
+        def safe_filename(name: str) -> str:
+            for ch in '\\/:*?"<>|':
+                name = name.replace(ch, '_')
+            return name
 
-            exported = {"forms": [], "reports": [], "modules": [], "macros": []}
+        exported = {"forms": [], "reports": [], "modules": [], "macros": []}
 
-            # Export forms
-            try:
-                forms = self._dispatcher.call(self.get_forms)
-                forms_dir = os.path.join(output_dir, "forms")
-                os.makedirs(forms_dir, exist_ok=True)
-                for form in forms:
-                    try:
-                        safe_name = safe_filename(form.name)
-                        out_path = os.path.join(forms_dir, f"forms_{safe_name}.txt")
-                        self._dispatcher._access_app.SaveAsText(2, form.name, out_path)
-                        exported["forms"].append(form.name)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        # Export forms
+        try:
+            forms = self.get_forms()
+            forms_dir = os.path.join(output_dir, "forms")
+            os.makedirs(forms_dir, exist_ok=True)
+            for form in forms:
+                try:
+                    safe_name = safe_filename(form.name)
+                    out_path = os.path.join(forms_dir, f"forms_{safe_name}.txt")
+                    self._dispatcher.call(lambda p=out_path, n=form.name: self._dispatcher._access_app.SaveAsText(2, n, p))
+                    exported["forms"].append(form.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-            # Export reports
-            try:
-                reports = self._dispatcher.call(self.get_reports)
-                reports_dir = os.path.join(output_dir, "reports")
-                os.makedirs(reports_dir, exist_ok=True)
-                for report in reports:
-                    try:
-                        safe_name = safe_filename(report.name)
-                        out_path = os.path.join(reports_dir, f"reports_{safe_name}.txt")
-                        self._dispatcher._access_app.SaveAsText(4, report.name, out_path)
-                        exported["reports"].append(report.name)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        # Export reports
+        try:
+            reports = self.get_reports()
+            reports_dir = os.path.join(output_dir, "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            for report in reports:
+                try:
+                    safe_name = safe_filename(report.name)
+                    out_path = os.path.join(reports_dir, f"reports_{safe_name}.txt")
+                    self._dispatcher.call(lambda p=out_path, n=report.name: self._dispatcher._access_app.SaveAsText(4, n, p))
+                    exported["reports"].append(report.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-            # Export VBA modules
-            try:
-                modules = self._dispatcher.call(self.get_modules)
-                modules_dir = os.path.join(output_dir, "modules")
-                os.makedirs(modules_dir, exist_ok=True)
-                for mod in modules:
-                    try:
-                        safe_name = safe_filename(mod.name)
-                        out_path = os.path.join(modules_dir, f"modules_{safe_name}.txt")
-                        with open(out_path, "w", encoding="utf-8") as f:
-                            f.write(mod.code or "")
-                        exported["modules"].append(mod.name)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        # Export VBA modules (no COM needed — data is already in mod.code)
+        try:
+            modules = self.get_modules()
+            modules_dir = os.path.join(output_dir, "modules")
+            os.makedirs(modules_dir, exist_ok=True)
+            for mod in modules:
+                try:
+                    safe_name = safe_filename(mod.name)
+                    out_path = os.path.join(modules_dir, f"modules_{safe_name}.txt")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        f.write(mod.code or "")
+                    exported["modules"].append(mod.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-            # Export macros
-            try:
-                macros = self._dispatcher.call(self.get_macros)
-                macros_dir = os.path.join(output_dir, "macros")
-                os.makedirs(macros_dir, exist_ok=True)
-                for macro in macros:
-                    try:
-                        safe_name = safe_filename(macro.name)
-                        out_path = os.path.join(macros_dir, f"macros_{safe_name}.txt")
-                        with open(out_path, "w", encoding="utf-8") as f:
-                            f.write(f"Macro: {macro.name}\nType: Access Macro\n")
-                        exported["macros"].append(macro.name)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+        # Export macros (no COM needed — static text)
+        try:
+            macros = self.get_macros()
+            macros_dir = os.path.join(output_dir, "macros")
+            os.makedirs(macros_dir, exist_ok=True)
+            for macro in macros:
+                try:
+                    safe_name = safe_filename(macro.name)
+                    out_path = os.path.join(macros_dir, f"macros_{safe_name}.txt")
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        f.write(f"Macro: {macro.name}\nType: Access Macro\n")
+                    exported["macros"].append(macro.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-            total = (len(exported["forms"]) + len(exported["reports"]) +
-                     len(exported["modules"]) + len(exported["macros"]))
+        total = (len(exported["forms"]) + len(exported["reports"]) +
+                 len(exported["modules"]) + len(exported["macros"]))
 
-            return {
-                "success": True,
-                "exported": exported,
-                "output_dir": output_dir,
-                "file_count": total,
-            }
-
-        return self._dispatcher.call(_do)
+        return {
+            "success": True,
+            "exported": exported,
+            "output_dir": output_dir,
+            "file_count": total,
+        }

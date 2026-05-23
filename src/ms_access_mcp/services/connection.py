@@ -33,3 +33,8 @@ class ConnectionService:
     def current_database(self) -> Optional[str]:
         """Get the path of the currently connected database."""
         return self._current_database
+
+    @property
+    def adapter(self) -> Optional[AccessAdapter]:
+        """Get the currently configured adapter instance."""
+        return self._adapter
