@@ -149,6 +149,12 @@ class SchemaService:
             return False
         return self._adapter.compile_vba()
 
+    def get_vba_project_name(self) -> str:
+        """Get the VBA project name."""
+        if self._adapter is None:
+            return ""
+        return self._adapter.get_vba_project_name()
+
     def get_object_metadata(self, object_name: str) -> dict:
         """Get metadata for a database object."""
         if self._adapter is None:

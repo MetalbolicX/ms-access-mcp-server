@@ -278,6 +278,10 @@ class OdbcAdapter(AccessAdapter):
         """Compile VBA - not available via ODBC."""
         return False
 
+    def get_vba_project_name(self) -> str:
+        """Get VBA project name - not available via ODBC."""
+        return ""
+
     def get_object_metadata(self, object_name: str) -> dict:
         """Get object metadata - not available via ODBC."""
         return {}

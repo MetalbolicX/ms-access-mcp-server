@@ -201,9 +201,10 @@ def close_form(form_name: str) -> dict:
 @mcp.tool()
 def get_vba_projects() -> dict:
     """Get list of VBA projects."""
-    modules = schema_service.get_modules()
-    projects = list(set(m.type for m in modules))
-    return {"success": True, "projects": projects, "count": len(projects)}
+    project_name = schema_service.get_vba_project_name()
+    if project_name:
+        return {"success": True, "projects": [project_name], "count": 1}
+    return {"success": True, "projects": [], "count": 0}
 
 
 @mcp.tool()

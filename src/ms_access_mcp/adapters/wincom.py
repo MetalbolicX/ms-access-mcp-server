@@ -636,6 +636,18 @@ class WinComAdapter(AccessAdapter):
     # VBA/MODULE OPERATIONS
     # ========================================================================
 
+    def get_vba_project_name(self) -> str:
+        """Get the VBA project name from COM."""
+        if not self.is_connected():
+            return ""
+        def _do() -> str:
+            vb_project = self._get_vb_project()
+            return vb_project.Name if vb_project else ""
+        try:
+            return self._dispatcher.call(_do)
+        except Exception:
+            return ""
+
     def get_modules(self) -> list[ModuleInfo]:
         """Get all VBA modules in the database."""
         if not self.is_connected():
