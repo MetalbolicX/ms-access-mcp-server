@@ -107,11 +107,11 @@ class SchemaService:
             return ""
         return self._adapter.export_form_to_text(form_name)
 
-    def import_form_from_text(self, form_data: str) -> bool:
+    def import_form_from_text(self, form_name: str, form_data: str) -> bool:
         """Import a form from text representation."""
         if self._adapter is None:
             return False
-        return self._adapter.import_form_from_text(form_data)
+        return self._adapter.import_form_from_text(form_name, form_data)
 
     def delete_form(self, form_name: str) -> bool:
         """Delete a form from the database."""
@@ -125,11 +125,11 @@ class SchemaService:
             return ""
         return self._adapter.export_report_to_text(report_name)
 
-    def import_report_from_text(self, report_data: str) -> bool:
+    def import_report_from_text(self, report_name: str, report_data: str) -> bool:
         """Import a report from text representation."""
         if self._adapter is None:
             return False
-        return self._adapter.import_report_from_text(report_data)
+        return self._adapter.import_report_from_text(report_name, report_data)
 
     def delete_report(self, report_name: str) -> bool:
         """Delete a report from the database."""

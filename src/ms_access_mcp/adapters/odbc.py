@@ -250,7 +250,7 @@ class OdbcAdapter(AccessAdapter):
         """Export form - not available via ODBC."""
         return ""
 
-    def import_form_from_text(self, form_data: str) -> bool:
+    def import_form_from_text(self, form_name: str, form_data: str) -> bool:
         """Import form - not available via ODBC."""
         return False
 
@@ -262,7 +262,7 @@ class OdbcAdapter(AccessAdapter):
         """Export report - not available via ODBC."""
         return ""
 
-    def import_report_from_text(self, report_data: str) -> bool:
+    def import_report_from_text(self, report_name: str, report_data: str) -> bool:
         """Import report - not available via ODBC."""
         return False
 

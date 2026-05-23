@@ -344,13 +344,18 @@ def export_form_to_text(form_name: str) -> dict:
 
 
 @mcp.tool()
-def import_form_from_text(form_data: str) -> dict:
-    """Import a form from text representation."""
+def import_form_from_text(form_name: str, form_data: str) -> dict:
+    """Import a form from text representation.
+
+    Args:
+        form_name: Name of the form to create/replace
+        form_data: Text representation of the form (from export_form_to_text)
+    """
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
 
-    result = schema_service.import_form_from_text(form_data)
-    return {"success": result, "message": "Form imported" if result else "Import failed"}
+    result = schema_service.import_form_from_text(form_name, form_data)
+    return {"success": result, "form": form_name, "message": "Form imported" if result else "Import failed"}
 
 
 @mcp.tool()
@@ -376,13 +381,18 @@ def export_report_to_text(report_name: str) -> dict:
 
 
 @mcp.tool()
-def import_report_from_text(report_data: str) -> dict:
-    """Import a report from text representation."""
+def import_report_from_text(report_name: str, report_data: str) -> dict:
+    """Import a report from text representation.
+
+    Args:
+        report_name: Name of the report to create/replace
+        report_data: Text representation of the report (from export_report_to_text)
+    """
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
 
-    result = schema_service.import_report_from_text(report_data)
-    return {"success": result, "message": "Report imported" if result else "Import failed"}
+    result = schema_service.import_report_from_text(report_name, report_data)
+    return {"success": result, "report": report_name, "message": "Report imported" if result else "Import failed"}
 
 
 @mcp.tool()

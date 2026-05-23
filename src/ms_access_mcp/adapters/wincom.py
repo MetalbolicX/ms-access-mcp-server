@@ -1,6 +1,7 @@
 import os
 import sys
 import queue
+import tempfile
 import threading
 import concurrent.futures
 from typing import Optional, Callable, Any
@@ -308,6 +309,55 @@ class WinComAdapter(AccessAdapter):
             pass
         return None
 
+    def _save_object_to_text(self, object_type: int, object_name: str) -> str:
+        """Export an Access object to text using SaveAsText.
+
+        Returns the text content or empty string on failure.
+        object_type: acForm=2, acReport=4, acModule=5, acMacro=8
+        """
+        temp_path = None
+        try:
+            fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_exp_")
+            os.close(fd)
+            self._dispatcher._access_app.SaveAsText(object_type, object_name, temp_path)
+            with open(temp_path, "rb") as f:
+                raw = f.read()
+            # SaveAsText outputs UTF-16-LE with BOM; decode accordingly
+            content = raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
+            return content
+        except Exception:
+            return ""
+        finally:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+
+    def _load_object_from_text(self, object_type: int, object_name: str, text_data: str) -> bool:
+        """Import an Access object from text data using LoadFromText.
+
+        object_type: acForm=2, acReport=4, acModule=5, acMacro=8
+        """
+        temp_path = None
+        try:
+            fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_imp_")
+            os.close(fd)
+            with open(temp_path, "wb") as f:
+                # Write as UTF-16-LE with BOM (what Access expects)
+                f.write(b"\xff\xfe")
+                f.write(text_data.encode("utf-16-le"))
+            self._dispatcher._access_app.LoadFromText(object_type, object_name, temp_path)
+            return True
+        except Exception:
+            return False
+        finally:
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+
     def execute_query(self, sql: str, params: Optional[list] = None) -> list[dict]:
         """Execute a SQL query and return results."""
         if not self.is_connected():
@@ -497,29 +547,22 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     def export_form_to_text(self, form_name: str) -> str:
-        """Export a form to text representation."""
+        """Export a form to text representation via SaveAsText."""
         if not self.is_connected():
             return ""
 
         def _do() -> str:
-            try:
-                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 2)
-                return f"Form: {form_name}\nExported via COM automation"
-            except Exception:
-                return ""
+            return self._save_object_to_text(2, form_name)
 
         return self._dispatcher.call(_do)
 
-    def import_form_from_text(self, form_data: str) -> bool:
-        """Import a form from text representation."""
+    def import_form_from_text(self, form_name: str, form_data: str) -> bool:
+        """Import a form from text data via LoadFromText."""
         if not self.is_connected():
             return False
 
         def _do() -> bool:
-            try:
-                return True
-            except Exception:
-                return False
+            return self._load_object_from_text(2, form_name, form_data)
 
         return self._dispatcher.call(_do)
 
@@ -568,28 +611,22 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     def export_report_to_text(self, report_name: str) -> str:
-        """Export a report to text representation."""
+        """Export a report to text representation via SaveAsText."""
         if not self.is_connected():
             return ""
 
         def _do() -> str:
-            try:
-                return f"Report: {report_name}\nExported via COM automation"
-            except Exception:
-                return ""
+            return self._save_object_to_text(4, report_name)
 
         return self._dispatcher.call(_do)
 
-    def import_report_from_text(self, report_data: str) -> bool:
-        """Import a report from text representation."""
+    def import_report_from_text(self, report_name: str, report_data: str) -> bool:
+        """Import a report from text data via LoadFromText."""
         if not self.is_connected():
             return False
 
         def _do() -> bool:
-            try:
-                return True
-            except Exception:
-                return False
+            return self._load_object_from_text(4, report_name, report_data)
 
         return self._dispatcher.call(_do)
 
@@ -1001,19 +1038,12 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     def export_macro_to_text(self, macro_name: str) -> str:
-        """Export macro metadata as text (macros can't export as code)."""
+        """Export a macro to text representation via SaveAsText."""
         if not self.is_connected():
             return ""
 
         def _do() -> str:
-            try:
-                all_macros = self._dispatcher._access_app.CurrentProject.AllMacros
-                for i in range(all_macros.Count):
-                    if all_macros(i).Name == macro_name:
-                        return f"Macro: {macro_name}\nType: Access Macro"
-            except Exception:
-                pass
-            return ""
+            return self._save_object_to_text(8, macro_name)
 
         return self._dispatcher.call(_do)
 
