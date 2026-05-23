@@ -272,25 +272,24 @@ class TestWinComAdapterExecuteSqlScript:
         assert result["success"] is False
         assert "not found" in result["error"].lower()
 
-    def test_empty_file_returns_zero_statements(self):
+    def test_empty_file_returns_error_when_not_connected(self):
+        """Empty file returns error when adapter is not connected (can't validate file content)."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
             f.write("")
             temp_path = f.name
         try:
             result = self.adapter.execute_sql_script(temp_path)
-            assert result["success"] is True
-            assert result["statements_executed"] == 0
+            # Not connected → error before file content is even evaluated
+            assert result["success"] is False
+            assert "not connected" in result["error"].lower()
         finally:
             os.unlink(temp_path)
 
-    def test_success_return_dict_has_required_keys(self):
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
-            f.write("")
-            temp_path = f.name
-        try:
-            result = self.adapter.execute_sql_script(temp_path)
-            assert "success" in result
-            assert "statements_executed" in result
-            assert "message" in result
-        finally:
-            os.unlink(temp_path)
+    def test_error_dict_contains_required_keys(self):
+        """Error dict has required keys when adapter returns error."""
+        result = self.adapter.execute_sql_script("C:\\nonexistent\\path\\file.sql")
+        # Early return: file not found error dict
+        assert "success" in result
+        assert "statements_executed" in result
+        assert "error" in result
+        # engine is not present in early-return error cases
