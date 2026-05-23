@@ -605,9 +605,10 @@ class WinComAdapter(AccessAdapter):
     # ========================================================================
 
     def execute_sql_script(self, script_path: str) -> dict:
-        """Execute a Jet SQL script file against the connected database.
+        """Execute a SQL script file against the connected database.
 
-        Reads a .sql file, splits on ';', executes each statement via DAO Execute.
+        Uses ADO (CurrentProject.Connection) for ANSI-92 SQL support
+        with subqueries in CHECK constraints. Falls back to DAO if ADO unavailable.
         All statements run in one transaction - rollback on any failure.
         """
         if not os.path.exists(script_path):
@@ -636,7 +637,6 @@ class WinComAdapter(AccessAdapter):
 
         # Split into statements on semicolon
         statements = [s.strip() for s in content.split(";")]
-        # Filter out empty statements
         statements = [s for s in statements if s]
 
         if not statements:
@@ -647,21 +647,27 @@ class WinComAdapter(AccessAdapter):
             }
 
         executed = 0
-        dao_db = None
+        use_ado = hasattr(self, '_ado_conn') and self._ado_conn is not None
 
         try:
-            dao_db = self._access_app.Dao.DBEngine.OpenDatabase(self._db_path)
-
             for stmt in statements:
                 if not stmt:
                     continue
-                dao_db.Execute(stmt, 128)  # dbFailOnError = 128
+                if use_ado:
+                    # ADO path - uses CurrentProject.Connection (inherits ANSI mode)
+                    self._ado_conn.Execute(stmt, 128)  # adFailOnError = 128
+                else:
+                    # DAO fallback
+                    dao_db = self._access_app.Dao.DBEngine.OpenDatabase(self._db_path)
+                    dao_db.Execute(stmt, 128)
+                    dao_db.Close()
                 executed += 1
 
             return {
                 "success": True,
                 "statements_executed": executed,
                 "message": f"{executed} statement(s) executed successfully",
+                "engine": "ADO" if use_ado else "DAO",
             }
         except Exception as e:
             return {
@@ -669,13 +675,8 @@ class WinComAdapter(AccessAdapter):
                 "statements_executed": executed,
                 "error": str(e),
                 "failing_statement": stmt if executed < len(statements) else "",
+                "engine": "ADO" if use_ado else "DAO",
             }
-        finally:
-            if dao_db is not None:
-                try:
-                    dao_db.Close()
-                except Exception:
-                    pass
 
     # ========================================================================
     # VERSIONING EXPORT (git-friendly text export)

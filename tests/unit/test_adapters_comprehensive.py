@@ -233,3 +233,16 @@ class TestOdbcAdapterTypeMapping:
 
     def test_lowercase_type_maps_correctly(self):
         assert self.adapter._pyodbc_type_name("varchar") == "Text"
+
+
+class TestWinComAdapterADOPath:
+    """Test ADO path availability for execute_sql_script."""
+
+    def setup_method(self):
+        self.adapter = WinComAdapter()
+
+    def test_ado_conn_attribute_exists(self):
+        assert hasattr(self.adapter, '_ado_conn')
+
+    def test_ado_conn_is_none_when_not_connected(self):
+        assert self.adapter._ado_conn is None
