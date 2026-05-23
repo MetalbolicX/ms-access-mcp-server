@@ -1,14 +1,11 @@
-# Access MCP Specification
+# Delta for access-mcp
 
-## Purpose
-
-The core server runtime and protocol handler for the Microsoft Access Model Context Protocol (MCP) server.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Server Initialization
 
 The system MUST respond to MCP initialize requests with correct capabilities and server information across supported transports (stdio and HTTP).
+(Previously: initialize behavior was defined only for stdio transport.)
 
 #### Scenario: Client connects via stdio
 - GIVEN the MCP server is running via stdio
@@ -20,18 +17,10 @@ The system MUST respond to MCP initialize requests with correct capabilities and
 - WHEN an MCP client sends an initialize request
 - THEN the server returns protocol version, capabilities, and server info
 
-### Requirement: Tool Discovery
-
-The system MUST expose all implemented Access tools via the `tools/list` protocol endpoint.
-
-#### Scenario: Client requests tools list
-- GIVEN the server is initialized
-- WHEN the client sends a `tools/list` request
-- THEN the server returns a schema of all available tools including descriptions and required parameters
-
 ### Requirement: Tool Execution Routing
 
 The system MUST correctly route `tools/call` requests to the appropriate adapter or service, including access validation for sensitive tools.
+(Previously: tool calls were routed without explicit transport-level authentication and path-validation constraints.)
 
 #### Scenario: Client calls a valid tool
 - GIVEN the client has the tools list

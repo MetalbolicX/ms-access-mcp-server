@@ -1,3 +1,4 @@
+import os
 import typer
 from typing import Optional
 from pathlib import Path
@@ -6,6 +7,34 @@ app = typer.Typer(help="MS Access MCP CLI")
 
 # To be connected to real services
 MCP_SERVER = "ms-access-mcp-server"
+
+
+@app.command()
+def serve(
+    host: str = typer.Option(None, "--host", help="Bind host (default: 127.0.0.1)"),
+    port: int = typer.Option(None, "--port", help="Bind port (default: 8000)"),
+    api_key: str = typer.Option(None, "--api-key", help="API key (or set ACCESS_MCP_API_KEY env)"),
+    allowed_dirs: str = typer.Option(None, "--allowed-dirs", help="Semicolon-separated allowed directories"),
+    transport: str = typer.Option("http", "--transport", help="Transport: http, streamable-http, sse"),
+):
+    """Start MCP server with HTTP transport for remote access."""
+    # Apply CLI overrides to environment
+    if host:
+        os.environ["ACCESS_MCP_HOST"] = host
+    if port:
+        os.environ["ACCESS_MCP_PORT"] = str(port)
+    if api_key:
+        os.environ["ACCESS_MCP_API_KEY"] = api_key
+    if allowed_dirs:
+        os.environ["ACCESS_MCP_ALLOWED_DIRS"] = allowed_dirs
+
+    from ..mcp.server import run_http
+
+    typer.echo(f"Starting MCP server on {host or '127.0.0.1'}:{port or 8000}")
+    typer.echo(f"Transport: {transport}")
+    typer.echo(f"API key: {'*' * 8}...{(api_key or os.environ.get('ACCESS_MCP_API_KEY', ''))[-4:]}")
+
+    run_http(host=host or "127.0.0.1", port=port or 8000, transport=transport)
 
 
 @app.command()

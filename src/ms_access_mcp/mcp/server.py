@@ -5,6 +5,9 @@ from ..services.com_automation import COMAutomationService
 from ..adapters.wincom import WinComAdapter
 from ..adapters.odbc import OdbcAdapter
 from ..services.migration import MigrationService
+from ..config import ServerConfig
+from ..auth import ApiKeyMiddleware
+from ..path_guard import PathGuard
 
 # Create FastMCP server
 mcp = FastMCP("MS Access MCP Server")
@@ -14,6 +17,20 @@ connection_service = ConnectionService()
 schema_service = SchemaService()
 com_automation_service = COMAutomationService()
 migration_service = MigrationService()
+
+# Lazily initialized config and path guard (only for HTTP mode via serve command)
+_config: ServerConfig | None = None
+_path_guard: PathGuard | None = None
+_auth_middleware: ApiKeyMiddleware | None = None
+
+
+def _init_http_config() -> None:
+    """Initialize HTTP config, auth, and path guard from environment."""
+    global _config, _path_guard, _auth_middleware
+    if _config is None:
+        _config = ServerConfig()
+        _path_guard = PathGuard(allowed_dirs=_config.allowed_dirs)
+        _auth_middleware = ApiKeyMiddleware(api_key=_config.api_key)
 
 # ============================================================================
 # CONNECTION MANAGEMENT TOOLS
@@ -29,6 +46,13 @@ def connect_access(database_path: str, use_com: bool = False) -> dict:
         database_path: Path to .accdb or .mdb file
         use_com: Use COM automation (True) or ODBC only (False)
     """
+    # Validate path against allowed directories when HTTP config is active
+    if _path_guard is not None:
+        try:
+            database_path = _path_guard.validate(database_path)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+
     adapter = WinComAdapter() if use_com else OdbcAdapter()
 
     result = connection_service.connect(database_path, adapter)
@@ -549,5 +573,13 @@ def get_er_diagram() -> dict:
     }
 
 
-if __name__ == "__main__":
-    mcp.run()
+def run_http(host: str = "127.0.0.1", port: int = 8000, transport: str = "http") -> None:
+    """Run the MCP server with HTTP transport and auth.
+
+    Args:
+        host: Bind address (default 127.0.0.1)
+        port: Bind port (default 8000)
+        transport: HTTP transport type ("http", "streamable-http", "sse")
+    """
+    _init_http_config()
+    mcp.run(transport=transport, host=host, port=port)
