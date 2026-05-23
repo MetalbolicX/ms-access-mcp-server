@@ -262,6 +262,36 @@ class WinComAdapter(AccessAdapter):
         }
         return type_map.get(access_type, f"Unknown({access_type})")
 
+    @staticmethod
+    def _access_control_type_name(ctrl_type: int) -> str:
+        """Map Access AcControlType integer to readable name."""
+        type_map = {
+            100: "TextBox",
+            101: "Label",
+            102: "CommandButton",
+            103: "OptionButton",
+            104: "ComboBox",
+            105: "ListBox",
+            106: "SubForm",
+            107: "ToggleButton",
+            108: "CheckBox",
+            109: "OptionGroup",
+            110: "TabControl",
+            111: "Page",
+            112: "Image",
+            114: "BoundObjectFrame",
+            115: "ObjectFrame",
+            118: "Line",
+            119: "Rectangle",
+            120: "PageBreak",
+            122: "Attachment",
+            123: "NavigationButton",
+            124: "NavigationControl",
+            126: "WebBrowserControl",
+            128: "EmptyCell",
+        }
+        return type_map.get(ctrl_type, f"Control({ctrl_type})")
+
     def execute_query(self, sql: str, params: Optional[list] = None) -> list[dict]:
         """Execute a SQL query and return results."""
         if not self.is_connected():
@@ -389,22 +419,60 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     def get_form_controls(self, form_name: str) -> list[ControlInfo]:
-        """Get all controls in a form."""
+        """Get all controls in a form by opening it in design view."""
         if not self.is_connected():
             return []
 
         def _do() -> list[ControlInfo]:
             controls: list[ControlInfo] = []
+            opened = False
             try:
-                doc = self._dispatcher._access_app.CurrentProject.AllForms(form_name)
-                doc.Properties.DefaultView = 1
-                controls.append(ControlInfo(
-                    name="(RequiresDesignView)",
-                    type="placeholder",
-                    properties={"note": "Open form in design view to enumerate controls"},
-                ))
+                # Open in design view (acDesign). Numeric value 1 avoids triggering events.
+                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                opened = True
+
+                # Get the form via Screen.ActiveForm (most reliable after OpenForm).
+                # Fallback: try the Forms collection.
+                try:
+                    form = self._dispatcher._access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher._access_app.Forms(form_name)
+
+                if form is not None:
+                    for i in range(form.Controls.Count):
+                        try:
+                            ctrl = form.Controls(i)
+                            ctrl_name = ctrl.Name
+                            ctrl_type_code = ctrl.ControlType
+                            ctrl_type = self._access_control_type_name(ctrl_type_code)
+
+                            # Collect key readability properties individually
+                            # (bulk iteration of Properties is slow and exception-prone).
+                            props: dict[str, str] = {}
+                            for prop_name in ("Visible", "Enabled", "Left", "Top",
+                                              "Width", "Height", "Caption",
+                                              "ControlSource", "TabIndex"):
+                                try:
+                                    val = ctrl.Properties(prop_name).Value
+                                    if val is not None:
+                                        props[prop_name] = str(val)
+                                except Exception:
+                                    pass
+
+                            controls.append(ControlInfo(
+                                name=ctrl_name, type=ctrl_type, properties=props,
+                            ))
+                        except Exception:
+                            pass
             except Exception:
                 pass
+            finally:
+                if opened:
+                    try:
+                        # Close form without saving (acForm=2, acSaveNo=2)
+                        self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)
+                    except Exception:
+                        pass
             return controls
 
         return self._dispatcher.call(_do)
