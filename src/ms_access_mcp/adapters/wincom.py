@@ -878,25 +878,21 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     def _get_object_properties(self, obj: object) -> dict:
-        """Get properties of an Access object."""
-        def _do() -> dict:
-            props = {}
-            try:
-                for prop in obj.Properties:
-                    try:
-                        props[prop.Name] = str(prop.Value)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return props
+        """Get properties of an Access object.
 
-        if not self._dispatcher._started:
-            return {}
+        Called from within a dispatcher _do() — the COM object is already on
+        the STA thread, so we access Properties directly without dispatching.
+        """
+        props: dict[str, str] = {}
         try:
-            return self._dispatcher.call(_do)
+            for prop in obj.Properties:
+                try:
+                    props[prop.Name] = str(prop.Value)
+                except Exception:
+                    pass
         except Exception:
-            return {}
+            pass
+        return props
 
     # ========================================================================
     # SQL SCRIPT EXECUTION (Jet SQL pass-through)
