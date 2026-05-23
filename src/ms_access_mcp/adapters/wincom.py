@@ -292,6 +292,22 @@ class WinComAdapter(AccessAdapter):
         }
         return type_map.get(ctrl_type, f"Control({ctrl_type})")
 
+    def _get_vb_project(self):
+        """Get the first VBA project via VBProjects enumeration.
+
+        COM VBProjects collection uses 1-based indexing.
+        More reliable than ActiveVBProject in COM automation, which depends
+        on which project is active/focused and may return None.
+        """
+        try:
+            vbe = self._dispatcher._access_app.VBE
+            # VBProjects is 1-based COM collection
+            for i in range(1, vbe.VBProjects.Count + 1):
+                return vbe.VBProjects(i)
+        except Exception:
+            pass
+        return None
+
     def execute_query(self, sql: str, params: Optional[list] = None) -> list[dict]:
         """Execute a SQL query and return results."""
         if not self.is_connected():
@@ -355,11 +371,10 @@ class WinComAdapter(AccessAdapter):
             return False
 
         def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
             try:
-                vbe = self._dispatcher._access_app.VBE
-                vb_project = vbe.ActiveVBProject
-                if vb_project is None:
-                    return False
                 for mod in vb_project.VBComponents:
                     if mod.Name == module_name:
                         mod.CodeModule.DeleteLines(1, mod.CodeModule.CountOfLines)
@@ -370,6 +385,10 @@ class WinComAdapter(AccessAdapter):
                 return False
 
         return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # FORM OPERATIONS
+    # ========================================================================
 
 # ========================================================================
     # FORM OPERATIONS
@@ -624,11 +643,10 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> list[ModuleInfo]:
             modules: list[ModuleInfo] = []
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return []
             try:
-                vbe = self._dispatcher._access_app.VBE
-                vb_project = vbe.ActiveVBProject
-                if vb_project is None:
-                    return []
                 for comp in vb_project.VBComponents:
                     try:
                         code = ""
@@ -653,14 +671,16 @@ class WinComAdapter(AccessAdapter):
             return ""
 
         def _do() -> str:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return ""
             try:
-                vbe = self._dispatcher._access_app.VBE
-                vb_project = vbe.ActiveVBProject
-                if vb_project is None:
-                    return ""
                 for comp in vb_project.VBComponents:
                     if comp.Name == module_name:
-                        return comp.CodeModule.Lines(1, comp.CodeModule.CountOfLines)
+                        lines = comp.CodeModule.CountOfLines
+                        if lines > 0:
+                            return comp.CodeModule.Lines(1, lines)
+                        return ""
             except Exception:
                 pass
             return ""
@@ -673,11 +693,10 @@ class WinComAdapter(AccessAdapter):
             return False
 
         def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
             try:
-                vbe = self._dispatcher._access_app.VBE
-                vb_project = vbe.ActiveVBProject
-                if vb_project is None:
-                    return False
                 target_module = None
                 for comp in vb_project.VBComponents:
                     if comp.Name == module_name:
@@ -698,12 +717,14 @@ class WinComAdapter(AccessAdapter):
         if not self.is_connected():
             return False
 
+        # Note: compile_vba is currently treated as unsupported in server.py.
+        # The VBA project access is retained here for reference when a
+        # working compile command is identified.
         def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
             try:
-                vbe = self._dispatcher._access_app.VBE
-                vb_project = vbe.ActiveVBProject
-                if vb_project is None:
-                    return False
                 self._dispatcher._access_app.DoCmd.RunCommand(0xE8)
                 return True
             except Exception:
@@ -951,14 +972,16 @@ class WinComAdapter(AccessAdapter):
             return ""
 
         def _do() -> str:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return ""
             try:
-                vbe = self._dispatcher._access_app.VBE
-                vb_project = vbe.ActiveVBProject
-                if vb_project is None:
-                    return ""
                 for comp in vb_project.VBComponents:
                     if comp.Name == module_name:
-                        return comp.CodeModule.Lines(1, comp.CodeModule.CountOfLines)
+                        lines = comp.CodeModule.CountOfLines
+                        if lines > 0:
+                            return comp.CodeModule.Lines(1, lines)
+                        return ""
             except Exception:
                 pass
             return ""
