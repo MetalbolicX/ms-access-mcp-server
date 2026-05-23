@@ -1,3 +1,5 @@
+import os
+import tempfile
 import pytest
 from ms_access_mcp.adapters.wincom import WinComAdapter
 from ms_access_mcp.adapters.odbc import OdbcAdapter
@@ -246,3 +248,49 @@ class TestWinComAdapterADOPath:
 
     def test_ado_conn_is_none_when_not_connected(self):
         assert self.adapter._ado_conn is None
+
+
+class TestWinComAdapterExecuteSqlScript:
+    """Test execute_sql_script behavior."""
+
+    def setup_method(self):
+        self.adapter = WinComAdapter()
+
+    def test_returns_error_when_not_connected(self):
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is False
+            assert "not connected" in result["error"].lower()
+        finally:
+            os.unlink(temp_path)
+
+    def test_file_not_found_returns_file_error(self):
+        result = self.adapter.execute_sql_script("C:\\nonexistent\\path\\file.sql")
+        assert result["success"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_empty_file_returns_zero_statements(self):
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 0
+        finally:
+            os.unlink(temp_path)
+
+    def test_success_return_dict_has_required_keys(self):
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert "success" in result
+            assert "statements_executed" in result
+            assert "message" in result
+        finally:
+            os.unlink(temp_path)
