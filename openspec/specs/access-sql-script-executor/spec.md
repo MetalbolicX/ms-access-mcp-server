@@ -82,6 +82,8 @@ db.Execute(sql, dbFailOnError)
 
 **Location:** `src/ms_access_mcp/adapters/wincom.py` (COM-only, not ODBC)
 
+**SQL engine:** ADO via `CurrentProject.Connection` (primary); DAO via `DBEngine.OpenDatabase` (fallback)
+
 **File structure:**
 ```
 src/ms_access_mcp/adapters/wincom.py        # add execute_sql_script
@@ -99,11 +101,18 @@ tests/unit/test_adapters_comprehensive.py  # add tests
 - Access reserved words as column names — user must bracket them `[Reserved Word]`
 - Unicode in SQL — file should be UTF-8, pywin32 handles Unicode strings
 
+### SQL Engine
+
+**Primary:** ADO via `CurrentProject.Connection` — inherits database's ANSI-92 mode setting, supports subqueries in CHECK constraints, GUID types, proper default values.
+
+**Fallback:** DAO via `DBEngine.OpenDatabase` — Jet SQL mode, limited CHECK constraint support.
+
 ### What This Does NOT Do
 
 - **Not** a general SQL executor for other databases (PostgreSQL, MySQL, etc.)
-- **Not** ANSI-92 translation — raw Jet SQL passed as-is to Access
 - **Not** a migration tool — just executes what Access itself would execute
+
+**Note:** Subqueries in CHECK constraints require ANSI-92 mode enabled in the Access database.
 
 ## Test Scenarios
 
