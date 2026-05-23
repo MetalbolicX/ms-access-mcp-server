@@ -18,6 +18,7 @@ class WinComAdapter(AccessAdapter):
     def __init__(self) -> None:
         self._access_app: Optional[object] = None
         self._current_db: Optional[object] = None
+        self._ado_conn: Optional[object] = None
         self._db_path: Optional[str] = None
 
     def connect(self, db_path: str) -> bool:
@@ -31,6 +32,7 @@ class WinComAdapter(AccessAdapter):
             self._access_app = win32com.client.Dispatch("Access.Application")
             self._access_app.OpenCurrentDatabase(db_path)
             self._current_db = self._access_app.CurrentDb()
+            self._ado_conn = self._access_app.CurrentProject.Connection
             self._db_path = db_path
             return True
         except Exception:
@@ -43,6 +45,7 @@ class WinComAdapter(AccessAdapter):
 
     def _cleanup(self) -> None:
         """Release COM objects."""
+        self._ado_conn = None
         if self._current_db is not None:
             self._current_db = None
         if self._access_app is not None:
