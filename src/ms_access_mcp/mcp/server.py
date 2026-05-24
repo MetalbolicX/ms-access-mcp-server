@@ -331,8 +331,15 @@ def get_control_properties(form_name: str, control_name: str) -> dict:
 
 @mcp.tool()
 def set_control_property(form_name: str, control_name: str, property_name: str, value: str) -> dict:
-    """Set a property of a control."""
-    return {"success": False, "error": "Not implemented - requires form design view"}
+    """Set a property of a control in a form.
+
+    Opens the form in design view, sets the property, and saves.
+    Some properties (ControlType, Name) are read-only and will fail.
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    result = com_automation_service.set_control_property(form_name, control_name, property_name, value)
+    return {"success": result, "form": form_name, "control": control_name, "property": property_name, "value": value}
 
 
 # ============================================================================

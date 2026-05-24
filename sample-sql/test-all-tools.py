@@ -586,47 +586,43 @@ def main():
     else:
         record(30, "get_control_properties", "FAIL", str(detail)[:100])
 
+    # 31. set_control_property (set a caption on the title label)
+    print(f"[31/41] set_control_property ({lifecycle_form}/titleLbl)... ", end="", flush=True)
+    resp = call_tool("set_control_property", {
+        "form_name": lifecycle_form,
+        "control_name": "titleLbl",
+        "property_name": "Caption",
+        "value": "DSN-less Connection (modified)",
+    })
+    detail = extract_text_content(resp)
+    if detail.get("success") is True:
+        record(31, "set_control_property", "PASS", "property set")
+    else:
+        record(31, "set_control_property", "FAIL", str(detail)[:100])
+
     # --------------------------------------------------------------------------
     # Phase 8: Access lifecycle
     # --------------------------------------------------------------------------
     print()
     print(f"{CYAN}[PHASE 8] Access lifecycle{NC}")
 
-    # 31. launch_access
-    print("[31/41] launch_access... ", end="", flush=True)
+    # 32. launch_access
+    print("[32/41] launch_access... ", end="", flush=True)
     resp = call_tool("launch_access", {"visible": True})
     detail = extract_text_content(resp)
     if detail.get("success") is True:
-        record(31, "launch_access", "PASS", "Access launched")
+        record(32, "launch_access", "PASS", "Access launched")
     else:
-        record(31, "launch_access", "FAIL", str(detail)[:100])
+        record(32, "launch_access", "FAIL", str(detail)[:100])
 
-    # 32. close_access
-    print("[32/41] close_access... ", end="", flush=True)
+    # 33. close_access
+    print("[33/41] close_access... ", end="", flush=True)
     resp = call_tool("close_access", {})
     detail = extract_text_content(resp)
     if detail.get("success") is True:
-        record(32, "close_access", "PASS", "Access closed")
+        record(33, "close_access", "PASS", "Access closed")
     else:
-        record(32, "close_access", "FAIL", str(detail)[:100])
-
-    # --------------------------------------------------------------------------
-    # Phase 9: Not implemented (expected failures)
-    # --------------------------------------------------------------------------
-    print()
-    print(f"{CYAN}[PHASE 9] Not implemented (expected failures){NC}")
-
-    # 33. set_control_property
-    print("[33/41] set_control_property... ", end="", flush=True)
-    resp = call_tool("set_control_property", {
-        "form_name": "TestForm", "control_name": "TestControl",
-        "property_name": "Caption", "value": "Test",
-    })
-    detail = extract_text_content(resp)
-    if "not implemented" in str(detail).lower():
-        record(33, "set_control_property", "WARN", "Not implemented (expected)")
-    else:
-        record(33, "set_control_property", "FAIL", str(detail)[:100])
+        record(33, "close_access", "FAIL", str(detail)[:100])
 
     # --------------------------------------------------------------------------
     # Phase 10: Cleanup

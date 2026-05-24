@@ -289,6 +289,10 @@ class OdbcAdapter(AccessAdapter):
         """Get control properties - not available via ODBC."""
         return {}
 
+    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
+        """Set control property - not available via ODBC."""
+        return False
+
     def get_vba_project_name(self) -> str:
         """Get VBA project name - not available via ODBC."""
         return ""

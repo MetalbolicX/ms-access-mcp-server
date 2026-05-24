@@ -636,6 +636,47 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
+    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
+        """Set a property of a control by opening the form in design view.
+
+        Opens the form in design view, sets the property, and saves the form.
+        Returns True if the property was set successfully.
+        """
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                opened = True
+
+                try:
+                    form = self._dispatcher._access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher._access_app.Forms(form_name)
+
+                if form is not None:
+                    for i in range(form.Controls.Count):
+                        try:
+                            ctrl = form.Controls(i)
+                            if ctrl.Name == control_name:
+                                ctrl.Properties(property_name).Value = value
+                                return True
+                        except Exception:
+                            pass
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher._access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
     def delete_form(self, form_name: str) -> bool:
         """Delete a form from the database."""
         if not self.is_connected():

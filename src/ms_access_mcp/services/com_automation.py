@@ -56,3 +56,9 @@ class COMAutomationService:
         if self._adapter is None:
             return {}
         return self._adapter.get_control_properties(form_name, control_name)
+
+    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
+        """Set a property of a control."""
+        if self._adapter is None:
+            return False
+        return self._adapter.set_control_property(form_name, control_name, property_name, value)
