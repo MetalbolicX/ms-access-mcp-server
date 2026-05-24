@@ -566,6 +566,76 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
+    def open_form(self, form_name: str) -> bool:
+        """Open a form in Access (appears on the server desktop)."""
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher._access_app.DoCmd.OpenForm(form_name)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def close_form(self, form_name: str) -> bool:
+        """Close an open form without saving."""
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)  # acForm=2, acSaveNo=2
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def get_control_properties(self, form_name: str, control_name: str) -> dict:
+        """Get all properties of a specific control by opening the form in design view."""
+        if not self.is_connected():
+            return {}
+
+        def _do() -> dict:
+            opened = False
+            try:
+                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                opened = True
+
+                try:
+                    form = self._dispatcher._access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher._access_app.Forms(form_name)
+
+                if form is not None:
+                    for i in range(form.Controls.Count):
+                        try:
+                            ctrl = form.Controls(i)
+                            if ctrl.Name == control_name:
+                                props: dict[str, str] = {}
+                                for prop in ctrl.Properties:
+                                    try:
+                                        props[prop.Name] = str(prop.Value)
+                                    except Exception:
+                                        pass
+                                return props
+                        except Exception:
+                            pass
+                return {}
+            except Exception:
+                return {}
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
     def delete_form(self, form_name: str) -> bool:
         """Delete a form from the database."""
         if not self.is_connected():

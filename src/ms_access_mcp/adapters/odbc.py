@@ -272,11 +272,22 @@ class OdbcAdapter(AccessAdapter):
 
     def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
         """Add VBA procedure - not available via ODBC."""
-        return False
 
     def compile_vba(self) -> bool:
         """Compile VBA - not available via ODBC."""
         return False
+
+    def open_form(self, form_name: str) -> bool:
+        """Open form - not available via ODBC."""
+        return False
+
+    def close_form(self, form_name: str) -> bool:
+        """Close form - not available via ODBC."""
+        return False
+
+    def get_control_properties(self, form_name: str, control_name: str) -> dict:
+        """Get control properties - not available via ODBC."""
+        return {}
 
     def get_vba_project_name(self) -> str:
         """Get VBA project name - not available via ODBC."""

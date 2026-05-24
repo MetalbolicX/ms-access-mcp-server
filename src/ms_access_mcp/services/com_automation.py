@@ -38,3 +38,21 @@ class COMAutomationService:
         if self._adapter is None:
             return False
         return self._adapter.set_vba_code(module_name, code)
+
+    def open_form(self, form_name: str) -> bool:
+        """Open a form in Access."""
+        if self._adapter is None:
+            return False
+        return self._adapter.open_form(form_name)
+
+    def close_form(self, form_name: str) -> bool:
+        """Close an open form."""
+        if self._adapter is None:
+            return False
+        return self._adapter.close_form(form_name)
+
+    def get_control_properties(self, form_name: str, control_name: str) -> dict:
+        """Get all properties of a specific control."""
+        if self._adapter is None:
+            return {}
+        return self._adapter.get_control_properties(form_name, control_name)

@@ -178,19 +178,20 @@ def get_modules() -> dict:
 
 @mcp.tool()
 def open_form(form_name: str) -> dict:
-    """Open a form in Access."""
+    """Open a form in Access (appears on the server desktop)."""
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
-    # Form opening requires Access UI - not implemented in adapter
-    return {"success": False, "error": "Not implemented - requires Access UI"}
+    result = com_automation_service.open_form(form_name)
+    return {"success": result, "form": form_name, "message": "Form opened" if result else "Failed to open form"}
 
 
 @mcp.tool()
 def close_form(form_name: str) -> dict:
-    """Close a form in Access."""
+    """Close an open form."""
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
-    return {"success": False, "error": "Not implemented - requires Access UI"}
+    result = com_automation_service.close_form(form_name)
+    return {"success": result, "form": form_name, "message": "Form closed" if result else "Failed to close form"}
 
 
 # ============================================================================
@@ -315,9 +316,17 @@ def get_form_controls(form_name: str) -> dict:
 
 @mcp.tool()
 def get_control_properties(form_name: str, control_name: str) -> dict:
-    """Get properties of a control."""
-    # Control properties require opening form in design view - limited via COM
-    return {"success": False, "error": "Not implemented - requires form design view"}
+    """Get all properties of a specific control in a form.
+
+    Opens the form in design view, reads the control's properties,
+    then closes the form.
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    props = com_automation_service.get_control_properties(form_name, control_name)
+    if not props:
+        return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
+    return {"success": True, "form": form_name, "control": control_name, "properties": props}
 
 
 @mcp.tool()

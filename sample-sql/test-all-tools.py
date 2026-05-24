@@ -549,63 +549,72 @@ def main():
         record(27, "get_er_diagram", "FAIL", str(detail)[:100])
 
     # --------------------------------------------------------------------------
+    # Form lifecycle tools (must run before close_access terminates the app)
+    # --------------------------------------------------------------------------
+    print()
+    print(f"{CYAN}[FORM LIFECYCLE]{NC}")
+
+    # Test open_form and close_form with an existing form
+    lifecycle_form = FIRST_FORM or "frmDsnlessConnection"
+
+    # 28. open_form
+    print(f"[28/41] open_form ({lifecycle_form})... ", end="", flush=True)
+    resp = call_tool("open_form", {"form_name": lifecycle_form})
+    detail = extract_text_content(resp)
+    if detail.get("success") is True:
+        record(28, "open_form", "PASS", "form opened")
+    else:
+        record(28, "open_form", "FAIL", str(detail)[:100])
+
+    # 29. close_form
+    print(f"[29/41] close_form ({lifecycle_form})... ", end="", flush=True)
+    resp = call_tool("close_form", {"form_name": lifecycle_form})
+    detail = extract_text_content(resp)
+    if detail.get("success") is True:
+        record(29, "close_form", "PASS", "form closed")
+    else:
+        record(29, "close_form", "FAIL", str(detail)[:100])
+
+    # 30. get_control_properties (use a known control from the form)
+    ctrl_name = "titleLbl"
+    print(f"[30/41] get_control_properties ({lifecycle_form}/{ctrl_name})... ", end="", flush=True)
+    resp = call_tool("get_control_properties", {"form_name": lifecycle_form, "control_name": ctrl_name})
+    detail = extract_text_content(resp)
+    if detail.get("success") is True:
+        props_count = len(detail.get("properties", {}))
+        record(30, "get_control_properties", "PASS", f"{props_count} properties")
+    else:
+        record(30, "get_control_properties", "FAIL", str(detail)[:100])
+
+    # --------------------------------------------------------------------------
     # Phase 8: Access lifecycle
     # --------------------------------------------------------------------------
     print()
     print(f"{CYAN}[PHASE 8] Access lifecycle{NC}")
 
-    # 28. launch_access
-    print("[28/41] launch_access... ", end="", flush=True)
+    # 31. launch_access
+    print("[31/41] launch_access... ", end="", flush=True)
     resp = call_tool("launch_access", {"visible": True})
     detail = extract_text_content(resp)
     if detail.get("success") is True:
-        record(28, "launch_access", "PASS", "Access launched")
+        record(31, "launch_access", "PASS", "Access launched")
     else:
-        record(28, "launch_access", "FAIL", str(detail)[:100])
+        record(31, "launch_access", "FAIL", str(detail)[:100])
 
-    # 29. close_access
-    print("[29/41] close_access... ", end="", flush=True)
+    # 32. close_access
+    print("[32/41] close_access... ", end="", flush=True)
     resp = call_tool("close_access", {})
     detail = extract_text_content(resp)
     if detail.get("success") is True:
-        record(29, "close_access", "PASS", "Access closed")
+        record(32, "close_access", "PASS", "Access closed")
     else:
-        record(29, "close_access", "FAIL", str(detail)[:100])
+        record(32, "close_access", "FAIL", str(detail)[:100])
 
     # --------------------------------------------------------------------------
     # Phase 9: Not implemented (expected failures)
     # --------------------------------------------------------------------------
     print()
     print(f"{CYAN}[PHASE 9] Not implemented (expected failures){NC}")
-
-    # 30. open_form
-    print("[30/41] open_form... ", end="", flush=True)
-    resp = call_tool("open_form", {"form_name": "TestForm"})
-    detail = extract_text_content(resp)
-    detail_str = str(detail).lower()
-    if "not implemented" in detail_str or "not connected" in detail_str:
-        record(30, "open_form", "WARN", "Not implemented (expected)")
-    else:
-        record(30, "open_form", "FAIL", str(detail)[:100])
-
-    # 31. close_form
-    print("[31/41] close_form... ", end="", flush=True)
-    resp = call_tool("close_form", {"form_name": "TestForm"})
-    detail = extract_text_content(resp)
-    detail_str = str(detail).lower()
-    if "not implemented" in detail_str or "not connected" in detail_str:
-        record(31, "close_form", "WARN", "Not implemented (expected)")
-    else:
-        record(31, "close_form", "FAIL", str(detail)[:100])
-
-    # 32. get_control_properties
-    print("[32/41] get_control_properties... ", end="", flush=True)
-    resp = call_tool("get_control_properties", {"form_name": "TestForm", "control_name": "TestControl"})
-    detail = extract_text_content(resp)
-    if "not implemented" in str(detail).lower():
-        record(32, "get_control_properties", "WARN", "Not implemented (expected)")
-    else:
-        record(32, "get_control_properties", "FAIL", str(detail)[:100])
 
     # 33. set_control_property
     print("[33/41] set_control_property... ", end="", flush=True)
