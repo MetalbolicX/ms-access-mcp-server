@@ -1189,7 +1189,10 @@ class WinComAdapter(AccessAdapter):
             except Exception as e:
                 return {"success": False, "error": str(e)}
 
-        return self._dispatcher.call(_do)
+        try:
+            return self._dispatcher.call(_do)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     # ========================================================================
     # SYSTEM TABLES

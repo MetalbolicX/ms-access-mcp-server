@@ -12,7 +12,9 @@ class TestCompileVbaReturnsDict:
 
         adapter = WinComAdapter()
         # Mock the dispatcher to avoid COM calls
-        adapter._dispatcher.started = True
+        adapter._dispatcher._started = True
+        adapter._dispatcher._access_app = MagicMock()
+        adapter._dispatcher._current_db = MagicMock()
         mock_result = {"success": True}
         adapter._dispatcher.call = MagicMock(return_value=mock_result)
 
@@ -27,7 +29,9 @@ class TestCompileVbaReturnsDict:
         from ms_access_mcp.adapters.wincom import WinComAdapter
 
         adapter = WinComAdapter()
-        adapter._dispatcher.started = True
+        adapter._dispatcher._started = True
+        adapter._dispatcher._access_app = MagicMock()
+        adapter._dispatcher._current_db = MagicMock()
         mock_result = {"success": False, "error": "Compile failed: syntax error"}
         adapter._dispatcher.call = MagicMock(return_value=mock_result)
 
@@ -43,14 +47,15 @@ class TestCompileVbaReturnsDict:
         from ms_access_mcp.adapters.wincom import WinComAdapter
 
         adapter = WinComAdapter()
-        adapter._dispatcher.started = True
+        adapter._dispatcher._started = True
+        adapter._dispatcher._access_app = MagicMock()
+        adapter._dispatcher._current_db = MagicMock()
 
-        # Simulate a COM exception with an error message
-        def mock_do():
-            raise Exception("Trust Center settings prevent VBA compilation")
-
-        with patch.object(adapter._dispatcher, 'call', side_effect=Exception("Trust Center settings prevent VBA compilation")):
-            result = adapter.compile_vba()
+        # is_connected() needs to return True without going through dispatcher.call
+        with patch.object(adapter, 'is_connected', return_value=True):
+            # Now patch dispatcher.call to simulate COM failure during compile
+            with patch.object(adapter._dispatcher, 'call', side_effect=Exception("Trust Center settings prevent VBA compilation")):
+                result = adapter.compile_vba()
 
         assert isinstance(result, dict)
         assert result.get("success") is False
@@ -93,8 +98,8 @@ class TestCompileWithRetry:
         mock_adapter.set_vba_code.assert_called_once_with("mod_test", "New code")
         mock_adapter.compile_vba.assert_called_once()
 
-    def test_compile_with_retry_failure_with_remaining(self):
-        """compile_with_retry returns error with remaining count on intermediate failure."""
+    def test_compile_with_retry_intermediate_failure(self):
+        """compile_with_retry tries all max_retries and rolls back on persistent failure."""
         from ms_access_mcp.services.dev_copy_service import DevCopyService
 
         service = DevCopyService()
@@ -106,9 +111,10 @@ class TestCompileWithRetry:
         result = service.compile_with_retry(mock_adapter, "mod_test", "New code")
 
         assert result.get("success") is False
-        assert result.get("attempt") == 1
-        assert result.get("remaining") == 2
-        assert result.get("rollback") is False
+        assert result.get("attempt") == 3
+        assert result.get("rollback") is True
+        # compile_vba should have been called 3 times (all retries exhausted)
+        assert mock_adapter.compile_vba.call_count == 3
         assert "error" in result
 
     def test_compile_with_retry_rollback_existing_module(self):

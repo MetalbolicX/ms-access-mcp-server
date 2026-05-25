@@ -114,13 +114,16 @@ class TestImportModuleFromText:
         mock_adapter = MagicMock()
         # Module does not exist
         mock_adapter.get_vba_code.return_value = ""
+        mock_adapter.add_vba_procedure.return_value = True
+        mock_adapter.compile_vba.return_value = {"success": True}
 
         result = service.import_module_from_text(mock_adapter, "brand_new_mod", str(bas_file))
 
         assert result["success"] is True
         # delete_module should NOT be called for a new module
         mock_adapter.delete_module.assert_not_called()
-        mock_adapter.set_vba_code.assert_called_once()
+        mock_adapter.add_vba_procedure.assert_called_once()
+        mock_adapter.set_vba_code.assert_not_called()
 
     def test_import_module_from_text_file_not_found(self, tmp_path):
         """import_module_from_text() returns error when file missing (NO delete)."""

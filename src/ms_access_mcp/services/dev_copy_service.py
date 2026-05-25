@@ -282,21 +282,12 @@ class DevCopyService:
             return {"success": False, "error": "Failed to write code to module"}
 
         # Attempt compilation up to max_retries
+        last_result = {"error": "Unknown compile error"}
         for attempt in range(1, max_retries + 1):
             result = adapter.compile_vba()
+            last_result = result
             if result.get("success"):
                 return {"success": True, "attempts": attempt}
-
-            # Not successful - check if we have retries left
-            if attempt < max_retries:
-                remaining = max_retries - attempt
-                return {
-                    "success": False,
-                    "attempt": attempt,
-                    "remaining": remaining,
-                    "rollback": False,
-                    "error": result.get("error", "Unknown compile error"),
-                }
 
         # All retries exhausted — rollback
         if module_existed:
@@ -308,8 +299,26 @@ class DevCopyService:
             "success": False,
             "attempt": max_retries,
             "rollback": True,
-            "error": result.get("error", "Compilation failed after max retries"),
+            "error": last_result.get("error", "Compilation failed after max retries"),
         }
+
+    def restore_module_backup(
+        self, adapter: AccessAdapter, module_name: str, backup_path: str
+    ) -> dict:
+        """Restore a VBA module from a .bas backup file.
+
+        Delegates to import_module_from_text which handles the full
+        import + compile + retry workflow.
+
+        Args:
+            adapter: Access adapter (WinComAdapter)
+            module_name: Name of the module to restore
+            backup_path: Path to the .bas backup file
+
+        Returns:
+            dict with success, module_name
+        """
+        return self.import_module_from_text(adapter, module_name, backup_path)
 
     # ========================================================================
     # Text Export/Import Pipeline — Forms
