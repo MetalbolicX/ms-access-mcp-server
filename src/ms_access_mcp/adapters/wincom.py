@@ -1169,23 +1169,25 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
-    def compile_vba(self) -> bool:
-        """Compile VBA code."""
-        if not self.is_connected():
-            return False
+    def compile_vba(self) -> dict:
+        """Compile VBA code.
 
-        # Note: compile_vba is currently treated as unsupported in server.py.
-        # The VBA project access is retained here for reference when a
-        # working compile command is identified.
-        def _do() -> bool:
+        Returns:
+            dict with success=True on success
+            dict with success=False and error message on failure
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
             vb_project = self._get_vb_project()
             if vb_project is None:
-                return False
+                return {"success": False, "error": "No VBA project"}
             try:
                 self._dispatcher._access_app.DoCmd.RunCommand(0xE8)
-                return True
-            except Exception:
-                return False
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
         return self._dispatcher.call(_do)
 

@@ -225,12 +225,14 @@ class DevCopyService:
                     "module_name": module_name,
                 }
 
-        # set_vba_code creates a new module if it doesn't exist
-        set_ok = adapter.set_vba_code(module_name, code)
-        if not set_ok:
+        # compile_with_retry handles both the write (add_vba_procedure for new modules)
+        # and the compilation with retry/rollback
+        compile_result = self.compile_with_retry(adapter, module_name, code)
+
+        if not compile_result.get("success") and "Failed to write code" in compile_result.get("error", ""):
             return {
                 "success": False,
-                "error": f"Failed to import module '{module_name}'",
+                "error": f"Failed to import module '{module_name}': {compile_result.get('error')}",
                 "module_name": module_name,
             }
 
@@ -238,22 +240,76 @@ class DevCopyService:
             "success": True,
             "module_name": module_name,
             "created": not module_existed,
+            "compile": compile_result,
         }
 
-    def restore_module_backup(
-        self, adapter: AccessAdapter, module_name: str, backup_path: str
+    def compile_with_retry(
+        self,
+        adapter: AccessAdapter,
+        module_name: str,
+        new_code: str,
+        max_retries: int = 3,
     ) -> dict:
-        """Restore a VBA module from a .bas backup file.
+        """Compile VBA with retry-on-error and rollback safety.
+
+        Writes code to module, attempts compilation up to max_retries times.
+        On persistent failure, rolls back to the original state.
 
         Args:
             adapter: Access adapter (WinComAdapter)
-            module_name: Name of the module to restore
-            backup_path: Path to the .bas backup file
+            module_name: Name of the VBA module
+            new_code: The code to write before compiling
+            max_retries: Maximum compilation attempts (default 3)
 
         Returns:
-            dict with success, module_name
+            {"success": True, "attempts": N}                    — compiled successfully
+            {"success": False, "attempt": N, "remaining": M, "rollback": False, "error": "..."}
+                                                                — failed, retry available
+            {"success": False, "attempt": 3, "rollback": True, "error": "..."}
+                                                                — failed, rolled back
         """
-        return self.import_module_from_text(adapter, module_name, backup_path)
+        # Capture original state for rollback
+        old_code = adapter.get_vba_code(module_name)
+        module_existed = bool(old_code)
+
+        # Write code (existing module gets overwritten, new module gets created)
+        if module_existed:
+            write_ok = adapter.set_vba_code(module_name, new_code)
+        else:
+            write_ok = adapter.add_vba_procedure(module_name, "main", new_code)
+
+        if not write_ok:
+            return {"success": False, "error": "Failed to write code to module"}
+
+        # Attempt compilation up to max_retries
+        for attempt in range(1, max_retries + 1):
+            result = adapter.compile_vba()
+            if result.get("success"):
+                return {"success": True, "attempts": attempt}
+
+            # Not successful - check if we have retries left
+            if attempt < max_retries:
+                remaining = max_retries - attempt
+                return {
+                    "success": False,
+                    "attempt": attempt,
+                    "remaining": remaining,
+                    "rollback": False,
+                    "error": result.get("error", "Unknown compile error"),
+                }
+
+        # All retries exhausted — rollback
+        if module_existed:
+            adapter.set_vba_code(module_name, old_code)
+        else:
+            adapter.delete_module(module_name)
+
+        return {
+            "success": False,
+            "attempt": max_retries,
+            "rollback": True,
+            "error": result.get("error", "Compilation failed after max retries"),
+        }
 
     # ========================================================================
     # Text Export/Import Pipeline — Forms

@@ -494,8 +494,17 @@ def set_vba_code(module_name: str, code: str) -> dict:
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
 
-    result = com_automation_service.set_vba_code(module_name, code)
-    return {"success": result, "module": module_name}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    # Compile with retry
+    compile_result = dev_copy_service.compile_with_retry(adapter, module_name, code)
+    return {
+        "success": compile_result.get("success", False),
+        "module": module_name,
+        "compile": compile_result,
+    }
 
 
 @mcp.tool()
@@ -504,25 +513,41 @@ def add_vba_procedure(module_name: str, procedure_name: str, code: str) -> dict:
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
 
-    result = schema_service.add_vba_procedure(module_name, procedure_name, code)
-    return {"success": result, "module": module_name, "procedure": procedure_name}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    # Write code first
+    write_ok = adapter.add_vba_procedure(module_name, procedure_name, code)
+    if not write_ok:
+        return {"success": False, "module": module_name, "procedure": procedure_name}
+
+    # Compile with retry
+    compile_result = dev_copy_service.compile_with_retry(adapter, module_name, code)
+    return {
+        "success": compile_result.get("success", False),
+        "module": module_name,
+        "procedure": procedure_name,
+        "compile": compile_result,
+    }
 
 
 @mcp.tool()
 def compile_vba() -> dict:
-    """Compile VBA code.
+    """Compile VBA code in the database.
 
-    Note: Access COM automation does not reliably expose a stable compile command
-    across environments in this project setup, so this operation is currently
-    treated as unsupported.
+    Attempts to compile all VBA modules. Returns structured result
+    with success status and error message on failure.
     """
     if not connection_service.is_connected():
         return {"success": False, "error": "Not connected to database"}
 
-    return {
-        "success": False,
-        "error": "Not supported in current Access automation context",
-    }
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    result = adapter.compile_vba()
+    return result
 
 
 # ============================================================================

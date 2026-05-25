@@ -62,3 +62,9 @@ class COMAutomationService:
         if self._adapter is None:
             return False
         return self._adapter.set_control_property(form_name, control_name, property_name, value)
+
+    def compile_vba(self) -> dict:
+        """Compile VBA code in the database."""
+        if self._adapter is None:
+            return {"success": False, "error": "No adapter available"}
+        return self._adapter.compile_vba()

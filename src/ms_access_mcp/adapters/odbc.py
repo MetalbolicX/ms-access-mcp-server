@@ -375,9 +375,9 @@ class OdbcAdapter(AccessAdapter):
         """Add VBA procedure - not available via ODBC."""
         return False
 
-    def compile_vba(self) -> bool:
+    def compile_vba(self) -> dict:
         """Compile VBA - not available via ODBC."""
-        return False
+        return {"success": False, "error": "Not available via ODBC"}
 
     def open_form(self, form_name: str) -> bool:
         """Open form - not available via ODBC."""
