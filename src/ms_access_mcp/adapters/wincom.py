@@ -200,6 +200,7 @@ class WinComAdapter(AccessAdapter):
         self._dispatcher = ComDispatcher()
         # State mirrors what dispatcher holds for query purposes
         self._db_path: Optional[str] = None
+        self._ado_conn: Optional[Any] = None
 
     def _ensure_windows(self) -> None:
         """Raise RuntimeError if not on Windows. Called before first COM operation."""
@@ -2023,6 +2024,70 @@ class WinComAdapter(AccessAdapter):
             "output_dir": output_dir,
             "file_count": total,
         }
+
+    # ========================================================================
+    # SQL SCRIPT EXECUTION
+    # ========================================================================
+
+    def execute_sql_script(self, script_path: str) -> dict:
+        """Execute a SQL script from a file path.
+
+        Reads the file, strips SQL comments, splits by semicolons,
+        and executes each statement via DAO.
+
+        Args:
+            script_path: Absolute path to the .sql file
+
+        Returns:
+            dict with success=True, statements_executed=N
+            or success=False, error="...", statements_executed=N
+        """
+        if not os.path.exists(script_path):
+            return {
+                "success": False,
+                "statements_executed": 0,
+                "error": f"File not found: {script_path}",
+            }
+
+        if not self.is_connected():
+            return {
+                "success": False,
+                "statements_executed": 0,
+                "error": "Not connected",
+            }
+
+        def _do() -> dict:
+            try:
+                with open(script_path, "r", encoding="utf-8") as f:
+                    raw_sql = f.read()
+            except Exception as e:
+                return {"success": False, "statements_executed": 0, "error": str(e)}
+
+            sql = self._strip_sql_comments(raw_sql).strip()
+            if not sql:
+                return {"success": True, "statements_executed": 0}
+
+            # Split by semicolons and filter empty statements
+            statements = [s.strip() for s in sql.split(";") if s.strip()]
+            db = self._dispatcher._current_db
+            executed = 0
+            for stmt in statements:
+                try:
+                    db.Execute(stmt, DAO_DB_FAIL_ON_ERROR)
+                    executed += 1
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "statements_executed": executed,
+                        "error": f"Error at statement {executed + 1}: {e}",
+                    }
+
+            return {"success": True, "statements_executed": executed}
+
+        try:
+            return self._dispatcher.call(_do)
+        except Exception as e:
+            return {"success": False, "statements_executed": 0, "error": str(e)}
 
     # ========================================================================
     # DATABASE FILE COPY

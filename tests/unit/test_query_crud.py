@@ -67,7 +67,7 @@ class TestWinComAdapterQueryCrud:
         assert "~SysQuery" not in names
 
     def test_create_query_calls_createquerydef(self):
-        """WinComAdapter.create_query should call db.CreateQueryDef and append to QueryDefs."""
+        """WinComAdapter.create_query should call db.CreateQueryDef (auto-appends, no explicit Append needed)."""
         adapter = WinComAdapter.__new__(WinComAdapter)
         adapter._dispatcher = MagicMock()
         adapter._dispatcher._started = True
@@ -76,9 +76,7 @@ class TestWinComAdapterQueryCrud:
         adapter._dispatcher.is_connected = MagicMock(return_value=True)
 
         # Mock the _current_db with CreateQueryDef
-        mock_qdef = MagicMock()
         mock_current_db = MagicMock()
-        mock_current_db.CreateQueryDef.return_value = mock_qdef
         adapter._dispatcher._current_db = mock_current_db
 
         def call_side_effect(fn, *args, **kwargs):
@@ -90,9 +88,8 @@ class TestWinComAdapterQueryCrud:
         result = adapter.create_query("NewQuery", "SELECT * FROM Customers")
 
         # Verify CreateQueryDef was called with name and sql
+        # CreateQueryDef with non-empty name auto-appends — no explicit Append needed
         mock_current_db.CreateQueryDef.assert_called_once_with("NewQuery", "SELECT * FROM Customers")
-        # Verify QueryDefs.Append was called
-        mock_current_db.QueryDefs.Append.assert_called_once_with(mock_qdef)
         assert result == {"success": True}
 
     def test_create_query_returns_error_on_exception(self):

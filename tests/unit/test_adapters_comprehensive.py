@@ -25,8 +25,10 @@ class TestWinComAdapterNotConnected:
     def test_get_tables_returns_empty_when_not_connected(self):
         assert self.adapter.get_tables() == []
 
-    def test_execute_query_returns_empty_when_not_connected(self):
-        assert self.adapter.execute_query("SELECT 1") == []
+    def test_execute_query_returns_error_when_not_connected(self):
+        result = self.adapter.execute_query("SELECT 1")
+        assert result["success"] is False
+        assert "not connected" in result["error"].lower()
 
     def test_get_forms_returns_empty_when_not_connected(self):
         assert self.adapter.get_forms() == []
@@ -56,7 +58,7 @@ class TestWinComAdapterNotConnected:
         assert self.adapter.export_form_to_text("frm") == ""
 
     def test_import_form_from_text_returns_false_when_not_connected(self):
-        assert self.adapter.import_form_from_text("data") is False
+        assert self.adapter.import_form_from_text("frm", "data") is False
 
     def test_delete_form_returns_false_when_not_connected(self):
         assert self.adapter.delete_form("frm") is False
@@ -65,7 +67,7 @@ class TestWinComAdapterNotConnected:
         assert self.adapter.export_report_to_text("rpt") == ""
 
     def test_import_report_from_text_returns_false_when_not_connected(self):
-        assert self.adapter.import_report_from_text("data") is False
+        assert self.adapter.import_report_from_text("rpt", "data") is False
 
     def test_delete_report_returns_false_when_not_connected(self):
         assert self.adapter.delete_report("rpt") is False
@@ -73,8 +75,10 @@ class TestWinComAdapterNotConnected:
     def test_add_vba_procedure_returns_false_when_not_connected(self):
         assert self.adapter.add_vba_procedure("mod", "proc", "code") is False
 
-    def test_compile_vba_returns_false_when_not_connected(self):
-        assert self.adapter.compile_vba() is False
+    def test_compile_vba_returns_error_dict_when_not_connected(self):
+        result = self.adapter.compile_vba()
+        assert result["success"] is False
+        assert "not connected" in result["error"].lower()
 
     def test_get_object_metadata_returns_empty_when_not_connected(self):
         assert self.adapter.get_object_metadata("obj") == {}
@@ -114,7 +118,7 @@ class TestOdbcAdapterStubs:
         assert self.adapter.export_form_to_text("frm") == ""
 
     def test_import_form_from_text_returns_false(self):
-        assert self.adapter.import_form_from_text("data") is False
+        assert self.adapter.import_form_from_text("frm", "data") is False
 
     def test_delete_form_returns_false(self):
         assert self.adapter.delete_form("frm") is False
@@ -123,7 +127,7 @@ class TestOdbcAdapterStubs:
         assert self.adapter.export_report_to_text("rpt") == ""
 
     def test_import_report_from_text_returns_false(self):
-        assert self.adapter.import_report_from_text("data") is False
+        assert self.adapter.import_report_from_text("rpt", "data") is False
 
     def test_delete_report_returns_false(self):
         assert self.adapter.delete_report("rpt") is False
@@ -131,8 +135,10 @@ class TestOdbcAdapterStubs:
     def test_add_vba_procedure_returns_false(self):
         assert self.adapter.add_vba_procedure("mod", "proc", "code") is False
 
-    def test_compile_vba_returns_false(self):
-        assert self.adapter.compile_vba() is False
+    def test_compile_vba_returns_error_dict(self):
+        result = self.adapter.compile_vba()
+        assert result["success"] is False
+        assert "ODBC" in result["error"] or "not available" in result["error"].lower()
 
     def test_get_object_metadata_returns_empty(self):
         assert self.adapter.get_object_metadata("obj") == {}
@@ -163,8 +169,10 @@ class TestOdbcAdapterEdgeCases:
         # Should not raise
         self.adapter.disconnect()
 
-    def test_execute_query_returns_empty_when_not_connected(self):
-        assert self.adapter.execute_query("SELECT 1") == []
+    def test_execute_query_returns_error_when_not_connected(self):
+        result = self.adapter.execute_query("SELECT 1")
+        assert result["success"] is False
+        assert "not connected" in result["error"].lower()
 
     def test_get_tables_returns_empty_when_not_connected(self):
         assert self.adapter.get_tables() == []
