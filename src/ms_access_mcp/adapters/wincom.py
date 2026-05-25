@@ -1172,6 +1172,13 @@ class WinComAdapter(AccessAdapter):
     def compile_vba(self) -> dict:
         """Compile VBA code.
 
+        Tries known DoCmd.RunCommand constants for VBA compilation.
+        The correct command ID varies by Access version:
+        - 301: Access 16.0 (Office 365 / 2021) — confirmed working
+        - 206: acCmdCompileAllModules (older versions)
+        - 317: acCmdCompileAndSaveAllModules (older versions)
+        - 232: 0xE8 — commonly documented online
+
         Returns:
             dict with success=True on success
             dict with success=False and error message on failure
@@ -1179,15 +1186,24 @@ class WinComAdapter(AccessAdapter):
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
 
+        # Compile command IDs by Access version (most likely first)
+        _COMPILE_CMD_IDS = [301, 206, 317, 232]
+
         def _do() -> dict:
             vb_project = self._get_vb_project()
             if vb_project is None:
                 return {"success": False, "error": "No VBA project"}
-            try:
-                self._dispatcher._access_app.DoCmd.RunCommand(0xE8)
-                return {"success": True}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
+            app = self._dispatcher._access_app
+            for cmd_id in _COMPILE_CMD_IDS:
+                try:
+                    app.DoCmd.RunCommand(cmd_id)
+                    return {"success": True}
+                except Exception:
+                    continue
+            return {
+                "success": False,
+                "error": "Could not find working compile command for this Access version",
+            }
 
         try:
             return self._dispatcher.call(_do)
