@@ -677,10 +677,22 @@ class WinComAdapter(AccessAdapter):
         self._dispatcher.call(_do)
 
     def close_access(self) -> None:
-        """Close Microsoft Access application."""
+        """Close Microsoft Access application.
+
+        Saves VBA modules before quitting to prevent loss of in-memory changes.
+        """
         def _do() -> None:
             if self._dispatcher._access_app is not None:
-                self._dispatcher._access_app.Quit()
+                app = self._dispatcher._access_app
+                # Save all VBA modules before quitting
+                try:
+                    vb_project = app.VBE.VBProjects(1)
+                    for comp in vb_project.VBComponents:
+                        if comp.Type == 1:  # vbext_ct_StdModule
+                            app.DoCmd.Save(5, comp.Name)  # 5 = acModule
+                except Exception:
+                    pass
+                app.Quit()
                 self._dispatcher._access_app = None
                 self._dispatcher._current_db = None
 
@@ -1166,6 +1178,43 @@ class WinComAdapter(AccessAdapter):
                 return False
             except Exception:
                 return False
+
+        return self._dispatcher.call(_do)
+
+    def save_database(self) -> dict:
+        """Save all VBA modules and database changes.
+
+        Uses DoCmd.Save to persist each standard module.
+        Returns structured result with success/error.
+
+        Returns:
+            dict with success=True on success, error message on failure
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return {"success": False, "error": "No VBA project"}
+            app = self._dispatcher._access_app
+            saved = 0
+            errors = []
+            try:
+                for comp in vb_project.VBComponents:
+                    if comp.Type == 1:  # vbext_ct_StdModule
+                        try:
+                            app.DoCmd.Save(5, comp.Name)  # 5 = acModule
+                            saved += 1
+                        except Exception as e:
+                            errors.append(f"{comp.Name}: {e}")
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+            return {
+                "success": True,
+                "saved_modules": saved,
+                "errors": errors,
+            }
 
         return self._dispatcher.call(_do)
 

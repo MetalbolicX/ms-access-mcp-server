@@ -550,6 +550,25 @@ def compile_vba() -> dict:
     return result
 
 
+@mcp.tool()
+def save_database() -> dict:
+    """Save all VBA modules and database changes.
+
+    Persists any in-memory VBA module changes to the .accdb file.
+    Use this after creating or editing VBA code to avoid losing
+    changes when Access is closed.
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    result = adapter.save_database()
+    return result
+
+
 # ============================================================================
 # SYSTEM TABLE METADATA TOOLS
 # ============================================================================
