@@ -1,10 +1,12 @@
 import os
 import shutil
+import subprocess
 import sys
 import queue
 import tempfile
 import threading
 import concurrent.futures
+from datetime import datetime
 from typing import Optional, Callable, Any
 from .base import AccessAdapter
 
@@ -20,6 +22,8 @@ from ..models.database import (
     RelationshipInfo,
     QueryInfo,
     LinkedTableInfo,
+    ForeignKeyInfo,
+    FieldInfo,
 )
 
 
@@ -80,7 +84,8 @@ class ComDispatcher:
         # Put a sentinel to wake the thread
         self._call_queue.put((lambda: None, (), {}, concurrent.futures.Future()))
         if self._thread is not None:
-            self._thread.join(timeout=5.0)
+            self._thread.join(timeout=15.0)
+        # Ensure release even if thread already dead
         self._access_app = None
         self._current_db = None
         self._ado_conn = None
@@ -116,23 +121,71 @@ class ComDispatcher:
                     future.set_exception(e)
         finally:
             # Clean up COM on the same thread
-            self._cleanup_com()
+            self._release_com_safe()
             pythoncom.CoUninitialize()
 
-    def _cleanup_com(self) -> None:
-        """Close Access and release COM objects (must run on STA thread)."""
+    def _release_com_safe(self) -> None:
+        """Release all COM objects in order: ADO -> DAO -> Access Application.
+
+        Uses a watchdog thread to avoid hanging on Access.Quit().
+        Falls back to taskkill /F if graceful shutdown fails on Windows.
+        """
+        errors: list[str] = []
+
+        # 1. Close ADO connection explicitly
+        if self._ado_conn is not None:
+            try:
+                self._ado_conn.Close()
+            except Exception as e:
+                errors.append(f"ADO Close: {e}")
+            self._ado_conn = None
+
+        # 2. Close DAO database explicitly
+        if self._current_db is not None:
+            try:
+                self._current_db.Close()
+            except Exception as e:
+                errors.append(f"DAO Close: {e}")
+            self._current_db = None
+
+        # 3. Close and quit Access Application via COM
         if self._access_app is not None:
             try:
                 self._access_app.CloseCurrentDatabase()
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"CloseCurrentDatabase: {e}")
+
+            # 4. Quit() with 5s watchdog
+            app = self._access_app
+            quit_ok = False
             try:
-                self._access_app.Quit()
-            except Exception:
-                pass
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    fut = pool.submit(lambda: app.Quit())
+                    fut.result(timeout=5.0)
+                    quit_ok = True
+            except concurrent.futures.TimeoutError:
+                errors.append("Access.Quit() timed out after 5s")
+            except Exception as e:
+                errors.append(f"Access.Quit(): {e}")
+
             self._access_app = None
-        self._current_db = None
-        self._ado_conn = None
+
+            # 5. Force-kill fallback (Windows only)
+            if not quit_ok and sys.platform == 'win32':
+                try:
+                    subprocess.run(
+                        ["taskkill", "/F", "/IM", "MSACCESS.EXE"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                except Exception as e:
+                    errors.append(f"taskkill: {e}")
+
+        if errors:
+            print(f"[ComDispatcher] Cleanup completed with {len(errors)} warning(s): {'; '.join(errors)}")
+
+    def _cleanup_com(self) -> None:
+        """Legacy wrapper — delegates to _release_com_safe()."""
+        self._release_com_safe()
 
 
 class WinComAdapter(AccessAdapter):
@@ -167,12 +220,20 @@ class WinComAdapter(AccessAdapter):
             import win32com.client
             try:
                 self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
-                self._dispatcher._access_app.OpenCurrentDatabase(db_path)
-                self._dispatcher._current_db = self._dispatcher._access_app.CurrentDb()
+
+                # Open via DAO FIRST with exclusive+readwrite so _current_db is writable.
+                # OpenCurrentDatabase on its own opens in read-only mode for COM automation.
+                dbe = self._dispatcher._access_app.DBEngine
+                self._dispatcher._current_db = dbe.OpenDatabase(db_path, True, False)
+
+                # Now OpenCurrentDatabase — the underlying DAO handle is already writable,
+                # so CurrentDb inherits the writable state.
+                self._dispatcher._access_app.OpenCurrentDatabase(db_path, True)
+
                 self._dispatcher._ado_conn = self._dispatcher._access_app.CurrentProject.Connection
                 return True
             except Exception:
-                self._dispatcher._cleanup_com()
+                self._dispatcher._release_com_safe()
                 return False
 
         return self._dispatcher.call(_do_connect)
@@ -180,11 +241,11 @@ class WinComAdapter(AccessAdapter):
     def disconnect(self) -> None:
         """Disconnect from the Access database."""
         def _do_disconnect() -> None:
-            self._dispatcher._cleanup_com()
+            self._dispatcher._release_com_safe()
         try:
             self._dispatcher.call(_do_disconnect)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Cleanup warning: disconnect failed: {e}", file=sys.stderr)
         self._dispatcher.shutdown()
         self._db_path = None
 
@@ -267,6 +328,27 @@ class WinComAdapter(AccessAdapter):
             20: "Decimal",
         }
         return type_map.get(access_type, f"Unknown({access_type})")
+
+    @staticmethod
+    def _format_dao_value(val: object) -> str:
+        """Format a Python value for inline use in DAO SQL.
+
+        DAO.Execute does NOT support ? parameter placeholders like ADO,
+        so values must be formatted inline with proper escaping.
+        """
+        if val is None:
+            return "NULL"
+        if isinstance(val, bool):
+            return "-1" if val else "0"
+        if isinstance(val, int):
+            return str(val)
+        if isinstance(val, float):
+            return str(val)
+        if isinstance(val, datetime):
+            return f"#{val.strftime('%Y-%m-%d %H:%M:%S')}#"
+        # String — single-quote and escape
+        s = str(val).replace("'", "''")
+        return f"'{s}'"
 
     @staticmethod
     def _access_control_type_name(ctrl_type: int) -> str:
@@ -419,7 +501,7 @@ class WinComAdapter(AccessAdapter):
                 db = self._dispatcher._current_db
                 for row in data:
                     cols = ", ".join(f"[{c}]" for c in row.keys())
-                    vals = ", ".join(f"?" for _ in row.values())
+                    vals = ", ".join(self._format_dao_value(v) for v in row.values())
                     sql = f"INSERT INTO [{table_name}] ({cols}) VALUES ({vals})"
                     db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
                 return {"success": True, "affected": len(data)}
@@ -445,18 +527,22 @@ class WinComAdapter(AccessAdapter):
         def _do() -> dict:
             try:
                 db = self._dispatcher._current_db
-                set_clause = ", ".join(f"[{c}] = ?" for c in set_dict.keys())
-                sql = f"UPDATE [{table_name}] SET {set_clause}"
 
-                params = list(set_dict.values())
+                # Build SET clause with inline-formatted values (DAO doesn't support ? params)
+                set_parts = []
+                for col, val in set_dict.items():
+                    set_parts.append(f"[{col}] = {self._format_dao_value(val)}")
+                set_clause = ", ".join(set_parts)
+                sql = f"UPDATE [{table_name}] SET {set_clause}"
 
                 if where_dict is not None:
                     if isinstance(where_dict, str):
                         sql += f" WHERE {where_dict}"
                     else:
-                        where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
-                        sql += f" WHERE {where_clause}"
-                        params.extend(where_dict.values())
+                        where_parts = []
+                        for col, val in where_dict.items():
+                            where_parts.append(f"[{col}] = {self._format_dao_value(val)}")
+                        sql += " WHERE " + " AND ".join(where_parts)
 
                 db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
                 affected = db.RecordsAffected
@@ -484,14 +570,14 @@ class WinComAdapter(AccessAdapter):
                 db = self._dispatcher._current_db
                 sql = f"DELETE FROM [{table_name}]"
 
-                params: list = []
                 if where_dict is not None:
                     if isinstance(where_dict, str):
                         sql += f" WHERE {where_dict}"
                     else:
-                        where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
-                        sql += f" WHERE {where_clause}"
-                        params.extend(where_dict.values())
+                        where_parts = []
+                        for col, val in where_dict.items():
+                            where_parts.append(f"[{col}] = {self._format_dao_value(val)}")
+                        sql += " WHERE " + " AND ".join(where_parts)
 
                 db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
                 affected = db.RecordsAffected
@@ -550,8 +636,9 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                qdef = self._dispatcher._current_db.CreateQueryDef(name, sql)
-                self._dispatcher._current_db.QueryDefs.Append(qdef)
+                # CreateQueryDef with a non-empty name auto-appends to QueryDefs collection.
+                # Explicit Append is not needed and causes "Invalid operation" on writeable DAO.
+                self._dispatcher._current_db.CreateQueryDef(name, sql)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -692,14 +779,12 @@ class WinComAdapter(AccessAdapter):
                             app.DoCmd.Save(5, comp.Name)  # 5 = acModule
                 except Exception:
                     pass
-                app.Quit()
-                self._dispatcher._access_app = None
-                self._dispatcher._current_db = None
+                self._dispatcher._release_com_safe()
 
         try:
             self._dispatcher.call(_do)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Cleanup warning: close_access failed: {e}", file=sys.stderr)
 
     def set_vba_code(self, module_name: str, code: str) -> bool:
         """Set VBA code in a module."""
@@ -1296,6 +1381,80 @@ class WinComAdapter(AccessAdapter):
     # RELATIONSHIPS (Foreign Keys)
     # ========================================================================
 
+    def _get_table_indexes(self, table_name: str) -> dict[str, list[str]]:
+        """Return {index_name: [columns]} for indexes where Primary=True."""
+        if not self.is_connected():
+            return {}
+
+        def _do() -> dict[str, list[str]]:
+            indexes: dict[str, list[str]] = {}
+            try:
+                db = self._dispatcher._current_db
+                tdef = db.TableDefs(table_name)
+                for idx in tdef.Indexes:
+                    if idx.Primary:
+                        indexes[idx.Name] = [f.Name for f in idx.Fields]
+            except Exception:
+                pass
+            return indexes
+
+        return self._dispatcher.call(_do)
+
+    def _get_field_details(self, table_name: str) -> list[dict]:
+        """Return list of {name, type, size, attributes, default_value} for each field."""
+        if not self.is_connected():
+            return []
+
+        def _do() -> list[dict]:
+            fields: list[dict] = []
+            try:
+                db = self._dispatcher._current_db
+                tdef = db.TableDefs(table_name)
+                for fld in tdef.Fields:
+                    default = None
+                    try:
+                        default = str(fld.DefaultValue) if fld.DefaultValue is not None else None
+                    except Exception:
+                        default = None
+                    fields.append({
+                        "name": fld.Name,
+                        "type": fld.Type,
+                        "size": fld.Size,
+                        "attributes": fld.Attributes,
+                        "default_value": default,
+                    })
+            except Exception:
+                pass
+            return fields
+
+        return self._dispatcher.call(_do)
+
+    def _get_relationship_columns(self) -> list[ForeignKeyInfo]:
+        """Read Relations collection and build ForeignKeyInfo list."""
+        if not self.is_connected():
+            return []
+
+        def _do() -> list[ForeignKeyInfo]:
+            from ..models.database import ForeignKeyInfo
+            fks: list[ForeignKeyInfo] = []
+            try:
+                db = self._dispatcher._current_db
+                for rel in db.Relations:
+                    if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
+                        continue
+                    cols = [f.Name for f in rel.Fields]
+                    fks.append(ForeignKeyInfo(
+                        name=rel.Name,
+                        columns=cols,
+                        foreign_table=rel.ForeignTable,
+                        foreign_columns=cols,
+                    ))
+            except Exception:
+                pass
+            return fks
+
+        return self._dispatcher.call(_do)
+
     def get_relationships(self) -> list[RelationshipInfo]:
         """Get all foreign key relationships from DAO Relations collection."""
         if not self.is_connected():
@@ -1321,6 +1480,97 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
+    def generate_sql(self, output_path: str) -> dict:
+        """Generate Jet SQL DDL and write to output_path.
+
+        Orchestrates reading schema (tables, indexes, field details, FKs),
+        calls JetSqlGenerator.generate(), and writes to output_path.
+
+        Returns:
+            dict with success=True, path, statements (count), tables (list)
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        from ..services.sql_generator import JetSqlGenerator
+
+        def _do() -> dict:
+            try:
+                # 1. Get tables (already dispatches internally)
+                base_tables = self.get_tables()
+                if not base_tables:
+                    return {"success": True, "path": output_path, "statements": 0, "tables": []}
+
+                # 2. Enrich each table with field details and primary keys
+                tables: list[TableInfo] = []
+                for base_table in base_tables:
+                    table_name = base_table.name
+
+                    # Get field details (attributes, default_value) via direct dispatch
+                    field_details = self._dispatcher.call(self._get_field_details, table_name)
+
+                    # Get primary key columns for this table via direct dispatch
+                    indexes = self._dispatcher.call(self._get_table_indexes, table_name)
+                    pk_columns: list[str] = []
+                    for idx_name, idx_fields in indexes.items():
+                        if idx_name.startswith("~"):
+                            continue
+                        pk_columns = idx_fields
+                        break
+
+                    # Merge field details into FieldInfo objects
+                    enriched_fields: list[FieldInfo] = []
+                    field_detail_map = {fd["name"]: fd for fd in field_details}
+
+                    for fld in base_table.fields:
+                        detail = field_detail_map.get(fld.name, {})
+                        attrs = detail.get("attributes", 0)
+                        is_auto = bool(attrs & 0x10) if attrs else False
+                        default_val = detail.get("default_value")
+
+                        enriched_fields.append(FieldInfo(
+                            name=fld.name,
+                            type=fld.type,
+                            size=fld.size,
+                            required=fld.required,
+                            allow_zero_length=fld.allow_zero_length,
+                            is_autoincrement=is_auto,
+                            default_value=default_val,
+                        ))
+
+                    enriched_table = TableInfo(
+                        name=table_name,
+                        fields=enriched_fields,
+                        record_count=base_table.record_count,
+                        primary_key=pk_columns,
+                    )
+                    tables.append(enriched_table)
+
+                # 3. Get relationships and foreign keys
+                relationships = self.get_relationships()
+                foreign_keys = self._dispatcher.call(self._get_relationship_columns)
+
+                # 4. Instantiate JetSqlGenerator and generate
+                generator = JetSqlGenerator(tables, relationships, foreign_keys)
+                statements = generator.generate()
+
+                # 5. Write to output_path
+                with open(output_path, "w", encoding="utf-8") as f:
+                    f.write("\n".join(statements))
+                    if statements:
+                        f.write("\n")
+
+                return {
+                    "success": True,
+                    "path": output_path,
+                    "statements": len(statements),
+                    "tables": [t.name for t in tables],
+                }
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
     # ========================================================================
     # OBJECT METADATA
     # ========================================================================
@@ -1330,142 +1580,39 @@ class WinComAdapter(AccessAdapter):
         if not self.is_connected():
             return {}
 
-        def _do() -> dict:
-            try:
-                for collection_name in ["AllTables", "AllForms", "AllReports", "AllMacros"]:
-                    try:
-                        collection = getattr(self._dispatcher._access_app.CurrentProject, collection_name)
-                        for i in range(collection.Count):
-                            obj = collection(i)
-                            if obj.Name == object_name:
-                                return {
-                                    "name": obj.Name,
-                                    "type": collection_name.replace("All", "").lower(),
-                                    "properties": self._get_object_properties(obj),
-                                }
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return {}
-
-        return self._dispatcher.call(_do)
-
-    def _get_object_properties(self, obj: object) -> dict:
-        """Get properties of an Access object.
-
-        Called from within a dispatcher _do() — the COM object is already on
-        the STA thread, so we access Properties directly without dispatching.
-        """
-        props: dict[str, str] = {}
+        # Check tables via get_tables() (dispatches internally, no nesting issue)
         try:
-            for prop in obj.Properties:
-                try:
-                    props[prop.Name] = str(prop.Value)
-                except Exception:
-                    pass
+            for table in self.get_tables():
+                if table.name == object_name:
+                    return {
+                        "name": table.name,
+                        "type": "table",
+                        "properties": {"record_count": str(table.record_count)},
+                    }
         except Exception:
             pass
-        return props
 
-    # ========================================================================
-    # SQL SCRIPT EXECUTION (Jet SQL pass-through)
-    # ========================================================================
-
-    def execute_sql_script(self, script_path: str) -> dict:
-        """Execute a SQL script file against the connected database.
-
-        Uses ADO (CurrentProject.Connection) for DML (INSERT/UPDATE/SELECT)
-        with ANSI-92 SQL support. Falls back to DAO for DDL (CREATE TABLE, etc.)
-        since ADO's Execute method does not support DDL in Access.
-        All statements run in sequence - rollback on any failure.
-        """
-        if not os.path.exists(script_path):
-            return {
-                "success": False,
-                "error": f"File not found: {script_path}",
-                "statements_executed": 0,
-            }
-
-        if not self.is_connected():
-            return {
-                "success": False,
-                "error": "Not connected to database",
-                "statements_executed": 0,
-            }
-
-        try:
-            with open(script_path, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to read file: {e}",
-                "statements_executed": 0,
-            }
-
-        # Strip SQL comments and split on semicolons
-        content = self._strip_sql_comments(content)
-        statements = [s.strip() for s in content.split(";")]
-        statements = [s for s in statements if s]
-
-        if not statements:
-            return {
-                "success": True,
-                "statements_executed": 0,
-                "message": "No statements to execute",
-            }
-
+        # Check forms, reports, macros via COM dispatch
         def _do() -> dict:
-            executed = 0
-            use_ado = self._dispatcher._ado_conn is not None
-            dao_db = None
-
-            try:
-                for stmt in statements:
-                    if not stmt:
-                        continue
-
-                    if use_ado:
-                        try:
-                            # ADO path - supports ANSI-92 mode for DML
-                            # Parameters: CommandText, RecordsAffected(-1=ignore), Options(128=adExecuteNoRecords)
-                            self._dispatcher._ado_conn.Execute(stmt, -1, 128)
-                            executed += 1
-                            continue
-                        except Exception as ado_err:
-                            err_str = str(ado_err).lower()
-                            if "expected 'delete" in err_str or "expected 'insert" in err_str:
-                                pass  # Fall through to DAO below
-                            else:
-                                raise
-
-                    # DAO path (fallback for DDL or when ADO unavailable)
-                    if dao_db is None:
-                        dao_db = self._dispatcher._access_app.DBEngine.OpenDatabase(self._dispatcher._db_path)
-                    dao_db.Execute(stmt, 128)  # dbFailOnError
-                    executed += 1
-
-                return {
-                    "success": True,
-                    "statements_executed": executed,
-                    "message": f"{executed} statement(s) executed successfully",
-                    "engine": "ADO" if use_ado else "DAO",
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "statements_executed": executed,
-                    "error": str(e),
-                    "failing_statement": stmt if executed < len(statements) else "",
-                    "engine": "ADO" if use_ado and executed > 0 else "DAO",
-                }
-            finally:
-                if dao_db is not None:
-                    try:
-                        dao_db.Close()
-                    except Exception:
-                        pass
+            for collection_name in ["AllForms", "AllReports", "AllMacros"]:
+                try:
+                    collection = getattr(self._dispatcher._access_app.CurrentProject, collection_name)
+                    for i in range(collection.Count):
+                        obj = collection(i)
+                        if obj.Name == object_name:
+                            props = {}
+                            try:
+                                props = self._get_object_properties(obj)
+                            except Exception:
+                                pass
+                            return {
+                                "name": obj.Name,
+                                "type": collection_name.replace("All", "").lower(),
+                                "properties": props,
+                            }
+                except Exception:
+                    pass
+            return {}
 
         return self._dispatcher.call(_do)
 

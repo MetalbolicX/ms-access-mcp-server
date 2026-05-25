@@ -7,12 +7,15 @@ class FieldInfo(BaseModel):
     size: int = 0
     required: bool = False
     allow_zero_length: bool = True
+    default_value: str | int | float | bool | None = None
+    is_autoincrement: bool = False
 
 
 class TableInfo(BaseModel):
     name: str
     fields: list[FieldInfo] = Field(default_factory=list)
     record_count: int = 0
+    primary_key: list[str] = Field(default_factory=list)
 
 
 class QueryInfo(BaseModel):
@@ -26,6 +29,13 @@ class RelationshipInfo(BaseModel):
     table: str
     foreign_table: str
     attributes: str = ""
+
+
+class ForeignKeyInfo(BaseModel):
+    name: str
+    columns: list[str]  # child columns
+    foreign_table: str  # parent table
+    foreign_columns: list[str]  # parent columns
 
 
 class ControlInfo(BaseModel):

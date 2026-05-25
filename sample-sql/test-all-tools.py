@@ -3,196 +3,27 @@
 Tool Verification Script — All 41 MCP Tools Against Real Access Database
 """
 
-import subprocess
-import json
 import sys
 import os
 import re
 from datetime import datetime
 
 # ==============================================================================
-# Configuration
+# Shared helpers from test_helper.py
 # ==============================================================================
 
-BASE_URL = "http://172.19.208.1:8000"
-API_KEY = "test-key-123"
-DB_PATH = "D:/JMS/Limbo/excel-and-sql-book/data/db/helper.accdb"
-EXPORT_DIR = "C:/Users/MetalbolicX/tool-test-export"
-RESULTS_FILE = "sample-sql/test-all-tools-results.md"
-MCP_PATH = "/mcp"
+from test_helper import (init_session, curl_post, parse_sse_response, call_tool,
+                         extract_text_content, get_field, http_headers, record,
+                         check_server, BASE_URL, API_KEY, DB_PATH, EXPORT_DIR,
+                         MCP_PATH, RESULTS_FILE, RED, GREEN, YELLOW, CYAN, NC)
+import test_helper
 
-# Colors
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-YELLOW = '\033[0;33m'
-CYAN = '\033[0;36m'
-NC = '\033[0m'
-
-# Counters
-PASS = 0
-FAIL = 0
-SKIP = 0
-TOTAL = 0
-
-# Dynamic name caches
+# Dynamic name caches (test-helper.py owns SID and counters)
 FIRST_TABLE = ""
 FIRST_FORM = ""
 FIRST_REPORT = ""
 FIRST_MODULE = ""
 FIRST_MACRO = ""
-SID = ""
-
-# ==============================================================================
-# HTTP helpers
-# ==============================================================================
-
-def http_headers():
-    return {
-        "Authorization": f"Bearer {API_KEY}",
-        "Accept": "application/json, text/event-stream",
-        "Content-Type": "application/json",
-        "mcp-session-id": SID,
-    }
-
-def init_session():
-    global SID
-    body = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "tool-verification", "version": "1.0"},
-        },
-    }
-    proc = subprocess.run(
-        ["curl", "-s", "-D", "-", "--connect-timeout", "5", "-m", "10",
-         "-X", "POST", f"{BASE_URL}{MCP_PATH}",
-         "-H", f"Authorization: Bearer {API_KEY}",
-         "-H", "Accept: application/json, text/event-stream",
-         "-H", "Content-Type: application/json",
-         "-d", json.dumps(body)],
-        capture_output=True, text=True,
-    )
-    raw = proc.stdout.strip()
-    global SID
-    SID = ""
-    for line in raw.split("\n"):
-        if line.lower().startswith("mcp-session-id:"):
-            SID = line.split(":", 1)[1].strip()
-            break
-    if not SID:
-        print(f"{RED}FATAL: No session ID in response{NC}")
-        sys.exit(1)
-
-def curl_post(path, body_json, with_headers=False):
-    """POST JSON to endpoint. Returns dict (or dict+headers if with_headers=True)."""
-    cmd = [
-        "curl", "-s", "--connect-timeout", "5", "-m", "60",
-        "-X", "POST", f"{BASE_URL}{MCP_PATH}",
-        "-H", f"Authorization: Bearer {API_KEY}",
-        "-H", "Accept: application/json, text/event-stream",
-        "-H", "Content-Type: application/json",
-    ]
-    if SID:
-        cmd += ["-H", f"mcp-session-id: {SID}"]
-
-    proc = subprocess.run(
-        cmd + ["-d", json.dumps(body_json)],
-        capture_output=True, text=True,
-    )
-    raw = proc.stdout.strip()
-    if with_headers:
-        return raw
-    return parse_sse_response(raw)
-
-def parse_sse_response(raw):
-    """Parse SSE 'data: ...' format and return parsed JSON dict."""
-    if not raw:
-        return {}
-    if raw.startswith("{"):
-        # Plain JSON (no SSE wrapper)
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            return {}
-    # SSE format: "event: message\ndata: {...}"
-    if "data: " in raw:
-        json_str = raw.split("data: ", 1)[1].strip()
-        try:
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            return {}
-    return {}
-
-def call_tool(name, arguments=None):
-    """Call a tool and return the parsed response dict."""
-    if arguments is None:
-        arguments = {}
-    body = {
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {"name": name, "arguments": arguments},
-    }
-    resp = curl_post("/mcp", body)
-    return resp
-
-def extract_text_content(resp):
-    """Extract inner text from FastMCP response wrapper."""
-    try:
-        result = resp.get("result", {})
-        content = result.get("content", [{}])[0].get("text", "")
-        if content:
-            return json.loads(content)
-        return result
-    except (json.JSONDecodeError, IndexError, KeyError):
-        return resp
-
-def get_field(resp, *keys, default=None):
-    """Safely extract nested fields."""
-    try:
-        val = extract_text_content(resp)
-        for k in keys:
-            val = val[k]
-        return val
-    except (KeyError, IndexError, TypeError):
-        return default
-
-# ==============================================================================
-# Recording
-# ==============================================================================
-
-def record(num, name, status, result_detail):
-    global PASS, FAIL, SKIP, TOTAL
-    TOTAL += 1
-
-    if status == "PASS":
-        PASS += 1
-        mc_status = f"{GREEN}✅ PASS{NC}"
-        mc_result = f"{GREEN}{result_detail}{NC}"
-    elif status == "FAIL":
-        FAIL += 1
-        mc_status = f"{RED}❌ FAIL{NC}"
-        mc_result = f"{RED}{result_detail}{NC}"
-    elif status == "SKIP":
-        SKIP += 1
-        mc_status = f"{YELLOW}⏭️  SKIP{NC}"
-        mc_result = f"{YELLOW}{result_detail}{NC}"
-    elif status == "WARN":
-        mc_status = f"{YELLOW}⚠️  WARN{NC}"
-        mc_result = f"{YELLOW}{result_detail}{NC}"
-    else:
-        mc_status = status
-        mc_result = result_detail
-
-    print(f"  {mc_status}: {mc_result}")
-
-    # Markdown escape
-    md_result = str(result_detail).replace('"', '\\"')[:120]
-    with open(RESULTS_FILE, "a") as f:
-        f.write(f"| {num} | `{name}` | {status} | {md_result} |\n")
 
 # ==============================================================================
 # Main
@@ -200,7 +31,6 @@ def record(num, name, status, result_detail):
 
 def main():
     global FIRST_TABLE, FIRST_FORM, FIRST_REPORT, FIRST_MODULE, FIRST_MACRO
-    global PASS, FAIL, SKIP, TOTAL
 
     # Write header
     with open(RESULTS_FILE, "w") as f:
@@ -224,7 +54,7 @@ def main():
     # Init session
     print(f"{CYAN}[INIT]{NC} Acquiring session...")
     init_session()
-    print(f"  Session: {SID}")
+    print(f"  Session: {test_helper.SID}")
     print()
 
     # --------------------------------------------------------------------------
@@ -261,7 +91,7 @@ def main():
     resp = call_tool("get_tables", {})
     detail = extract_text_content(resp)
     tables = detail.get("tables", [])
-    FIRST_TABLE = (tables[0].get("table_name", "") if tables else "")
+    FIRST_TABLE = (tables[0].get("name", "") if tables else "")
     record(3, "get_tables", "PASS", f"{len(tables)} tables, first='{FIRST_TABLE}'")
 
     # 4. get_queries
@@ -646,10 +476,10 @@ def main():
     print("============================================")
     print("SUMMARY")
     print("============================================")
-    print(f"Total:  {TOTAL}")
-    print(f"Pass:   {GREEN}{PASS}{NC}")
-    print(f"Fail:   {RED}{FAIL}{NC}")
-    print(f"Skip:   {YELLOW}{SKIP}{NC}")
+    print(f"Total:  {test_helper.TOTAL}")
+    print(f"Pass:   {GREEN}{test_helper.PASS}{NC}")
+    print(f"Fail:   {RED}{test_helper.FAIL}{NC}")
+    print(f"Skip:   {YELLOW}{test_helper.SKIP}{NC}")
     print()
 
     with open(RESULTS_FILE, "a") as f:
@@ -658,16 +488,16 @@ def main():
 
 | Metric | Value |
 |--------|-------|
-| Total tools tested | {TOTAL} |
-| Passed | {PASS} |
-| Failed | {FAIL} |
-| Skipped / Expected-fail | {SKIP} |
+| Total tools tested | {test_helper.TOTAL} |
+| Passed | {test_helper.PASS} |
+| Failed | {test_helper.FAIL} |
+| Skipped / Expected-fail | {test_helper.SKIP} |
 """)
 
     print(f"Results written to {CYAN}{RESULTS_FILE}{NC}")
 
-    if FAIL > 0:
-        print(f"{RED}⚠️  {FAIL} tool(s) failed — review results{NC}")
+    if test_helper.FAIL > 0:
+        print(f"{RED}⚠️  {test_helper.FAIL} tool(s) failed — review results{NC}")
         sys.exit(0)  # Don't fail the run for documentation purposes
     else:
         print(f"{GREEN}✅ All tools passed!{NC}")

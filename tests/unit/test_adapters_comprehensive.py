@@ -169,6 +169,12 @@ class TestOdbcAdapterEdgeCases:
     def test_get_tables_returns_empty_when_not_connected(self):
         assert self.adapter.get_tables() == []
 
+    def test_generate_sql_returns_error_dict(self):
+        """OdbcAdapter.generate_sql returns error dict (COM-only operation)."""
+        result = self.adapter.generate_sql("/tmp/test.sql")
+        assert result["success"] is False
+        assert "ODBC" in result["error"]
+
 
 class TestOdbcAdapterTypeMapping:
     """Test OdbcAdapter._pyodbc_type_name() method."""

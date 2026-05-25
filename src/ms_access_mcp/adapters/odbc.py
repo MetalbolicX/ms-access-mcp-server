@@ -33,20 +33,34 @@ class OdbcAdapter(AccessAdapter):
         if not os.path.exists(db_path):
             return False
 
-        try:
-            # Try ACE OLEDB first (works for both .mdb and .accdb)
-            ext = os.path.splitext(db_path)[1].lower()
-            if ext == ".accdb":
-                conn_str = f"Provider={ACE_OLEDB_16};Data Source={db_path};"
-            else:
-                conn_str = f"Driver={ACCESS_DRIVER};DBQ={db_path};"
+        # Build connection string candidates: ACE_OLEDB_16 → ACE_OLEDB_12 → Driver
+        ext = os.path.splitext(db_path)[1].lower()
+        candidates: list[str] = []
+        if ext == ".accdb":
+            candidates = [
+                f"Provider={ACE_OLEDB_16};Data Source={db_path};",
+                f"Provider={ACE_OLEDB_12};Data Source={db_path};",
+                f"Driver={ACCESS_DRIVER};DBQ={db_path};",
+            ]
+        else:
+            candidates = [
+                f"Driver={ACCESS_DRIVER};DBQ={db_path};",
+                f"Provider={ACE_OLEDB_12};Data Source={db_path};",
+                f"Provider={ACE_OLEDB_16};Data Source={db_path};",
+            ]
 
-            self._conn = pyodbc.connect(conn_str, autocommit=True)
-            self._db_path = db_path
-            return True
-        except Exception:
-            self._cleanup()
-            return False
+        last_error: Exception | None = None
+        for conn_str in candidates:
+            try:
+                self._conn = pyodbc.connect(conn_str, autocommit=True)
+                self._db_path = db_path
+                return True
+            except Exception as e:
+                last_error = e
+                continue
+
+        self._cleanup()
+        return False
 
     def disconnect(self) -> None:
         """Disconnect from the Access database."""
@@ -406,6 +420,10 @@ class OdbcAdapter(AccessAdapter):
     def get_relationships(self) -> list[RelationshipInfo]:
         """Get relationships - not available via ODBC."""
         return []
+
+    def generate_sql(self, output_path: str) -> dict:
+        """Generate SQL DDL - not available via ODBC."""
+        return {"success": False, "error": "Not available via ODBC"}
 
     def execute_sql_script(self, script_path: str) -> dict:
         """Execute SQL script - not available via ODBC."""
