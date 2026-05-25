@@ -569,6 +569,27 @@ def save_database() -> dict:
     return result
 
 
+@mcp.tool()
+def delete_module(module_name: str) -> dict:
+    """Delete a VBA module from the database.
+
+    Args:
+        module_name: Name of the VBA module to delete
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.delete_module(module_name)
+        return {"success": result, "module": module_name}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ============================================================================
 # SYSTEM TABLE METADATA TOOLS
 # ============================================================================
@@ -1048,6 +1069,28 @@ def compact_repair(action: str, source_path: str, dest_path: str, keep_original:
     try:
         result = adapter.compact_repair(action, source_path, dest_path, keep_original)
         return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def copy_database(source: str, dest: str) -> dict:
+    """Copy an Access database file.
+
+    Args:
+        source: Path to source .accdb/.mdb file
+        dest: Path to destination file
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.copy_database(source, dest)
+        return {"success": result, "source": source, "dest": dest}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
