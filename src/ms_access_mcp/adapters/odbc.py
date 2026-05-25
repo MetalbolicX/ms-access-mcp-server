@@ -423,6 +423,10 @@ class OdbcAdapter(AccessAdapter):
         """Copy database file - not available via ODBC."""
         return False
 
+    def save_database(self) -> dict:
+        """Save VBA modules - not available via ODBC."""
+        return {"success": False, "error": "Not available via ODBC"}
+
     def export_macro_to_text(self, macro_name: str) -> str:
         """Export macro - not available via ODBC."""
         return ""

@@ -292,4 +292,54 @@ class TestWinComAdapterExecuteSqlScript:
         assert "success" in result
         assert "statements_executed" in result
         assert "error" in result
+
+
+class TestOdbcAdapterDeleteModule:
+    """Test that delete_module returns False for OdbcAdapter (COM-only)."""
+
+    def setup_method(self):
+        self.adapter = OdbcAdapter()
+
+    def test_delete_module_returns_false(self):
+        """OdbcAdapter.delete_module returns False (COM-only operation)."""
+        result = self.adapter.delete_module("any_module")
+        assert result is False
+
+
+class TestOdbcAdapterCopyDatabase:
+    """Test that copy_database returns False for OdbcAdapter (COM-only)."""
+
+    def setup_method(self):
+        self.adapter = OdbcAdapter()
+
+    def test_copy_database_returns_false(self):
+        """OdbcAdapter.copy_database returns False (COM-only operation)."""
+        result = self.adapter.copy_database("source.accdb", "dest.accdb")
+        assert result is False
+
+
+class TestOdbcAdapterSaveDatabase:
+    """Test that save_database returns error dict for OdbcAdapter (COM-only)."""
+
+    def setup_method(self):
+        self.adapter = OdbcAdapter()
+
+    def test_save_database_returns_error_dict(self):
+        """OdbcAdapter.save_database returns error dict (COM-only operation)."""
+        result = self.adapter.save_database()
+        assert result["success"] is False
+        assert "ODBC" in result["error"] or "not available" in result["error"].lower()
+
+
+class TestAccessAdapterProtocol:
+    """Test that the AccessAdapter protocol includes all expected methods."""
+
+    def test_delete_module_in_protocol(self):
+        assert hasattr(AccessAdapter, "delete_module")
+
+    def test_copy_database_in_protocol(self):
+        assert hasattr(AccessAdapter, "copy_database")
+
+    def test_save_database_in_protocol(self):
+        assert hasattr(AccessAdapter, "save_database")
         # engine is not present in early-return error cases
