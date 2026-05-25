@@ -42,8 +42,7 @@ class SchemaService:
         """Get all saved queries from the database."""
         if self._adapter is None:
             return []
-        # Stub implementation - requires COM
-        return []
+        return self._adapter.get_queries()
 
     def get_relationships(self) -> list[RelationshipInfo]:
         """Get all foreign key relationships."""

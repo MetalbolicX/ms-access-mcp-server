@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import queue
 import tempfile
@@ -6,6 +7,9 @@ import threading
 import concurrent.futures
 from typing import Optional, Callable, Any
 from .base import AccessAdapter
+
+# DAO DBEngine.Execute option flags
+DAO_DB_FAIL_ON_ERROR = 128  # dbFailOnError — raises exception if record operation fails
 from ..models.database import (
     TableInfo,
     FormInfo,
@@ -14,6 +18,8 @@ from ..models.database import (
     ModuleInfo,
     ControlInfo,
     RelationshipInfo,
+    QueryInfo,
+    LinkedTableInfo,
 )
 
 
@@ -199,8 +205,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[TableInfo]:
             tables: list[TableInfo] = []
             try:
-                dao = self._dispatcher._access_app.DAo
-                db = dao.DBEngine.OpenDatabase(self._dispatcher._db_path)
+                db = self._dispatcher._access_app.DBEngine.OpenDatabase(self._dispatcher._db_path)
                 for i in range(db.TableDefs.Count):
                     tdef = db.TableDefs(i)
                     if tdef.Name.startswith("MSys") or tdef.Name.startswith("~"):
@@ -358,16 +363,26 @@ class WinComAdapter(AccessAdapter):
                 except Exception:
                     pass
 
-    def execute_query(self, sql: str, params: Optional[list] = None) -> list[dict]:
-        """Execute a SQL query and return results."""
-        if not self.is_connected():
-            return []
+    def execute_query(self, sql: str, params: Optional[list] = None) -> dict:
+        """Execute a SQL query and return results.
 
-        def _do() -> list[dict]:
+        Note: params is not supported in WinComAdapter (DAO OpenRecordset does not
+        support parameterized queries). SQL must be sanitized before calling.
+        """
+        if not self.is_connected():
+            return {"success": False, "rows": [], "count": 0, "columns": [], "error": "Not connected"}
+
+        def _do() -> dict:
             results: list[dict] = []
+            columns: list[str] = []
             try:
                 rs = self._dispatcher._current_db.OpenRecordset(sql)
                 if rs.RecordCount > 0 and not rs.EOF:
+                    rs.MoveFirst()
+                    # Collect column names first
+                    for i in range(rs.Fields.Count):
+                        columns.append(rs.Fields(i).Name)
+                    # Then collect rows
                     rs.MoveFirst()
                     while not rs.EOF:
                         row = {}
@@ -377,9 +392,268 @@ class WinComAdapter(AccessAdapter):
                         results.append(row)
                         rs.MoveNext()
                 rs.Close()
+                return {"success": True, "rows": results, "count": len(results), "columns": columns}
+            except Exception as e:
+                return {"success": False, "rows": [], "count": 0, "columns": [], "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def insert_data(self, table_name: str, data: dict | list[dict]) -> dict:
+        """Insert one or more rows into a table.
+
+        Args:
+            table_name: Name of the table
+            data: A single dict for one row, or a list of dicts for multiple rows
+
+        Returns:
+            dict with success=True and affected=number of rows inserted
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        if isinstance(data, dict):
+            data = [data]
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher._current_db
+                for row in data:
+                    cols = ", ".join(f"[{c}]" for c in row.keys())
+                    vals = ", ".join(f"?" for _ in row.values())
+                    sql = f"INSERT INTO [{table_name}] ({cols}) VALUES ({vals})"
+                    db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True, "affected": len(data)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def update_data(self, table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+        """Update rows in a table.
+
+        Args:
+            table_name: Name of the table
+            set_dict: Dict of column=value pairs to set
+            where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+
+        Returns:
+            dict with success=True and affected=number of rows updated
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher._current_db
+                set_clause = ", ".join(f"[{c}] = ?" for c in set_dict.keys())
+                sql = f"UPDATE [{table_name}] SET {set_clause}"
+
+                params = list(set_dict.values())
+
+                if where_dict is not None:
+                    if isinstance(where_dict, str):
+                        sql += f" WHERE {where_dict}"
+                    else:
+                        where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
+                        sql += f" WHERE {where_clause}"
+                        params.extend(where_dict.values())
+
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                affected = db.RecordsAffected
+                return {"success": True, "affected": affected}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_data(self, table_name: str, where_dict: dict | str | None = None) -> dict:
+        """Delete rows from a table.
+
+        Args:
+            table_name: Name of the table
+            where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+
+        Returns:
+            dict with success=True and affected=number of rows deleted
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher._current_db
+                sql = f"DELETE FROM [{table_name}]"
+
+                params: list = []
+                if where_dict is not None:
+                    if isinstance(where_dict, str):
+                        sql += f" WHERE {where_dict}"
+                    else:
+                        where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
+                        sql += f" WHERE {where_clause}"
+                        params.extend(where_dict.values())
+
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                affected = db.RecordsAffected
+                return {"success": True, "affected": affected}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # QUERY CRUD OPERATIONS
+    # ========================================================================
+
+    def get_queries(self) -> list[QueryInfo]:
+        """Get all saved queries from the database."""
+        if not self.is_connected():
+            return []
+
+        def _do() -> list[QueryInfo]:
+            queries: list[QueryInfo] = []
+            try:
+                db = self._dispatcher._current_db
+                for i in range(db.QueryDefs.Count):
+                    qdef = db.QueryDefs(i)
+                    if qdef.Name.startswith("~"):
+                        continue  # Skip system queries
+                    queries.append(QueryInfo(
+                        name=qdef.Name,
+                        sql=qdef.sql,
+                        type=self._query_type_name(qdef.Type),
+                    ))
             except Exception:
                 pass
-            return results
+            return queries
+
+        return self._dispatcher.call(_do)
+
+    def _query_type_name(self, query_type: int) -> str:
+        """Map DAO QueryDef Type integer to readable name."""
+        type_map = {
+            0: "select",
+            1: "action",
+            2: "crosstab",
+            4: "update",
+            5: "append",
+            6: "delete",
+            7: "make-table",
+            8: "data-definition",
+        }
+        return type_map.get(query_type, f"unknown({query_type})")
+
+    def create_query(self, name: str, sql: str) -> dict:
+        """Create a new stored query."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                qdef = self._dispatcher._current_db.CreateQueryDef(name, sql)
+                self._dispatcher._current_db.QueryDefs.Append(qdef)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def set_query_sql(self, name: str, sql: str) -> dict:
+        """Update SQL of an existing query."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                qdef = self._dispatcher._current_db.QueryDefs(name)
+                qdef.sql = sql
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_query(self, name: str) -> dict:
+        """Delete a stored query."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                self._dispatcher._current_db.QueryDefs.Delete(name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def create_table(self, table_name: str, columns: list[dict]) -> dict:
+        """Create a new table in the database.
+
+        Args:
+            table_name: Name of the table to create
+            columns: List of dicts with keys: name (str), type (str),
+                     size (int, optional), nullable (bool, optional)
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        DAO_TYPE_MAP = {
+            "Text": 10,
+            "Long Integer": 4,
+            "Integer": 3,
+            "Boolean": 1,
+            "Date/Time": 8,
+            "Currency": 5,
+            "Memo": 12,
+            "Double": 7,
+            "Single": 6,
+            "Binary": 9,
+            "GUID": 15,
+            "Byte": 2,
+        }
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher._current_db
+                tdef = db.CreateTableDef(table_name)
+
+                for col in columns:
+                    name = col["name"]
+                    field_type = DAO_TYPE_MAP.get(col["type"], 10)
+                    size = col.get("size", 0)
+                    fld = tdef.CreateField(name, field_type, size)
+                    fld.Required = not col.get("nullable", True)
+                    tdef.Fields.Append(fld)
+
+                db.TableDefs.Append(tdef)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_table(self, table_name: str) -> dict:
+        """Delete a table from the database.
+
+        Args:
+            table_name: Name of the table to delete
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                self._dispatcher._current_db.TableDefs.Delete(table_name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
         return self._dispatcher.call(_do)
 
@@ -437,10 +711,6 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     # ========================================================================
-    # FORM OPERATIONS
-    # ========================================================================
-
-# ========================================================================
     # FORM OPERATIONS
     # ========================================================================
 
@@ -872,6 +1142,33 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
+    def delete_module(self, module_name: str) -> bool:
+        """Delete a VBA module from the database.
+
+        Args:
+            module_name: Name of the module to delete
+
+        Returns:
+            True if deleted, False if not found or error
+        """
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
+            try:
+                for comp in vb_project.VBComponents:
+                    if comp.Name == module_name:
+                        vb_project.VBComponents.Remove(comp)
+                        return True
+                return False
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
     def compile_vba(self) -> bool:
         """Compile VBA code."""
         if not self.is_connected():
@@ -904,8 +1201,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[TableInfo]:
             tables: list[TableInfo] = []
             try:
-                dao = self._dispatcher._access_app.DAo
-                db = dao.DBEngine.OpenDatabase(self._dispatcher._db_path)
+                db = self._dispatcher._current_db
                 for i in range(db.TableDefs.Count):
                     tdef = db.TableDefs(i)
                     if tdef.Name.startswith("MSys"):
@@ -920,7 +1216,6 @@ class WinComAdapter(AccessAdapter):
                                 "allow_zero_length": bool(fld.AllowZeroLength),
                             })
                         tables.append(TableInfo(name=tdef.Name, fields=fields, record_count=0))
-                db.Close()
             except Exception:
                 pass
             return tables
@@ -939,8 +1234,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[RelationshipInfo]:
             relationships: list[RelationshipInfo] = []
             try:
-                dao = self._dispatcher._access_app.DAo
-                db = dao.DBEngine.OpenDatabase(self._dispatcher._db_path)
+                db = self._dispatcher._current_db
                 for i in range(db.Relations.Count):
                     rel = db.Relations(i)
                     if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
@@ -951,7 +1245,6 @@ class WinComAdapter(AccessAdapter):
                         foreign_table=rel.ForeignTable,
                         attributes=str(rel.Attributes),
                     ))
-                db.Close()
             except Exception:
                 pass
             return relationships
@@ -1079,7 +1372,7 @@ class WinComAdapter(AccessAdapter):
 
                     # DAO path (fallback for DDL or when ADO unavailable)
                     if dao_db is None:
-                        dao_db = self._dispatcher._access_app.Dao.DBEngine.OpenDatabase(self._dispatcher._db_path)
+                        dao_db = self._dispatcher._access_app.DBEngine.OpenDatabase(self._dispatcher._db_path)
                     dao_db.Execute(stmt, 128)  # dbFailOnError
                     executed += 1
 
@@ -1105,6 +1398,273 @@ class WinComAdapter(AccessAdapter):
                         pass
 
         return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # LINKED TABLES (DAO TableDefs)
+    # ========================================================================
+
+    def get_linked_tables(self) -> dict:
+        """Get all linked tables from the database.
+
+        Linked tables are identified by the dbLinkAttachedTable attribute (0x80000000).
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            linked_tables: list[dict] = []
+            try:
+                db = self._dispatcher._current_db
+                for i in range(db.TableDefs.Count):
+                    tdef = db.TableDefs(i)
+                    if tdef.Attributes & 0x80000000:
+                        connect_str = tdef.Connect or ""
+                        if connect_str.startswith("ODBC"):
+                            table_type = "ODBC"
+                        elif connect_str.startswith("Access"):
+                            table_type = "Access"
+                        elif connect_str.startswith("Excel"):
+                            table_type = "Excel"
+                        else:
+                            table_type = "ODBC"
+                        linked_tables.append({
+                            "name": tdef.Name,
+                            "source_table": tdef.SourceTableName,
+                            "connect_string": connect_str,
+                            "type": table_type,
+                        })
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+            return {"success": True, "linked_tables": linked_tables}
+
+        return self._dispatcher.call(_do)
+
+    def create_linked_table(self, name: str, source_table: str, connect_string: str) -> dict:
+        """Create a linked table definition.
+
+        Args:
+            name: Name for the linked table in the Access database
+            source_table: Name of the remote table
+            connect_string: ODBC or other connection string
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher._current_db
+                tdef = db.CreateTableDef(name)
+                tdef.SourceTableName = source_table
+                tdef.Connect = connect_string
+                tdef.Attributes = 0x80000000  # dbLinkAttachedTable
+                db.TableDefs.Append(tdef)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def refresh_linked_table(self, name: str) -> dict:
+        """Refresh the link for a linked table.
+
+        Args:
+            name: Name of the linked table
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                tdef = self._dispatcher._current_db.TableDefs(name)
+                tdef.RefreshLink()
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def unlink_table(self, name: str) -> dict:
+        """Unlink (delete) a linked table definition.
+
+        Args:
+            name: Name of the linked table to unlink
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                self._dispatcher._current_db.TableDefs.Delete(name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # COMPACT/REPAIR (DAO DBEngine)
+    # ========================================================================
+
+    def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
+        """Compact or repair an Access database file.
+
+        Args:
+            action: "compact" or "repair"
+            source_path: Path to the source .accdb file
+            dest_path: Path for the output file (for compact) or same as source (for repair)
+            keep_original: If True, keep original as .bak before compacting
+
+        Returns:
+            dict with success=True, output_path, stats (original_size, compacted_size)
+            or success=False and error message
+        """
+        if action not in ("compact", "repair"):
+            return {"success": False, "error": f"Invalid action '{action}'. Must be 'compact' or 'repair'."}
+
+        if not os.path.exists(source_path):
+            return {"success": False, "error": f"Source file not found: {source_path}"}
+
+        def _do() -> dict:
+            import shutil
+            try:
+                original_size = os.path.getsize(source_path)
+
+                if action == "compact":
+                    if keep_original:
+                        backup_path = source_path + ".bak"
+                        if os.path.exists(backup_path):
+                            os.unlink(backup_path)
+                        shutil.copy2(source_path, backup_path)
+
+                    dbe = self._dispatcher._access_app.DBEngine
+                    dbe.CompactDatabase(source_path, dest_path)
+                    compacted_size = os.path.getsize(dest_path)
+
+                    return {
+                        "success": True,
+                        "output_path": dest_path,
+                        "stats": {
+                            "original_size": original_size,
+                            "compacted_size": compacted_size,
+                        },
+                    }
+
+                else:  # repair
+                    temp_path = source_path + ".repair_tmp"
+                    try:
+                        if keep_original:
+                            backup_path = source_path + ".bak"
+                            if os.path.exists(backup_path):
+                                os.unlink(backup_path)
+                            shutil.copy2(source_path, backup_path)
+
+                        dbe = self._dispatcher._access_app.DBEngine
+                        dbe.CompactDatabase(source_path, temp_path)
+                        os.replace(temp_path, source_path)
+                        repaired_size = os.path.getsize(source_path)
+
+                        return {
+                            "success": True,
+                            "output_path": source_path,
+                            "stats": {
+                                "original_size": original_size,
+                                "compacted_size": repaired_size,
+                            },
+                        }
+                    except Exception:
+                        if os.path.exists(temp_path):
+                            try:
+                                os.unlink(temp_path)
+                            except Exception:
+                                pass
+                        raise
+
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # DATA EXPORT (CSV/JSON)
+    # ========================================================================
+
+    def export_table_csv(self, table_or_query: str, file_path: str, delimiter: str = ",", header: bool = True) -> dict:
+        """Export a table or query to a CSV file.
+
+        Args:
+            table_or_query: Name of the table or query to export
+            file_path: Path to the output CSV file
+            delimiter: Field delimiter (default ',')
+            header: Whether to write header row (default True)
+
+        Returns:
+            dict with success=True, rows_exported=N, file_path
+        """
+        import csv
+        from pathlib import Path
+
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        result = self.execute_query(f"SELECT * FROM [{table_or_query}]")
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Query failed")}
+
+        rows = result.get("rows", [])
+        columns = result.get("columns", [])
+
+        try:
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=columns, delimiter=delimiter)
+                if header:
+                    writer.writeheader()
+                writer.writerows(rows)
+
+            return {"success": True, "rows_exported": len(rows), "file_path": file_path}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def export_query_json(self, query_name: str, file_path: str, pretty: bool = False) -> dict:
+        """Export a query to a JSON file.
+
+        Args:
+            query_name: Name of the query to export
+            file_path: Path to the output JSON file
+            pretty: Whether to format JSON with indentation (default False)
+
+        Returns:
+            dict with success=True, rows_exported=N, file_path
+        """
+        import json
+        from pathlib import Path
+
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        result = self.execute_query(f"SELECT * FROM [{query_name}]")
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Query failed")}
+
+        rows = result.get("rows", [])
+
+        try:
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(rows, f, indent=2 if pretty else None)
+
+            return {"success": True, "rows_exported": len(rows), "file_path": file_path}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     @staticmethod
     def _strip_sql_comments(sql: str) -> str:
@@ -1246,3 +1806,23 @@ class WinComAdapter(AccessAdapter):
             "output_dir": output_dir,
             "file_count": total,
         }
+
+    # ========================================================================
+    # DATABASE FILE COPY
+    # ========================================================================
+
+    def copy_database(self, source: str, dest: str) -> bool:
+        """Copy a database file using shutil.copy2.
+
+        Args:
+            source: Path to source .accdb/.mdb file
+            dest: Path to destination file
+
+        Returns:
+            True if copy succeeded, False otherwise
+        """
+        try:
+            shutil.copy2(source, dest)
+            return True
+        except Exception:
+            return False

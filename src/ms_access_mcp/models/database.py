@@ -55,3 +55,19 @@ class ModuleInfo(BaseModel):
     name: str
     type: str = "Module"
     code: str = ""
+
+
+class QueryResult(BaseModel):
+    """Result of a query execution."""
+    success: bool
+    rows: list[dict]
+    count: int
+    columns: list[str]
+    error: str | None = None
+
+
+class LinkedTableInfo(BaseModel):
+    name: str
+    source_table: str
+    connect_string: str
+    type: str = "ODBC"

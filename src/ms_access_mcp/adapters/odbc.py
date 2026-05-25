@@ -10,6 +10,8 @@ from ..models.database import (
     ModuleInfo,
     ControlInfo,
     RelationshipInfo,
+    QueryInfo,
+    LinkedTableInfo,
 )
 
 
@@ -75,8 +77,8 @@ class OdbcAdapter(AccessAdapter):
 
     def _columns_query(self, table_name: str) -> str:
         """SQL to get column metadata for a table."""
-        # Escape brackets in table name for Access SQL safety
-        safe_name = table_name.replace("]", "]")
+        # Escape brackets in table name for SQL safety
+        safe_name = table_name.replace("]", "]]")
         return f"""
             SELECT
                 column_name AS name,
@@ -172,11 +174,12 @@ class OdbcAdapter(AccessAdapter):
         }
         return type_map.get(type_upper, sql_type)
 
-    def execute_query(self, sql: str, params: Optional[list] = None) -> list[dict]:
+    def execute_query(self, sql: str, params: Optional[list] = None) -> dict:
         """Execute a SQL query and return results."""
         if not self.is_connected():
-            return []
+            return {"success": False, "rows": [], "count": 0, "columns": [], "error": "Not connected"}
 
+        columns: list[str] = []
         results: list[dict] = []
         try:
             cursor = self._conn.cursor()
@@ -190,10 +193,108 @@ class OdbcAdapter(AccessAdapter):
                 results.append(dict(zip(columns, row)))
 
             cursor.close()
-        except Exception:
-            pass
+            return {"success": True, "rows": results, "count": len(results), "columns": columns}
+        except Exception as e:
+            return {"success": False, "rows": [], "count": 0, "columns": [], "error": str(e)}
 
-        return results
+    def insert_data(self, table_name: str, data: dict | list[dict]) -> dict:
+        """Insert one or more rows into a table.
+
+        Args:
+            table_name: Name of the table
+            data: A single dict for one row, or a list of dicts for multiple rows
+
+        Returns:
+            dict with success=True and affected=number of rows inserted
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        if isinstance(data, dict):
+            data = [data]
+
+        try:
+            cursor = self._conn.cursor()
+            total_affected = 0
+            for row in data:
+                cols = ", ".join(f"[{c}]" for c in row.keys())
+                vals = ", ".join("?" for _ in row.values())
+                sql = f"INSERT INTO [{table_name}] ({cols}) VALUES ({vals})"
+                cursor.execute(sql, tuple(row.values()))
+                total_affected += cursor.rowcount
+            cursor.close()
+            return {"success": True, "affected": total_affected}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def update_data(self, table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+        """Update rows in a table.
+
+        Args:
+            table_name: Name of the table
+            set_dict: Dict of column=value pairs to set
+            where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+
+        Returns:
+            dict with success=True and affected=number of rows updated
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            cursor = self._conn.cursor()
+            set_clause = ", ".join(f"[{c}] = ?" for c in set_dict.keys())
+            sql = f"UPDATE [{table_name}] SET {set_clause}"
+
+            params = list(set_dict.values())
+
+            if where_dict is not None:
+                if isinstance(where_dict, str):
+                    sql += f" WHERE {where_dict}"
+                else:
+                    where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
+                    sql += f" WHERE {where_clause}"
+                    params.extend(where_dict.values())
+
+            cursor.execute(sql, tuple(params))
+            affected = cursor.rowcount
+            cursor.close()
+            return {"success": True, "affected": affected}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_data(self, table_name: str, where_dict: dict | str | None = None) -> dict:
+        """Delete rows from a table.
+
+        Args:
+            table_name: Name of the table
+            where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+
+        Returns:
+            dict with success=True and affected=number of rows deleted
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            cursor = self._conn.cursor()
+            sql = f"DELETE FROM [{table_name}]"
+
+            params: list = []
+            if where_dict is not None:
+                if isinstance(where_dict, str):
+                    sql += f" WHERE {where_dict}"
+                else:
+                    where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
+                    sql += f" WHERE {where_clause}"
+                    params.extend(where_dict.values())
+
+            cursor.execute(sql, tuple(params))
+            affected = cursor.rowcount
+            cursor.close()
+            return {"success": True, "affected": affected}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def launch_access(self, visible: bool = False) -> None:
         """Launch Access UI - not supported via ODBC."""
@@ -272,6 +373,7 @@ class OdbcAdapter(AccessAdapter):
 
     def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
         """Add VBA procedure - not available via ODBC."""
+        return False
 
     def compile_vba(self) -> bool:
         """Compile VBA - not available via ODBC."""
@@ -309,17 +411,17 @@ class OdbcAdapter(AccessAdapter):
         """Execute SQL script - not available via ODBC."""
         raise NotImplementedError("execute_sql_script requires COM (WinComAdapter)")
 
-    def export_form_to_text(self, form_name: str) -> str:
-        """Export form - not available via ODBC."""
-        return ""
-
-    def export_report_to_text(self, report_name: str) -> str:
-        """Export report - not available via ODBC."""
-        return ""
-
     def export_module_to_text(self, module_name: str) -> str:
         """Export module - not available via ODBC."""
         return ""
+
+    def delete_module(self, module_name: str) -> bool:
+        """Delete module - not available via ODBC."""
+        return False
+
+    def copy_database(self, source: str, dest: str) -> bool:
+        """Copy database file - not available via ODBC."""
+        return False
 
     def export_macro_to_text(self, macro_name: str) -> str:
         """Export macro - not available via ODBC."""
@@ -328,3 +430,256 @@ class OdbcAdapter(AccessAdapter):
     def export_all_versioning(self, output_dir: str) -> dict:
         """Export versioning - not available via ODBC."""
         raise NotImplementedError("export_all_versioning requires COM (WinComAdapter)")
+
+    # ========================================================================
+    # LINKED TABLES (not available via ODBC)
+    # ========================================================================
+
+    def get_linked_tables(self) -> dict:
+        """Get linked tables - not available via ODBC."""
+        return {"success": False, "error": "Not available via ODBC"}
+
+    def create_linked_table(self, name: str, source_table: str, connect_string: str) -> dict:
+        """Create linked table - not available via ODBC."""
+        return {"success": False, "error": "Not available via ODBC"}
+
+    def refresh_linked_table(self, name: str) -> dict:
+        """Refresh linked table - not available via ODBC."""
+        return {"success": False, "error": "Not available via ODBC"}
+
+    def unlink_table(self, name: str) -> dict:
+        """Unlink table - not available via ODBC."""
+        return {"success": False, "error": "Not available via ODBC"}
+
+    # ========================================================================
+    # COMPACT/REPAIR (not available via ODBC)
+    # ========================================================================
+
+    def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
+        """Compact or repair database - not available via ODBC."""
+        if action not in ("compact", "repair"):
+            return {"success": False, "error": f"Invalid action '{action}'. Must be 'compact' or 'repair'."}
+        return {"success": False, "error": "Not available via ODBC"}
+
+    # ========================================================================
+    # QUERY CRUD OPERATIONS
+    # ========================================================================
+
+    def get_queries(self) -> list[QueryInfo]:
+        """Get all saved queries (stored views) from the database."""
+        if not self.is_connected():
+            return []
+
+        queries: list[QueryInfo] = []
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute("""
+                SELECT TABLE_NAME, VIEW_DEFINITION
+                FROM INFORMATION_SCHEMA.VIEWS
+                WHERE TABLE_SCHEMA = 'dbo'
+                AND TABLE_NAME NOT LIKE '~%'
+                ORDER BY TABLE_NAME
+            """)
+            for row in cursor.fetchall():
+                queries.append(QueryInfo(
+                    name=row[0],
+                    sql=row[1],
+                    type="select",  # Views are typically select queries
+                ))
+            cursor.close()
+        except Exception:
+            pass
+        return queries
+
+    def create_query(self, name: str, sql: str) -> dict:
+        """Create a new stored query (Access querydef implemented as SQL view)."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(f"CREATE VIEW [{name}] AS {sql}")
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def set_query_sql(self, name: str, sql: str) -> dict:
+        """Update SQL of an existing query (recreate the view)."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            cursor = self._conn.cursor()
+            # Drop existing view first
+            cursor.execute(f"DROP VIEW [{name}]")
+            # Create new view with updated SQL
+            cursor.execute(f"CREATE VIEW [{name}] AS {sql}")
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_query(self, name: str) -> dict:
+        """Delete a stored query (drop the view)."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(f"DROP VIEW [{name}]")
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def create_table(self, table_name: str, columns: list[dict]) -> dict:
+        """Create a new table in the database.
+
+        Args:
+            table_name: Name of the table to create
+            columns: List of dicts with keys: name (str), type (str),
+                     size (int, optional), nullable (bool, optional)
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        ODBC_TYPE_MAP = {
+            "Text": "VARCHAR",
+            "Long Integer": "INT",
+            "Integer": "SMALLINT",
+            "Boolean": "BIT",
+            "Date/Time": "DATETIME",
+            "Currency": "MONEY",
+            "Memo": "TEXT",
+            "Double": "FLOAT",
+            "Single": "REAL",
+            "Binary": "VARBINARY",
+        }
+
+        col_defs = []
+        for col in columns:
+            name = col["name"]
+            odbc_type = ODBC_TYPE_MAP.get(col["type"], "VARCHAR")
+            size = col.get("size", 255) if col["type"] == "Text" else 0
+            nullable = col.get("nullable", True)
+
+            if size > 0 and col["type"] in ("Text",):
+                col_def = f"[{name}] {odbc_type}({size})"
+            elif odbc_type in ("VARCHAR",):
+                col_def = f"[{name}] {odbc_type}({size or 255})"
+            else:
+                col_def = f"[{name}] {odbc_type}"
+
+            if not nullable:
+                col_def += " NOT NULL"
+            else:
+                col_def += " NULL"
+
+            col_defs.append(col_def)
+
+        ddl = f"CREATE TABLE [{table_name}] ({', '.join(col_defs)})"
+
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(ddl)
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_table(self, table_name: str) -> dict:
+        """Delete a table from the database.
+
+        Args:
+            table_name: Name of the table to delete
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            cursor = self._conn.cursor()
+            cursor.execute(f"DROP TABLE [{table_name}]")
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    # ========================================================================
+    # DATA EXPORT (CSV/JSON)
+    # ========================================================================
+
+    def export_table_csv(self, table_or_query: str, file_path: str, delimiter: str = ",", header: bool = True) -> dict:
+        """Export a table or query to a CSV file.
+
+        Args:
+            table_or_query: Name of the table or query to export
+            file_path: Path to the output CSV file
+            delimiter: Field delimiter (default ',')
+            header: Whether to write header row (default True)
+
+        Returns:
+            dict with success=True, rows_exported=N, file_path
+        """
+        import csv
+        from pathlib import Path
+
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        result = self.execute_query(f"SELECT * FROM [{table_or_query}]")
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Query failed")}
+
+        rows = result.get("rows", [])
+        columns = result.get("columns", [])
+
+        try:
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=columns, delimiter=delimiter)
+                if header:
+                    writer.writeheader()
+                writer.writerows(rows)
+
+            return {"success": True, "rows_exported": len(rows), "file_path": file_path}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def export_query_json(self, query_name: str, file_path: str, pretty: bool = False) -> dict:
+        """Export a query to a JSON file.
+
+        Args:
+            query_name: Name of the query to export
+            file_path: Path to the output JSON file
+            pretty: Whether to format JSON with indentation (default False)
+
+        Returns:
+            dict with success=True, rows_exported=N, file_path
+        """
+        import json
+        from pathlib import Path
+
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        result = self.execute_query(f"SELECT * FROM [{query_name}]")
+        if not result.get("success"):
+            return {"success": False, "error": result.get("error", "Query failed")}
+
+        rows = result.get("rows", [])
+
+        try:
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(rows, f, indent=2 if pretty else None)
+
+            return {"success": True, "rows_exported": len(rows), "file_path": file_path}
+        except Exception as e:
+            return {"success": False, "error": str(e)}

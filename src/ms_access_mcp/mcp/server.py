@@ -5,6 +5,7 @@ from ..services.com_automation import COMAutomationService
 from ..adapters.wincom import WinComAdapter
 from ..adapters.odbc import OdbcAdapter
 from ..services.migration import MigrationService
+from ..services.dev_copy_service import DevCopyService
 from ..config import ServerConfig
 from ..auth import ApiKeyMiddleware
 from ..path_guard import PathGuard
@@ -17,6 +18,7 @@ connection_service = ConnectionService()
 schema_service = SchemaService()
 com_automation_service = COMAutomationService()
 migration_service = MigrationService()
+dev_copy_service = DevCopyService()
 
 # Lazily initialized config and path guard (only for HTTP mode via serve command)
 _config: ServerConfig | None = None
@@ -107,13 +109,6 @@ def get_table_schema(table_name: str) -> dict:
 
 
 @mcp.tool()
-def get_queries() -> dict:
-    """Get all saved queries from the database."""
-    queries = schema_service.get_queries()
-    return {"success": True, "queries": [q.model_dump() for q in queries], "count": len(queries)}
-
-
-@mcp.tool()
 def get_relationships() -> dict:
     """Get all foreign key relationships."""
     relationships = schema_service.get_relationships()
@@ -122,6 +117,271 @@ def get_relationships() -> dict:
         "relationships": [r.model_dump() for r in relationships],
         "count": len(relationships),
     }
+
+
+@mcp.tool()
+def get_queries() -> dict:
+    """Get all saved queries from the database."""
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        queries = adapter.get_queries()
+        return {"success": True, "queries": [q.model_dump() for q in queries], "count": len(queries)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def create_query(name: str, sql: str) -> dict:
+    """
+    Create a stored query.
+
+    Args:
+        name: Name of the query to create
+        sql: SQL statement for the query
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.create_query(name, sql)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def set_query_sql(name: str, sql: str) -> dict:
+    """
+    Update SQL of an existing query.
+
+    Args:
+        name: Name of the existing query
+        sql: New SQL statement
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.set_query_sql(name, sql)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def delete_query(name: str) -> dict:
+    """
+    Delete a stored query.
+
+    Args:
+        name: Name of the query to delete
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.delete_query(name)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def create_table(table_name: str, columns: list[dict]) -> dict:
+    """
+    Create a new table in the connected database.
+
+    Args:
+        table_name: Name of the table to create
+        columns: List of column definitions as dicts with keys:
+                 - name (str): Column name
+                 - type (str): Data type (Text, Long Integer, Integer, Boolean,
+                   Date/Time, Currency, Memo, Double, Single, Binary)
+                 - size (int, optional): Size for Text type (default 255)
+                 - nullable (bool, optional): Whether column allows NULL (default True)
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.create_table(table_name, columns)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def delete_table(table_name: str) -> dict:
+    """
+    Delete a table from the connected database.
+
+    Args:
+        table_name: Name of the table to delete
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.delete_table(table_name)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def query_data(sql: str, params: list | None = None) -> dict:
+    """
+    Execute SQL query and return results.
+
+    Args:
+        sql: SQL query to execute
+        params: Optional list of parameters for parameterized queries
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.execute_query(sql, params)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def insert_data(table_name: str, data: dict | list[dict]) -> dict:
+    """
+    Insert one or more rows into a table.
+
+    Args:
+        table_name: Name of the table
+        data: A single dict for one row, or a list of dicts for multiple rows
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.insert_data(table_name, data)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+    """
+    Update rows in a table.
+
+    Args:
+        table_name: Name of the table
+        set_dict: Dict of column=value pairs to set
+        where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.update_data(table_name, set_dict, where_dict)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def delete_data(table_name: str, where_dict: dict | str | None = None) -> dict:
+    """
+    Delete rows from a table.
+
+    Args:
+        table_name: Name of the table
+        where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.delete_data(table_name, where_dict)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = ",", header: bool = True) -> dict:
+    """
+    Export a table or query to a CSV file.
+
+    Args:
+        table_or_query_name: Name of the table or query to export
+        file_path: Path to the output CSV file
+        delimiter: Field delimiter (default ',')
+        header: Whether to write header row (default True)
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.export_table_csv(table_or_query_name, file_path, delimiter, header)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def export_query_json(query_name: str, file_path: str, pretty: bool = False) -> dict:
+    """
+    Export a query to a JSON file.
+
+    Args:
+        query_name: Name of the query to export
+        file_path: Path to the output JSON file
+        pretty: Whether to format JSON with indentation (default False)
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.export_query_json(query_name, file_path, pretty)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 # ============================================================================
@@ -619,6 +879,94 @@ def get_er_diagram() -> dict:
     }
 
 
+# ============================================================================
+# LINKED TABLE TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def get_linked_tables() -> dict:
+    """Get all linked tables from the connected database.
+
+    Linked tables connect to external data sources (ODBC, Access, Excel, etc.)
+    via connection strings stored in the TableDef's Connect property.
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.get_linked_tables()
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def create_linked_table(name: str, source_table: str, connect_string: str) -> dict:
+    """Create a linked table definition.
+
+    Args:
+        name: Name for the linked table in the Access database
+        source_table: Name of the remote table to link to
+        connect_string: ODBC or other connection string (e.g., "ODBC;DSN=MyDSN")
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.create_linked_table(name, source_table, connect_string)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def refresh_linked_table(name: str) -> dict:
+    """Refresh the link for a linked table.
+
+    Useful when the remote table schema has changed.
+
+    Args:
+        name: Name of the linked table to refresh
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.refresh_linked_table(name)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def unlink_table(name: str) -> dict:
+    """Unlink (delete) a linked table definition.
+
+    This removes the linked table entry from the database without affecting
+    the remote data source.
+
+    Args:
+        name: Name of the linked table to unlink
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.unlink_table(name)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def run_http(host: str = "127.0.0.1", port: int = 8000, transport: str = "http") -> None:
     """Run the MCP server with HTTP transport and auth.
 
@@ -629,3 +977,266 @@ def run_http(host: str = "127.0.0.1", port: int = 8000, transport: str = "http")
     """
     _init_http_config()
     mcp.run(transport=transport, host=host, port=port)
+
+
+# ============================================================================
+# COMPACT/REPAIR TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def compact_repair(action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
+    """Compact or repair an Access database file.
+
+    Args:
+        action: "compact" to compact to a new file, or "repair" to compact in place
+        source_path: Path to the .accdb source file
+        dest_path: Path for the output file (for compact) or same as source (for repair)
+        keep_original: If True, keep original as .bak backup (default True)
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.compact_repair(action, source_path, dest_path, keep_original)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# TEXT BACKUP & RESTORE TOOLS (VBA Modules & Forms)
+# ============================================================================
+
+
+@mcp.tool()
+def export_module_backup(module_name: str, backup_dir: str | None = None) -> dict:
+    """Export a VBA module's code to a .bas text file.
+
+    Args:
+        module_name: Name of the VBA module to export
+        backup_dir: Optional custom backup directory (default: {tempdir}/ms_access_dev/backups/)
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.export_module_backup(adapter, module_name, backup_dir)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def import_module_from_text(module_name: str, file_path: str) -> dict:
+    """Import a VBA module from a .bas text file.
+
+    Deletes the original module and recreates from the .bas file.
+    Creates a NEW module if it doesn't already exist.
+
+    Args:
+        module_name: Name of the VBA module to import
+        file_path: Path to the .bas text file
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.import_module_from_text(adapter, module_name, file_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def restore_module_backup(module_name: str, backup_path: str) -> dict:
+    """Restore a VBA module from a .bas backup file.
+
+    Args:
+        module_name: Name of the module to restore
+        backup_path: Path to the .bas backup file
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.restore_module_backup(adapter, module_name, backup_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def export_form_backup(form_name: str, backup_dir: str | None = None) -> dict:
+    """Export a form (including VBA code-behind) to a .txt file.
+
+    Args:
+        form_name: Name of the form to export
+        backup_dir: Optional custom backup directory
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.export_form_backup(adapter, form_name, backup_dir)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def import_form_from_text(form_name: str, file_path: str) -> dict:
+    """Import a form from a .txt text file.
+
+    Deletes the original form and recreates from the .txt file.
+
+    Args:
+        form_name: Name of the form to import
+        file_path: Path to the .txt file
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.import_form_from_text(adapter, form_name, file_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def restore_form_backup(form_name: str, backup_path: str) -> dict:
+    """Restore a form from a .txt backup file.
+
+    Args:
+        form_name: Name of the form to restore
+        backup_path: Path to the .txt backup file
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.restore_form_backup(adapter, form_name, backup_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# FULL DB COPY PIPELINE TOOLS (Dev Copy Lifecycle)
+# ============================================================================
+
+
+@mcp.tool()
+def create_dev_copy(backup_dir: str | None = None) -> dict:
+    """Create a development copy of the production database.
+
+    Copies the entire .accdb to a temp sandbox, switches the connection to
+    the dev copy, and writes a manifest for deploy/discard operations.
+
+    WARNING: Large databases (>500MB) may take considerable time to copy.
+    Linked tables may lose their links when copied to a new environment.
+
+    Args:
+        backup_dir: Optional custom backup base directory
+                   (default: {tempdir}/ms_access_dev/)
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.create_dev_copy(connection_service, adapter, backup_dir)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def deploy_dev_copy(production_path: str | None = None) -> dict:
+    """Deploy the active dev copy back to production.
+
+    Creates a .bak backup of the current production database, copies the
+    dev copy over production, reconnects to production, and removes the
+    dev copy manifest.
+
+    SAFETY: A .bak file is always created before overwriting production.
+
+    Args:
+        production_path: Optional explicit production path. If not provided,
+                        uses the production_path from the dev copy manifest.
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.deploy_dev_copy(connection_service, adapter, production_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def discard_dev_copy(production_path: str | None = None) -> dict:
+    """Discard the active dev copy and reconnect to production.
+
+    Deletes the dev copy file, removes the manifest, and reconnects to
+    the production database. Your production changes are lost.
+
+    Args:
+        production_path: Optional explicit production path.
+    """
+    if not connection_service.is_connected():
+        return {"success": False, "error": "Not connected to database"}
+    adapter = connection_service.adapter
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.discard_dev_copy(connection_service, adapter, production_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def get_dev_copy_status(db_path: str | None = None) -> dict:
+    """Get the current dev copy status.
+
+    Returns whether a dev copy is active, and if so, the production and dev
+    copy paths, creation timestamp, database size, and linked table info.
+
+    Args:
+        db_path: Optional production database path. If not provided,
+                uses the production_path from the current manifest.
+    """
+    if db_path is None:
+        # Try to get from current manifest
+        try:
+            result = dev_copy_service.get_dev_copy_status()
+            return result
+        except Exception as e:
+            return {"active": False, "error": str(e)}
+    try:
+        result = dev_copy_service.get_dev_copy_status(db_path)
+        return result
+    except Exception as e:
+        return {"active": False, "error": str(e)}

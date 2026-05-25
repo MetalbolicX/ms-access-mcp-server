@@ -18,12 +18,12 @@
 | 8 | `get_macros` | PASS | 0 macros, first='' |
 | 9 | `get_modules` | PASS | 3 modules, first='mod_funcs' |
 | 10 | `get_system_tables` | PASS | 0 system tables |
-| 11 | `get_vba_projects` | PASS | 2 VBA projects |
+| 11 | `get_vba_projects` | PASS | 1 VBA projects |
 | 12 | `get_table_schema` | SKIP | no table name |
 | 13 | `get_object_metadata` | SKIP | no object name |
 | 14 | `form_exists` | PASS | exists=true |
-| 15 | `get_form_controls` | PASS | 0 controls |
-| 16 | `export_form_to_text` | PASS | 54 chars |
+| 15 | `get_form_controls` | PASS | 22 controls |
+| 16 | `export_form_to_text` | PASS | 107942 chars |
 | 17 | `export_report_to_text` | SKIP | no report name |
 | 18 | `export_module_to_text` | PASS | 110 chars |
 | 19 | `export_macro_to_text` | SKIP | no macro name |
@@ -35,12 +35,12 @@
 | 25 | `execute_sql_script` | WARN | Idempotency conflict (expected on re-run) |
 | 26 | `extract_schema` | PASS | schema extracted |
 | 27 | `get_er_diagram` | PASS | 0 nodes, 0 edges |
-| 28 | `launch_access` | PASS | Access launched |
-| 29 | `close_access` | PASS | Access closed |
-| 30 | `open_form` | WARN | Not implemented (expected) |
-| 31 | `close_form` | WARN | Not implemented (expected) |
-| 32 | `get_control_properties` | WARN | Not implemented (expected) |
-| 33 | `set_control_property` | WARN | Not implemented (expected) |
+| 28 | `open_form` | PASS | form opened |
+| 29 | `close_form` | PASS | form closed |
+| 30 | `get_control_properties` | PASS | 90 properties |
+| 31 | `set_control_property` | PASS | property set |
+| 32 | `launch_access` | PASS | Access launched |
+| 33 | `close_access` | PASS | Access closed |
 | 34 | `disconnect_access` | PASS | disconnected |
 
 ## Summary
@@ -48,6 +48,6 @@
 | Metric | Value |
 |--------|-------|
 | Total tools tested | 34 |
-| Passed | 24 |
+| Passed | 28 |
 | Failed | 0 |
 | Skipped / Expected-fail | 4 |

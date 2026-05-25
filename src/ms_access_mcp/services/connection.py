@@ -38,3 +38,20 @@ class ConnectionService:
     def adapter(self) -> Optional[AccessAdapter]:
         """Get the currently configured adapter instance."""
         return self._adapter
+
+    def reconnect(self, new_path: str) -> bool:
+        """Disconnect and reconnect to a new database path.
+
+        Preserves the current adapter instance but reconnects to a different
+        database file (e.g., after deploying dev copy back to production).
+
+        Args:
+            new_path: Path to the new database file
+
+        Returns:
+            True if reconnection succeeded, False otherwise
+        """
+        if self._adapter is None:
+            return False
+        self.disconnect()
+        return self.connect(new_path, self._adapter)
