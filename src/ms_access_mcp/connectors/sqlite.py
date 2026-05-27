@@ -36,8 +36,8 @@ class SqliteConnector(TargetConnector):
             return False
         try:
             ddl = self._schema_mapper.map_table_ddl(schema, "sqlite")
-            with self._conn.cursor() as cur:
-                cur.execute(ddl)
+            cur = self._conn.cursor()
+            cur.execute(ddl)
             self._conn.commit()
             return True
         except Exception:
@@ -52,9 +52,9 @@ class SqliteConnector(TargetConnector):
             placeholders = ", ".join(["?"] * len(cols))
             col_names = ", ".join([f'"{c}"' for c in cols])
             sql = f'INSERT INTO "{table}" ({col_names}) VALUES ({placeholders})'
-            with self._conn.cursor() as cur:
-                for row in rows:
-                    cur.execute(sql, list(row.values()))
+            cur = self._conn.cursor()
+            for row in rows:
+                cur.execute(sql, list(row.values()))
             self._conn.commit()
             return len(rows)
         except Exception:
@@ -65,8 +65,8 @@ class SqliteConnector(TargetConnector):
         if not self.is_connected():
             return
         try:
-            with self._conn.cursor() as cur:
-                cur.execute(f'DROP TABLE IF EXISTS "{table}"')
+            cur = self._conn.cursor()
+            cur.execute(f'DROP TABLE IF EXISTS "{table}"')
             self._conn.commit()
         except Exception:
             self._conn.rollback()
@@ -75,12 +75,12 @@ class SqliteConnector(TargetConnector):
         if not self.is_connected():
             return False
         try:
-            with self._conn.cursor() as cur:
-                cur.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
-                    (table_name,)
-                )
-                return cur.fetchone() is not None
+            cur = self._conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+                (table_name,)
+            )
+            return cur.fetchone() is not None
         except Exception:
             return False
 
@@ -99,10 +99,10 @@ class SqliteConnector(TargetConnector):
         if not self.is_connected():
             return 0
         try:
-            with self._conn.cursor() as cur:
-                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
-                row = cur.fetchone()
-                return int(row[0]) if row else 0
+            cur = self._conn.cursor()
+            cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
         except Exception:
             return 0
 
@@ -121,10 +121,10 @@ class SqliteConnector(TargetConnector):
                 f'FROM "{table}" '
                 f"ORDER BY {order_by_clause} LIMIT ? OFFSET ?"
             )
-            with self._conn.cursor() as cur:
-                cur.execute(sql, (limit, offset))
-                rows = cur.fetchall()
-                return [dict(zip(columns, row, strict=False)) for row in rows]
+            cur = self._conn.cursor()
+            cur.execute(sql, (limit, offset))
+            rows = cur.fetchall()
+            return [dict(zip(columns, row, strict=False)) for row in rows]
         except Exception:
             return []
 
