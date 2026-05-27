@@ -23,6 +23,11 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 addopts = "-v"
 testpaths = ["tests"]
+markers = [
+    "com_integration: Tests requiring Windows + MS Access COM automation (pywin32)",
+    "odbc_integration: Tests requiring an ODBC driver for MS Access data operations",
+    "slow: Tests that take more than 10 seconds to run",
+]
 
 [tool.ruff]
 line-length = 100
