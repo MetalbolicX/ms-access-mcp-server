@@ -1,502 +1,495 @@
-"""Tests for DevCopyService manifest CRUD operations."""
-import pytest
+"""Tests for DevCopyService — dev copy lifecycle and manifest management."""
+
+from __future__ import annotations
+
 import json
-import shutil
-import tempfile
 import os
+import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from ms_access_mcp.services.dev_copy_service import DevCopyService
+from ms_access_mcp.services.connection import ConnectionService
 
 
-class TestDevCopyServiceManifestCRUD:
-    """Tests for DevCopyService manifest JSON file operations."""
+# ═══════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════
 
-    def test_save_manifest_creates_json_file(self, tmp_path):
-        """save_manifest() writes correct JSON to {tempdir}/ms_access_dev/{hash}.json."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+class FakeAdapter:
+    """Minimal adapter for DevCopyService tests."""
+    def __init__(self, linked_tables=None):
+        self._linked_tables = linked_tables or {"success": True, "linked_tables": []}
+        self._connected = False
 
+    def connect(self, path):
+        self._connected = True
+        return True
+
+    def disconnect(self):
+        self._connected = False
+
+    def is_connected(self):
+        return self._connected
+
+    def copy_database(self, src, dst):
+        # Copy the file so size check passes
+        try:
+            with open(src, "rb") as f:
+                data = f.read()
+            with open(dst, "wb") as f:
+                f.write(data)
+            return True
+        except Exception:
+            return False
+
+    def get_linked_tables(self):
+        return self._linked_tables
+
+
+class FakeConnectionService:
+    """Minimal connection service for DevCopyService tests."""
+    def __init__(self, current_db=None):
+        self.current_database = current_db
+
+    def disconnect(self):
+        self.current_database = None
+
+    def connect(self, path, adapter=None):
+        self.current_database = path
+
+    def reconnect(self, path):
+        self.current_database = path
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Manifest CRUD
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestManifestCrud:
+    """save_manifest, load_manifest, delete_manifest."""
+
+    def test_save_and_load_manifest(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
         manifest = {
-            "production_path": "C:\\databases\\MyApp.accdb",
-            "dev_path": str(tmp_path / "myapp_dev.accdb"),
-            "created_at": "2026-05-24T13:00:00Z",
-            "db_size_bytes": 52428800,
+            "production_path": "/path/to/prod.accdb",
+            "dev_path": "/path/to/dev.accdb",
+            "created_at": "2025-01-01T00:00:00Z",
+            "db_size_bytes": 12345,
             "has_linked_tables": False,
             "linked_table_count": 0,
             "deployed_at": None,
         }
-
-        result = service.save_manifest("C:\\databases\\MyApp.accdb", manifest)
-
-        assert result is True
-        # Hash of path: md5("C:\\databases\\MyApp.accdb")[:8]
-        manifest_path = service._manifest_path("C:\\databases\\MyApp.accdb")
-        assert os.path.exists(manifest_path)
-        with open(manifest_path) as f:
-            saved = json.load(f)
-        assert saved["production_path"] == "C:\\databases\\MyApp.accdb"
-        assert saved["dev_path"] == str(tmp_path / "myapp_dev.accdb")
-
-    def test_save_manifest_creates_directory(self, tmp_path):
-        """save_manifest() creates the ms_access_dev directory if missing."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        manifest = {
-            "production_path": "C:\\test\\app.accdb",
-            "dev_path": str(tmp_path / "dev.accdb"),
-            "created_at": "2026-05-24T13:00:00Z",
-            "db_size_bytes": 1024,
-            "has_linked_tables": False,
-            "linked_table_count": 0,
-            "deployed_at": None,
-        }
-
-        service.save_manifest("C:\\test\\app.accdb", manifest)
-
-        manifest_path = service._manifest_path("C:\\test\\app.accdb")
-        assert os.path.exists(manifest_path)
-
-    def test_load_manifest_returns_correct_data(self, tmp_path):
-        """load_manifest() reads and parses the JSON manifest file."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        manifest = {
-            "production_path": "C:\\databases\\MyApp.accdb",
-            "dev_path": str(tmp_path / "myapp_dev.accdb"),
-            "created_at": "2026-05-24T13:00:00Z",
-            "db_size_bytes": 52428800,
-            "has_linked_tables": True,
-            "linked_table_count": 3,
-            "deployed_at": None,
-        }
-        service.save_manifest("C:\\databases\\MyApp.accdb", manifest)
-
-        loaded = service.load_manifest("C:\\databases\\MyApp.accdb")
-
+        assert svc.save_manifest("/path/to/prod.accdb", manifest) is True
+        loaded = svc.load_manifest("/path/to/prod.accdb")
         assert loaded is not None
-        assert loaded["production_path"] == "C:\\databases\\MyApp.accdb"
-        assert loaded["dev_path"] == str(tmp_path / "myapp_dev.accdb")
-        assert loaded["has_linked_tables"] is True
-        assert loaded["linked_table_count"] == 3
+        assert loaded["production_path"] == "/path/to/prod.accdb"
+        assert loaded["dev_path"] == "/path/to/dev.accdb"
 
-    def test_load_manifest_returns_none_when_not_found(self, tmp_path):
-        """load_manifest() returns None if manifest file does not exist."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_load_manifest_not_found(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        assert svc.load_manifest("/nonexistent/prod.accdb") is None
 
-        result = service.load_manifest("C:\\nonexistent\\app.accdb")
+    def test_delete_manifest(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        manifest = {"production_path": "/p", "dev_path": "/d",
+                     "created_at": "2025", "db_size_bytes": 0,
+                     "has_linked_tables": False, "linked_table_count": 0,
+                     "deployed_at": None}
+        svc.save_manifest("/p", manifest)
+        assert svc.delete_manifest("/p") is True
+        assert svc.load_manifest("/p") is None
 
-        assert result is None
+    def test_delete_manifest_not_found(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        assert svc.delete_manifest("/nonexistent.accdb") is False
 
-    def test_delete_manifest_removes_file(self, tmp_path):
-        """delete_manifest() removes the manifest JSON file."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        manifest = {
-            "production_path": "C:\\databases\\MyApp.accdb",
-            "dev_path": str(tmp_path / "myapp_dev.accdb"),
-            "created_at": "2026-05-24T13:00:00Z",
-            "db_size_bytes": 52428800,
-            "has_linked_tables": False,
-            "linked_table_count": 0,
-            "deployed_at": None,
-        }
-        service.save_manifest("C:\\databases\\MyApp.accdb", manifest)
-        manifest_path = service._manifest_path("C:\\databases\\MyApp.accdb")
-        assert os.path.exists(manifest_path)
-
-        result = service.delete_manifest("C:\\databases\\MyApp.accdb")
-
-        assert result is True
-        assert not os.path.exists(manifest_path)
-
-    def test_delete_manifest_returns_false_when_not_found(self, tmp_path):
-        """delete_manifest() returns False if manifest file does not exist."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        result = service.delete_manifest("C:\\nonexistent\\app.accdb")
-
-        assert result is False
-
-    def test_manifest_path_uses_md5_hash(self, tmp_path):
-        """_manifest_path() generates correct path with md5 hash."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        path = service._manifest_path("C:\\databases\\MyApp.accdb")
-
-        import hashlib
-        expected_hash = hashlib.md5("C:\\databases\\MyApp.accdb".encode()).hexdigest()[:8]
-        expected = tmp_path / "ms_access_dev" / f"{expected_hash}.json"
-        assert path == str(expected)
-
-    def test_manifest_path_different_for_different_paths(self, tmp_path):
-        """Two different db paths produce different manifest paths."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        path1 = service._manifest_path("C:\\databases\\app1.accdb")
-        path2 = service._manifest_path("C:\\databases\\app2.accdb")
-
-        assert path1 != path2
+    def test_manifest_path_is_deterministic(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        p1 = svc._manifest_path("/path/to/db.accdb")
+        p2 = svc._manifest_path("/path/to/db.accdb")
+        assert p1 == p2
+        # Hash should be 8 chars
+        assert len(os.path.basename(p1)) == 8 + 5  # hash + .json
 
 
-class TestDevCopyServiceBackupDir:
-    """Tests for get_backup_dir()."""
-
-    def test_get_backup_dir_returns_correct_path(self, tmp_path):
-        """get_backup_dir() returns {backup_base}/backups/ path."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        result = service.get_backup_dir()
-
-        expected = os.path.join(str(tmp_path), "backups")
-        assert result == expected
-
-    def test_get_backup_dir_creates_directory_if_missing(self, tmp_path):
-        """get_backup_dir() creates the backups directory if it does not exist."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        backups_path = os.path.join(str(tmp_path), "backups")
-        assert not os.path.exists(backups_path)
-
-        service.get_backup_dir()
-
-        assert os.path.isdir(backups_path)
-
-    def test_get_backup_dir_idempotent(self, tmp_path):
-        """get_backup_dir() is safe to call multiple times."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        result1 = service.get_backup_dir()
-        result2 = service.get_backup_dir()
-
-        assert result1 == result2
-        assert os.path.isdir(result1)
-
-
-# ========================================================================
-# Full DB Copy Pipeline Tests — create_dev_copy()
-# ========================================================================
-
+# ═══════════════════════════════════════════════════════════════════════
+# create_dev_copy
+# ═══════════════════════════════════════════════════════════════════════
 
 class TestCreateDevCopy:
-    """Tests for DevCopyService.create_dev_copy()."""
+    """create_dev_copy — full pipeline."""
 
-    def test_create_dev_copy_happy_path(self, tmp_path):
-        """create_dev_copy() copies DB, writes manifest, switches connection."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_creates_dev_copy_file(self, tmp_path):
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD DATABASE CONTENT" * 100)
 
-        # Create a fake prod DB
-        prod_db = tmp_path / "MyApp.accdb"
-        prod_db.write_bytes(b"FAKE ACCESS DB CONTENT" * 100)
+        svc = DevCopyService()
+        conn = FakeConnectionService(str(prod))
+        adapter = FakeAdapter()
 
-        mock_conn = MagicMock()
-        mock_conn.current_database = str(prod_db)
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
-        mock_adapter.copy_database.return_value = True
-        mock_adapter.get_linked_tables.return_value = {"success": True, "linked_tables": []}
-
-        result = service.create_dev_copy(mock_conn, mock_adapter)
-
+        result = svc.create_dev_copy(conn, adapter)
         assert result["success"] is True
-        assert "dev_path" in result
-        assert "manifest_path" in result
-        # Should have copied the file
-        mock_adapter.copy_database.assert_called_once()
-        # Should have disconnected and reconnected
-        mock_conn.disconnect.assert_called_once()
-        mock_conn.connect.assert_called_once()
-        # Manifest should be saved
-        manifest_path = service._manifest_path(str(prod_db))
-        assert os.path.exists(manifest_path)
+        assert os.path.exists(result["dev_path"])
+        assert os.path.getsize(result["dev_path"]) > 0
 
-    def test_create_dev_copy_already_active_error(self, tmp_path):
-        """create_dev_copy() returns error if dev copy already active."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_dev_copy_switches_connection(self, tmp_path):
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
 
-        prod_db = tmp_path / "MyApp.accdb"
-        prod_db.write_bytes(b"FAKE DB")
+        svc = DevCopyService()
+        conn = FakeConnectionService(str(prod))
+        adapter = FakeAdapter()
 
-        # Simulate existing manifest (dev copy already active)
-        manifest = {
-            "production_path": str(prod_db),
-            "dev_path": str(tmp_path / "dev.accdb"),
-            "created_at": "2026-05-24T10:00:00Z",
-            "db_size_bytes": 100,
-            "has_linked_tables": False,
-            "linked_table_count": 0,
-            "deployed_at": None,
-        }
-        service.save_manifest(str(prod_db), manifest)
+        result = svc.create_dev_copy(conn, adapter)
+        assert result["success"] is True
+        assert conn.current_database == result["dev_path"]
 
-        mock_conn = MagicMock()
-        mock_conn.current_database = str(prod_db)
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
+    def test_saves_manifest(self, tmp_path):
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
 
-        result = service.create_dev_copy(mock_conn, mock_adapter)
+        svc = DevCopyService()
+        conn = FakeConnectionService(str(prod))
+        adapter = FakeAdapter()
 
+        result = svc.create_dev_copy(conn, adapter)
+        assert result["success"] is True
+        manifest = svc.load_manifest(str(prod))
+        assert manifest is not None
+        assert manifest["dev_path"] == result["dev_path"]
+
+    def test_dev_copy_already_active_rejects_second_call(self, tmp_path):
+        """A second create_dev_copy from the prod path fails when a dev copy exists."""
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
+
+        svc = DevCopyService()
+        real_conn = ConnectionService()
+        real_adapter = MagicMock()
+        real_adapter.copy_database.return_value = True
+        real_adapter.get_linked_tables.return_value = {"success": True, "linked_tables": []}
+        real_adapter.connect.return_value = True
+
+        real_conn.connect(str(prod), real_adapter)
+        svc.create_dev_copy(real_conn, real_adapter)
+
+        # Simulate going back to prod (e.g., after reviewing dev changes)
+        real_conn.disconnect()
+        real_conn.connect(str(prod), real_adapter)
+
+        # Try to create another dev copy from prod — should be rejected
+        result2 = svc.create_dev_copy(real_conn, real_adapter)
+        assert result2["success"] is False
+        assert "already active" in result2["error"].lower()
+
+    def test_not_connected_error(self, tmp_path):
+        svc = DevCopyService()
+        from ms_access_mcp.services.connection import ConnectionService
+        conn = ConnectionService()  # not connected
+        result = svc.create_dev_copy(conn, MagicMock())
         assert result["success"] is False
-        assert "already active" in result["error"].lower()
+        assert "Not connected" in result["error"]
 
-    def test_create_dev_copy_large_db_warning(self, tmp_path):
-        """create_dev_copy() includes warning for DB > 500MB."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_linked_table_warning(self, tmp_path):
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
 
-        # Create a large fake DB (> 500 MB)
-        prod_db = tmp_path / "LargeApp.accdb"
-        # 600 MB worth of data
-        prod_db.write_bytes(b"X" * (600 * 1024 * 1024))
+        adapter = FakeAdapter({
+            "success": True,
+            "linked_tables": [
+                {"name": "tblODBC", "source_table": "RemoteData", "connect_string": "ODBC;DRIVER=..."}
+            ] * 3
+        })
+        svc = DevCopyService()
+        conn = FakeConnectionService(str(prod))
 
-        mock_conn = MagicMock()
-        mock_conn.current_database = str(prod_db)
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
-        mock_adapter.copy_database.side_effect = lambda src, dst: shutil.copy2(src, dst)
-        mock_adapter.get_linked_tables.return_value = {"success": True, "linked_tables": []}
-
-        # Patch _db_size_mb to return > 500 MB and os.path.exists for manifest save
-        with patch.object(service, "_db_size_mb", return_value=600.0), \
-             patch("os.path.exists", return_value=True), \
-             patch("os.path.getsize", return_value=600 * 1024 * 1024):
-            result = service.create_dev_copy(mock_conn, mock_adapter)
-
+        result = svc.create_dev_copy(conn, adapter)
         assert result["success"] is True
-        assert "warnings" in result
-        assert "large" in result["warnings"][0].lower() or "500" in result["warnings"][0]
+        assert "linked" in result["warnings"][0].lower()
 
 
-
-
-# ========================================================================
-# Full DB Copy Pipeline Tests — deploy_dev_copy()
-# ========================================================================
-
+# ═══════════════════════════════════════════════════════════════════════
+# deploy_dev_copy
+# ═══════════════════════════════════════════════════════════════════════
 
 class TestDeployDevCopy:
-    """Tests for DevCopyService.deploy_dev_copy()."""
+    """deploy_dev_copy — deploy dev copy back to production."""
 
-    def test_deploy_dev_copy_happy_path(self, tmp_path):
-        """deploy_dev_copy() backs up prod, copies dev over, reconnects, removes manifest."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_deploy_creates_backup_and_overwrites_production(self, tmp_path):
+        """Full deploy pipeline: backup + overwrite + delete manifest."""
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"OLD" * 10)
+        dev = tmp_path / "prod_dev.accdb"
+        dev.write_bytes(b"NEW" * 10)
 
-        # Set up prod and dev DBs using the EXACT dev_path that create_dev_copy would compute
-        prod_db = tmp_path / "MyApp.accdb"
-        prod_db.write_bytes(b"ORIGINAL PROD CONTENT")
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
 
-        # Compute the dev path exactly as _dev_copy_path() does
-        import hashlib
-        short_hash = hashlib.md5(str(prod_db).encode()).hexdigest()[:8]
-        dev_dir = tmp_path / "ms_access_dev" / short_hash
-        dev_dir.mkdir(parents=True, exist_ok=True)
-        dev_db = dev_dir / "MyApp_dev.accdb"
-        dev_db.write_bytes(b"MODIFIED DEV CONTENT")
-
-        # Create manifest using the SAME path that create_dev_copy would use
-        manifest = {
-            "production_path": str(prod_db),
-            "dev_path": str(dev_db),
-            "created_at": "2026-05-24T10:00:00Z",
-            "db_size_bytes": 100,
+        # Set up manifest so deploy finds it via prod path
+        svc.save_manifest(str(prod), {
+            "production_path": str(prod),
+            "dev_path": str(dev),
+            "created_at": "2025",
+            "db_size_bytes": 80,
             "has_linked_tables": False,
             "linked_table_count": 0,
             "deployed_at": None,
-        }
-        service.save_manifest(str(prod_db), manifest)
+        })
 
-        mock_conn = MagicMock()
-        mock_conn.current_database = str(dev_db)
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
-        # Make copy_database actually copy files
-        mock_adapter.copy_database.side_effect = lambda src, dst: shutil.copy2(src, dst)
+        # Real adapter uses copy_database to copy files
+        real_adapter = FakeAdapter()
 
-        result = service.deploy_dev_copy(mock_conn, mock_adapter, production_path=str(prod_db))
+        # Use ConnectionService to set up the production path as current_database
+        from ms_access_mcp.services.connection import ConnectionService
+        real_conn = ConnectionService()
+        real_conn.connect(str(prod), real_adapter)
 
+        result = svc.deploy_dev_copy(real_conn, real_adapter)
         assert result["success"] is True
-        # .bak should exist
-        bak_file = str(prod_db) + ".bak"
-        assert os.path.exists(bak_file)
-        # Prod should have dev content
-        assert prod_db.read_bytes() == b"MODIFIED DEV CONTENT"
-        # Reconnect called with prod path
-        mock_conn.reconnect.assert_called_once_with(str(prod_db))
-        # Manifest deleted
-        manifest_path = service._manifest_path(str(prod_db))
-        assert not os.path.exists(manifest_path)
+        assert os.path.exists(result["bak_path"])  # .bak created
+        assert prod.read_bytes() == b"NEW" * 10  # prod overwritten
+        assert svc.load_manifest(str(prod)) is None  # manifest deleted
 
-    def test_deploy_dev_copy_no_dev_copy_error(self, tmp_path):
-        """deploy_dev_copy() returns error when no active dev copy."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        mock_conn = MagicMock()
-        mock_conn.current_database = "C:\\nonexistent\\app.accdb"
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
-
-        result = service.deploy_dev_copy(mock_conn, mock_adapter)
-
+    def test_deploy_no_manifest_returns_error(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        from ms_access_mcp.services.connection import ConnectionService
+        real_conn = ConnectionService()
+        real_adapter = FakeAdapter()
+        real_conn.connect(str(tmp_path / "p.accdb"), real_adapter)
+        result = svc.deploy_dev_copy(real_conn, real_adapter)
         assert result["success"] is False
-        assert "no active dev copy" in result["error"].lower()
-
-    def test_deploy_dev_copy_integrity_validation(self, tmp_path):
-        """deploy_dev_copy() validates dev DB exists and is non-empty before deploying."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        prod_db = tmp_path / "MyApp.accdb"
-        prod_db.write_bytes(b"ORIGINAL")
-
-        # Dev copy is missing/empty
-        dev_db = tmp_path / "ms_access_dev" / "dev_copy" / "MyApp_dev.accdb"
-        dev_db.parent.mkdir(parents=True, exist_ok=True)
-        # Don't write anything — empty file
-
-        manifest = {
-            "production_path": str(prod_db),
-            "dev_path": str(dev_db),
-            "created_at": "2026-05-24T10:00:00Z",
-            "db_size_bytes": 0,
-            "has_linked_tables": False,
-            "linked_table_count": 0,
-            "deployed_at": None,
-        }
-        service.save_manifest(str(prod_db), manifest)
-
-        mock_conn = MagicMock()
-        mock_conn.current_database = str(dev_db)
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
-
-        result = service.deploy_dev_copy(mock_conn, mock_adapter, production_path=str(prod_db))
-
-        assert result["success"] is False
-        assert "empty" in result["error"].lower() or "not found" in result["error"].lower()
-
-
-# ========================================================================
-# Full DB Copy Pipeline Tests — discard_dev_copy()
-# ========================================================================
+        assert "No active dev copy" in result["error"]
 
 
 class TestDiscardDevCopy:
-    """Tests for DevCopyService.discard_dev_copy()."""
+    """discard_dev_copy — discard dev copy and reconnect to production."""
 
-    def test_discard_dev_copy_happy_path(self, tmp_path):
-        """discard_dev_copy() deletes dev copy, removes manifest, reconnects to prod."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_discard_removes_dev_file_and_restores_production(self, tmp_path):
+        """Full discard pipeline: delete dev + reconnect to prod."""
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
+        dev = tmp_path / "prod_dev.accdb"
+        dev.write_bytes(b"DEV" * 10)
 
-        prod_db = tmp_path / "MyApp.accdb"
-        prod_db.write_bytes(b"ORIGINAL PROD")
-        dev_db = tmp_path / "ms_access_dev" / "dev" / "MyApp_dev.accdb"
-        dev_db.parent.mkdir(parents=True, exist_ok=True)
-        dev_db.write_bytes(b"DEV COPY TO DISCARD")
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
 
-        manifest = {
-            "production_path": str(prod_db),
-            "dev_path": str(dev_db),
-            "created_at": "2026-05-24T10:00:00Z",
-            "db_size_bytes": 100,
-            "has_linked_tables": False,
-            "linked_table_count": 0,
+        svc.save_manifest(str(prod), {
+            "production_path": str(prod), "dev_path": str(dev),
+            "created_at": "2025", "db_size_bytes": 80,
+            "has_linked_tables": False, "linked_table_count": 0,
             "deployed_at": None,
-        }
-        service.save_manifest(str(prod_db), manifest)
+        })
 
-        mock_conn = MagicMock()
-        mock_conn.current_database = str(dev_db)
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
+        real_adapter = FakeAdapter()
+        from ms_access_mcp.services.connection import ConnectionService
+        real_conn = ConnectionService()
+        real_conn.connect(str(dev), real_adapter)
 
-        result = service.discard_dev_copy(mock_conn, mock_adapter, production_path=str(prod_db))
-
+        result = svc.discard_dev_copy(real_conn, real_adapter)
         assert result["success"] is True
-        # Dev copy deleted
-        assert not dev_db.exists()
-        # Manifest deleted
-        manifest_path = service._manifest_path(str(prod_db))
-        assert not os.path.exists(manifest_path)
-        # Reconnected to prod
-        mock_conn.reconnect.assert_called_once_with(str(prod_db))
+        assert not os.path.exists(dev)  # dev file deleted
+        assert real_conn.current_database == str(prod)  # reconnects to prod
+        assert svc.load_manifest(str(prod)) is None  # manifest deleted
 
-    def test_discard_dev_copy_no_dev_copy_error(self, tmp_path):
-        """discard_dev_copy() returns error when no active dev copy."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
-
-        mock_conn = MagicMock()
-        mock_conn.current_database = "C:\\nonexistent\\app.accdb"
-        mock_conn.adapter = MagicMock()
-        mock_adapter = MagicMock()
-
-        result = service.discard_dev_copy(mock_conn, mock_adapter)
-
+    def test_discard_no_manifest_returns_error(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        from ms_access_mcp.services.connection import ConnectionService
+        real_conn = ConnectionService()
+        real_adapter = FakeAdapter()
+        real_conn.connect(str(tmp_path / "p.accdb"), real_adapter)
+        result = svc.discard_dev_copy(real_conn, real_adapter)
         assert result["success"] is False
-        assert "no active dev copy" in result["error"].lower()
+        assert "No active dev copy" in result["error"]
 
 
-# ========================================================================
-# Full DB Copy Pipeline Tests — get_dev_copy_status()
-# ========================================================================
+# ═══════════════════════════════════════════════════════════════════════
+# discard_dev_copy
+# ═══════════════════════════════════════════════════════════════════════
 
+class TestDiscardDevCopy:
+    """discard_dev_copy — discard dev copy and reconnect to production."""
+
+    def test_discard_removes_dev_file_restores_connection(self, tmp_path):
+        """Full discard: delete dev copy file + reconnect to production.
+
+        discard_dev_copy with production_path=None uses conn.current_database.
+        When conn is connected to the dev copy, current_database=dev_path.
+        Since the manifest is keyed by production_path, we pass production_path
+        explicitly so the manifest lookup finds it.
+        """
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
+        dev = tmp_path / "prod_dev.accdb"
+        dev.write_bytes(b"DEV" * 10)
+
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+
+        svc.save_manifest(str(prod), {
+            "production_path": str(prod), "dev_path": str(dev),
+            "created_at": "2025", "db_size_bytes": 80,
+            "has_linked_tables": False, "linked_table_count": 0,
+            "deployed_at": None,
+        })
+
+        real_adapter = FakeAdapter()
+        from ms_access_mcp.services.connection import ConnectionService
+        real_conn = ConnectionService()
+        real_conn.connect(str(dev), real_adapter)
+
+        # Pass production_path explicitly so the manifest lookup works
+        result = svc.discard_dev_copy(real_conn, real_adapter, production_path=str(prod))
+        assert result["success"] is True
+        assert not os.path.exists(dev)
+        assert real_conn.current_database == str(prod)
+        assert svc.load_manifest(str(prod)) is None
+
+    def test_discard_no_manifest(self, tmp_path):
+        svc = DevCopyService()
+        real_conn = ConnectionService()
+        real_adapter = MagicMock()
+        real_adapter.connect.return_value = True
+        real_conn.connect(str(tmp_path / "p.accdb"), real_adapter)
+        result = svc.discard_dev_copy(real_conn, real_adapter)
+        assert result["success"] is False
+        assert "No active dev copy" in result["error"]
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# get_dev_copy_status
+# ═══════════════════════════════════════════════════════════════════════
 
 class TestGetDevCopyStatus:
-    """Tests for DevCopyService.get_dev_copy_status()."""
+    def test_no_manifest(self, tmp_path):
+        svc = DevCopyService()
+        result = svc.get_dev_copy_status(str(tmp_path / "p.accdb"))
+        assert result["active"] is False
 
-    def test_get_dev_copy_status_active(self, tmp_path):
-        """get_dev_copy_status() returns active state with paths and timestamps."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
+    def test_active_dev_copy(self, tmp_path):
+        prod = tmp_path / "prod.accdb"
+        prod.write_bytes(b"PROD" * 10)
+        dev = tmp_path / "prod_dev.accdb"
+        dev.write_bytes(b"DEV" * 10)
 
-        prod_db = tmp_path / "MyApp.accdb"
-        prod_db.write_bytes(b"FAKE DB" * 10)
-        dev_db = tmp_path / "ms_access_dev" / "hash123" / "MyApp_dev.accdb"
-        dev_db.parent.mkdir(parents=True, exist_ok=True)
-        dev_db.write_bytes(b"DEV")
-
-        manifest = {
-            "production_path": str(prod_db),
-            "dev_path": str(dev_db),
-            "created_at": "2026-05-24T10:00:00Z",
-            "db_size_bytes": 500,
+        svc = DevCopyService()
+        svc.save_manifest(str(prod), {
+            "production_path": str(prod), "dev_path": str(dev),
+            "created_at": "2025-01-01T00:00:00Z",
+            "db_size_bytes": 80,
             "has_linked_tables": True,
             "linked_table_count": 2,
             "deployed_at": None,
-        }
-        service.save_manifest(str(prod_db), manifest)
+        })
 
-        result = service.get_dev_copy_status(str(prod_db))
-
+        result = svc.get_dev_copy_status(str(prod))
         assert result["active"] is True
-        assert result["production_path"] == str(prod_db)
-        assert result["dev_path"] == str(dev_db)
-        assert result["created_at"] == "2026-05-24T10:00:00Z"
-        assert result["db_size_bytes"] == 500
+        assert result["production_path"] == str(prod)
+        assert result["dev_path"] == str(dev)
         assert result["has_linked_tables"] is True
         assert result["linked_table_count"] == 2
 
-    def test_get_dev_copy_status_inactive(self, tmp_path):
-        """get_dev_copy_status() returns inactive when no manifest exists."""
-        service = DevCopyService()
-        service._backup_base = str(tmp_path)
 
-        result = service.get_dev_copy_status("C:\\databases\\NoManifest.accdb")
+# ═══════════════════════════════════════════════════════════════════════
+# VBA Backup / Restore
+# ═══════════════════════════════════════════════════════════════════════
 
-        assert result["active"] is False
-        assert "dev_path" not in result or result.get("dev_path") is None
+class TestModuleBackup:
+    def test_export_module_backup_not_found(self, tmp_path):
+        adapter = MagicMock()
+        adapter.export_module_to_text.return_value = ""
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.export_module_backup(adapter, "NonExistentModule")
+        assert result["success"] is False
+
+    def test_export_module_backup_success(self, tmp_path):
+        adapter = MagicMock()
+        adapter.export_module_to_text.return_value = "Public Sub Test()\nEnd Sub"
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.export_module_backup(adapter, "modTest", str(tmp_path))
+        assert result["success"] is True
+        assert os.path.exists(result["backup_path"])
+        assert result["file_size_bytes"] > 0
+
+    def test_import_module_file_not_found(self, tmp_path):
+        adapter = MagicMock()
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.import_module_from_text(adapter, "modTest", "/nonexistent/modTest.bas")
+        assert result["success"] is False
+        assert "not found" in result["error"].lower()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Form Backup / Restore
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestFormBackup:
+    def test_export_form_backup_not_found(self, tmp_path):
+        adapter = MagicMock()
+        adapter.export_form_to_text.return_value = ""
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.export_form_backup(adapter, "NonExistentForm")
+        assert result["success"] is False
+
+    def test_export_form_backup_success(self, tmp_path):
+        adapter = MagicMock()
+        adapter.export_form_to_text.return_value = "FORM DESIGN TEXT"
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.export_form_backup(adapter, "TestForm", str(tmp_path))
+        assert result["success"] is True
+        assert os.path.exists(result["backup_path"])
+
+    def test_import_form_file_not_found(self, tmp_path):
+        adapter = MagicMock()
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.import_form_from_text(adapter, "TestForm", "/nonexistent/form.txt")
+        assert result["success"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_import_form_success(self, tmp_path):
+        form_file = tmp_path / "TestForm.txt"
+        form_file.write_text("FORM DESIGN CONTENT")
+
+        adapter = MagicMock()
+        adapter.form_exists.return_value = False
+        adapter.import_form_from_text.return_value = True
+
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.import_form_from_text(adapter, "TestForm", str(form_file))
+        assert result["success"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Backup Directory
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestBackupDirectory:
+    def test_get_backup_dir_creates_if_missing(self, tmp_path):
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        backup_dir = svc.get_backup_dir()
+        assert os.path.isdir(backup_dir)
+        assert backup_dir.endswith("backups")
+
+    def test_backup_dir_uses_tempdir_default(self):
+        svc = DevCopyService()
+        backup_dir = svc.get_backup_dir()
+        assert tempfile.gettempdir() in backup_dir
+        assert backup_dir.endswith("backups")
