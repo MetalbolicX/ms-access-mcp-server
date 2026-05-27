@@ -1,5 +1,10 @@
 from ms_access_mcp.services.schema_mapper import SchemaMapper, MappedColumn
-from ms_access_mcp.models.migration import ColumnSchema, TableSchema, ExtractedSchema
+from ms_access_mcp.models.migration import (
+    ColumnSchema,
+    TableSchema,
+    ForeignKeySchema,
+    IndexSchema,
+)
 
 
 def test_map_text_to_postgres():
@@ -54,3 +59,55 @@ def test_map_table_to_sqlite():
     ddl = mapper.map_table_ddl(table, "sqlite")
     assert "CREATE TABLE" in ddl
     assert '"ID" INTEGER PRIMARY KEY' in ddl or "ID" in ddl
+
+
+def test_map_table_ddl_includes_defaults_and_constraints_for_postgres():
+    mapper = SchemaMapper()
+    table = TableSchema(
+        name="Orders",
+        columns=[
+            ColumnSchema(name="OrderID", source_type="Long Integer", allow_null=False, is_autoincrement=True),
+            ColumnSchema(name="CustomerID", source_type="Long Integer", allow_null=False, is_autoincrement=False),
+            ColumnSchema(name="Status", source_type="Text", max_length=40, allow_null=False, default_value="PENDING"),
+        ],
+        primary_key=["OrderID"],
+        foreign_keys=[
+            ForeignKeySchema(
+                name="fk_orders_customers",
+                columns=["CustomerID"],
+                referenced_table="Customers",
+                referenced_columns=["CustomerID"],
+            )
+        ],
+        indexes=[
+            IndexSchema(name="idx_orders_status", columns=["Status"], is_unique=False),
+            IndexSchema(name="ux_orders_status", columns=["Status"], is_unique=True),
+        ],
+    )
+
+    ddl = mapper.map_table_ddl(table, "postgres")
+    assert '"Status" VARCHAR(40) NOT NULL DEFAULT \'PENDING\'' in ddl
+    assert 'CONSTRAINT "fk_orders_customers" FOREIGN KEY ("CustomerID") REFERENCES "Customers" ("CustomerID")' in ddl
+
+    index_statements = mapper.map_index_ddl(table, "postgres")
+    assert any('CREATE INDEX "idx_orders_status" ON "Orders" ("Status")' in stmt for stmt in index_statements)
+    assert any('CREATE UNIQUE INDEX "ux_orders_status" ON "Orders" ("Status")' in stmt for stmt in index_statements)
+
+
+def test_map_table_ddl_with_no_foreign_key_columns_skips_fk():
+    mapper = SchemaMapper()
+    table = TableSchema(
+        name="Orders",
+        columns=[ColumnSchema(name="OrderID", source_type="Long Integer", allow_null=False, is_autoincrement=False)],
+        foreign_keys=[
+            ForeignKeySchema(
+                name="fk_broken",
+                columns=[],
+                referenced_table="Customers",
+                referenced_columns=["CustomerID"],
+            )
+        ],
+    )
+
+    ddl = mapper.map_table_ddl(table, "postgres")
+    assert "fk_broken" not in ddl

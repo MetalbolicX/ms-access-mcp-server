@@ -1,6 +1,6 @@
 from typing import Any
 import sqlite3
-from .base import TargetConnector
+from .base import TargetConnector, ConnectorCapabilities
 
 class SqliteConnector(TargetConnector):
     """SQLite connector for migration."""
@@ -86,3 +86,47 @@ class SqliteConnector(TargetConnector):
 
     def generate_ddl(self, schema: Any) -> str:
         return self._schema_mapper.map_table_ddl(schema, "sqlite")
+
+    def get_capabilities(self) -> ConnectorCapabilities:
+        return ConnectorCapabilities(
+            supports_linked_insert_select=False,
+            supports_checksum=False,
+            supports_sampling=True,
+            preferred_batch_size=500,
+        )
+
+    def get_row_count(self, table: str) -> int:
+        if not self.is_connected():
+            return 0
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(f'SELECT COUNT(*) FROM "{table}"')
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+        except Exception:
+            return 0
+
+    def get_checksum(self, table: str, columns: list[str]) -> str | None:
+        return None
+
+    def sample_rows(self, table: str, columns: list[str], limit: int, offset: int = 0) -> list[dict]:
+        if not self.is_connected() or not columns or limit <= 0:
+            return []
+        try:
+            quoted_columns = [f'"{column}"' for column in columns]
+            select_clause = ", ".join(quoted_columns)
+            order_by_clause = ", ".join(quoted_columns)
+            sql = (
+                f"SELECT {select_clause} "
+                f'FROM "{table}" '
+                f"ORDER BY {order_by_clause} LIMIT ? OFFSET ?"
+            )
+            with self._conn.cursor() as cur:
+                cur.execute(sql, (limit, offset))
+                rows = cur.fetchall()
+                return [dict(zip(columns, row, strict=False)) for row in rows]
+        except Exception:
+            return []
+
+    def linked_transfer(self, source_adapter: Any, source_table: str, target_table: str) -> int:
+        raise NotImplementedError("Linked transfer is adapter-specific and not available in this connector")

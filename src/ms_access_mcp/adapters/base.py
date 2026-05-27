@@ -10,6 +10,7 @@ from ..models.database import (
     QueryInfo,
     LinkedTableInfo,
 )
+from ..models.migration import TableSchema, UnknownMetadata
 
 
 @runtime_checkable
@@ -123,3 +124,5 @@ class AccessAdapter(Protocol):
     def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict: ...
 
     def copy_database(self, source: str, dest: str) -> bool: ...
+
+    def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]: ...

@@ -25,6 +25,13 @@ from ..models.database import (
     ForeignKeyInfo,
     FieldInfo,
 )
+from ..models.migration import (
+    TableSchema,
+    ColumnSchema,
+    ForeignKeySchema,
+    IndexSchema,
+    UnknownMetadata,
+)
 
 
 class ComDispatcher:
@@ -1453,6 +1460,124 @@ class WinComAdapter(AccessAdapter):
             except Exception:
                 pass
             return fks
+
+        return self._dispatcher.call(_do)
+
+    def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]:
+        """Extract table schema fidelity metadata from Access DAO collections.
+
+        Saved queries are intentionally excluded by using only table definitions.
+        """
+        if not self.is_connected():
+            return ([], UnknownMetadata())
+
+        def _do() -> tuple[list[TableSchema], UnknownMetadata]:
+            schema_tables: list[TableSchema] = []
+            unknown = UnknownMetadata()
+
+            try:
+                db = self._dispatcher._current_db
+
+                relationships_by_table: dict[str, list[ForeignKeySchema]] = {}
+                try:
+                    for rel in db.Relations:
+                        if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
+                            continue
+
+                        child_columns: list[str] = []
+                        parent_columns: list[str] = []
+                        for rel_field in rel.Fields:
+                            child_columns.append(rel_field.Name)
+                            parent_name = getattr(rel_field, "ForeignName", rel_field.Name)
+                            parent_columns.append(parent_name)
+
+                        fk = ForeignKeySchema(
+                            name=rel.Name,
+                            columns=child_columns,
+                            referenced_table=rel.ForeignTable,
+                            referenced_columns=parent_columns,
+                        )
+                        relationships_by_table.setdefault(rel.Table, []).append(fk)
+                except Exception:
+                    unknown.foreign_keys = True
+
+                for tdef in db.TableDefs:
+                    table_name = tdef.Name
+                    if table_name.startswith("MSys") or table_name.startswith("~"):
+                        continue
+                    if tdef.Attributes & 0x80000000:
+                        # Linked tables are not source schema objects for migration plans.
+                        continue
+
+                    columns: list[ColumnSchema] = []
+                    primary_key: list[str] = []
+                    indexes: list[IndexSchema] = []
+
+                    for fld in tdef.Fields:
+                        default_value = None
+                        try:
+                            raw_default = fld.DefaultValue
+                            default_value = str(raw_default) if raw_default is not None else None
+                        except Exception:
+                            unknown.defaults = True
+
+                        attributes = int(getattr(fld, "Attributes", 0) or 0)
+                        is_autoincrement = bool(attributes & 0x10)
+
+                        columns.append(
+                            ColumnSchema(
+                                name=fld.Name,
+                                source_type=self._access_type_name(fld.Type),
+                                max_length=fld.Size if fld.Size and fld.Size > 0 else None,
+                                allow_null=not bool(getattr(fld, "Required", False)),
+                                is_autoincrement=is_autoincrement,
+                                default_value=default_value,
+                            )
+                        )
+
+                    try:
+                        for idx in tdef.Indexes:
+                            idx_fields = [idx_field.Name for idx_field in idx.Fields]
+                            if not idx_fields:
+                                continue
+                            if bool(getattr(idx, "Primary", False)):
+                                primary_key = idx_fields
+                                continue
+                            indexes.append(
+                                IndexSchema(
+                                    name=idx.Name,
+                                    columns=idx_fields,
+                                    is_unique=bool(getattr(idx, "Unique", False)),
+                                )
+                            )
+                    except Exception:
+                        unknown.indexes = True
+                        unknown.primary_keys = True
+
+                    if not primary_key:
+                        unknown.primary_keys = True
+
+                    if any(col.is_autoincrement for col in columns) and not primary_key:
+                        unknown.autoincrement = True
+
+                    schema_tables.append(
+                        TableSchema(
+                            name=table_name,
+                            columns=columns,
+                            primary_key=primary_key,
+                            foreign_keys=relationships_by_table.get(table_name, []),
+                            indexes=indexes,
+                        )
+                    )
+            except Exception:
+                unknown.primary_keys = True
+                unknown.foreign_keys = True
+                unknown.defaults = True
+                unknown.indexes = True
+                unknown.autoincrement = True
+                return ([], unknown)
+
+            return (schema_tables, unknown)
 
         return self._dispatcher.call(_do)
 

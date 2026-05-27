@@ -10,6 +10,15 @@ class ConnectionStatus(BaseModel):
     error: str | None = None
 
 
+class ConnectorCapabilities(BaseModel):
+    """Connector capability flags used by target-agnostic orchestration."""
+
+    supports_linked_insert_select: bool
+    supports_checksum: bool
+    supports_sampling: bool
+    preferred_batch_size: int = 1000
+
+
 @runtime_checkable
 class TargetConnector(Protocol):
     """Abstract interface for target database operations during migration."""
@@ -45,4 +54,24 @@ class TargetConnector(Protocol):
 
     def table_exists(self, table_name: str) -> bool:
         """Check if a table already exists in target."""
+        ...
+
+    def get_capabilities(self) -> ConnectorCapabilities:
+        """Return connector capabilities used by migration strategy selection."""
+        ...
+
+    def get_row_count(self, table: str) -> int:
+        """Return total rows present in the target table."""
+        ...
+
+    def get_checksum(self, table: str, columns: list[str]) -> str | None:
+        """Return a deterministic checksum for provided columns when supported."""
+        ...
+
+    def sample_rows(self, table: str, columns: list[str], limit: int, offset: int = 0) -> list[dict]:
+        """Return deterministic row samples for verification."""
+        ...
+
+    def linked_transfer(self, source_adapter: Any, source_table: str, target_table: str) -> int:
+        """Execute linked INSERT...SELECT transfer when supported by connector."""
         ...

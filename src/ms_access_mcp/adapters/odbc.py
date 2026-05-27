@@ -13,6 +13,7 @@ from ..models.database import (
     QueryInfo,
     LinkedTableInfo,
 )
+from ..models.migration import TableSchema, ColumnSchema, UnknownMetadata
 
 
 # Connection string templates for Access databases
@@ -155,6 +156,39 @@ class OdbcAdapter(AccessAdapter):
             pass
 
         return tables
+
+    def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]:
+        """Build a best-effort table schema plan from ODBC metadata.
+
+        ODBC cannot reliably expose Access-only metadata (FK/index/default/autoincrement),
+        so these are explicitly marked unknown.
+        """
+        tables = self.get_tables()
+        schema_tables: list[TableSchema] = []
+        for table in tables:
+            columns = [
+                ColumnSchema(
+                    name=field.name,
+                    source_type=field.type,
+                    max_length=field.size if field.size > 0 else None,
+                    allow_null=not field.required,
+                    is_autoincrement=False,
+                    default_value=None,
+                )
+                for field in table.fields
+            ]
+            schema_tables.append(TableSchema(name=table.name, columns=columns))
+
+        return (
+            schema_tables,
+            UnknownMetadata(
+                primary_keys=True,
+                foreign_keys=True,
+                defaults=True,
+                indexes=True,
+                autoincrement=True,
+            ),
+        )
 
     def _pyodbc_type_name(self, sql_type: str) -> str:
         """Map SQL Server/Access type string to friendly name."""

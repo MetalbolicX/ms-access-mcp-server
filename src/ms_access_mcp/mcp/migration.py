@@ -1,12 +1,11 @@
 """Migration tools for MS Access database."""
 from .server import mcp, connection_service, migration_service
+from ..adapters.wincom import WinComAdapter
 
 
 @mcp.tool()
 def extract_schema(database_path: str) -> dict:
     """Extract schema from an Access database."""
-    from ..adapters.wincom import WinComAdapter
-
     # Reuse active connection when possible to avoid opening the same Access DB
     # in a second COM adapter instance (can fail due to Access COM singleton behavior).
     active_adapter = connection_service.adapter
@@ -42,7 +41,15 @@ def upload_schema(target_type: str, connection_string: str, schema_json: dict) -
 
 
 @mcp.tool()
-def transfer_data(target_type: str, connection_string: str, database_path: str, schema_json: dict | None = None) -> dict:
+def transfer_data(
+    target_type: str,
+    connection_string: str,
+    database_path: str,
+    schema_json: dict | None = None,
+    transfer_mode: str = "auto",
+    verification_mode: str = "full",
+    table_overrides: dict | None = None,
+) -> dict:
     """Transfer data from Access to target database.
     
     Args:
@@ -50,9 +57,14 @@ def transfer_data(target_type: str, connection_string: str, database_path: str, 
         connection_string: Connection string for target database
         database_path: Path to Access database
         schema_json: Optional ExtractedSchema dict (will extract if not provided)
+        transfer_mode: Transfer strategy mode (auto, batch, linked)
+        verification_mode: Verification mode (full, count-only)
+        table_overrides: Per-table column/WHERE/ORDER BY overrides for flexible transfer.
+            Dict keyed by table name; each value is a TableTransferConfig dict:
+            {"columns": ["col1", "col2"], "where": "col>0", "order_by": ["col1"]}.
+            All fields optional — missing fields default to full-table transfer.
     """
-    from ..adapters.wincom import WinComAdapter
-    from ..models.migration import ExtractedSchema
+    from ..models.migration import ExtractedSchema, TableTransferConfig
     
     adapter = WinComAdapter()
     if not adapter.connect(database_path):
@@ -63,7 +75,19 @@ def transfer_data(target_type: str, connection_string: str, database_path: str, 
     else:
         schema = migration_service.extract_schema(adapter, database_path)
     
-    result = migration_service.transfer_data(target_type, connection_string, schema, adapter)
+    deserialized_overrides: dict[str, TableTransferConfig] | None = None
+    if table_overrides is not None:
+        deserialized_overrides = {k: TableTransferConfig(**v) for k, v in table_overrides.items()}
+    
+    result = migration_service.transfer_data(
+        target_type,
+        connection_string,
+        schema,
+        adapter,
+        transfer_mode=transfer_mode,
+        verification_mode=verification_mode,
+        table_overrides=deserialized_overrides,
+    )
     adapter.disconnect()
     return result
 

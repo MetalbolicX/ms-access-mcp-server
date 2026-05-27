@@ -107,6 +107,31 @@ class MappedColumn(BaseModel):
 class SchemaMapper:
     """Maps Access column types to target database types."""
 
+    @staticmethod
+    def _format_default_literal(value: str) -> str:
+        raw = value.strip()
+        if not raw:
+            return "NULL"
+
+        # Common Access default wrappers: =VALUE / (VALUE)
+        if raw.startswith("="):
+            raw = raw[1:].strip()
+        if raw.startswith("(") and raw.endswith(")"):
+            raw = raw[1:-1].strip()
+
+        lowered = raw.lower()
+        if lowered in {"null", "true", "false"}:
+            return lowered.upper()
+
+        if raw.startswith("'") and raw.endswith("'"):
+            return raw
+
+        if raw.replace(".", "", 1).isdigit():
+            return raw
+
+        escaped = raw.replace("'", "''")
+        return f"'{escaped}'"
+
     def map_column(self, column: ColumnSchema, target_type: str) -> MappedColumn:
         """Map a single Access column to target database type."""
         type_map = TYPE_MAP.get(target_type, TYPE_MAP["postgres"])
@@ -144,21 +169,55 @@ class SchemaMapper:
         """Generate DDL for creating a table in target database."""
         lines = []
         pk_cols = []
+        fk_defs = []
 
         for col in table.columns:
             mapped = self.map_column(col, target_type)
             col_def = f'"{mapped.name}" {mapped.target_type}'
             if not mapped.allow_null:
                 col_def += " NOT NULL"
+            if col.default_value is not None:
+                col_def += f" DEFAULT {self._format_default_literal(col.default_value)}"
             if mapped.is_autoincrement and target_type not in ("sqlserver",):
                 pass  # autoincrement is part of type
             lines.append(col_def)
             if col.name in table.primary_key:
                 pk_cols.append(f'"{mapped.name}"')
 
+        for fk in table.foreign_keys:
+            if not fk.columns or not fk.referenced_columns:
+                continue
+            child_cols = ", ".join(f'"{column}"' for column in fk.columns)
+            parent_cols = ", ".join(f'"{column}"' for column in fk.referenced_columns)
+            fk_defs.append(
+                f'CONSTRAINT "{fk.name}" FOREIGN KEY ({child_cols}) '
+                f'REFERENCES "{fk.referenced_table}" ({parent_cols})'
+            )
+
         sql = f'CREATE TABLE "{table.name}" (\n  '
         sql += ",\n  ".join(lines)
         if pk_cols:
             sql += f",\n  PRIMARY KEY ({', '.join(pk_cols)})"
+        if fk_defs:
+            sql += ",\n  " + ",\n  ".join(fk_defs)
         sql += "\n)"
         return sql
+
+    def map_index_ddl(self, table: TableSchema, target_type: str) -> list[str]:
+        """Generate index DDL statements for a table.
+
+        The output stays target-agnostic at orchestration level; connector-specific
+        execution remains encapsulated in connectors.
+        """
+        _ = target_type  # reserved for future dialect-specific quoting.
+
+        statements: list[str] = []
+        for index in table.indexes:
+            if not index.columns:
+                continue
+            qualifier = "UNIQUE " if index.is_unique else ""
+            columns = ", ".join(f'"{column}"' for column in index.columns)
+            statements.append(
+                f'CREATE {qualifier}INDEX "{index.name}" ON "{table.name}" ({columns})'
+            )
+        return statements

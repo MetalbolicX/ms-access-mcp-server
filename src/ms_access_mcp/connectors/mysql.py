@@ -1,6 +1,6 @@
 from typing import Any
 import mysql.connector
-from .base import TargetConnector
+from .base import TargetConnector, ConnectorCapabilities
 
 class MySqlConnector(TargetConnector):
     """MySQL/MariaDB connector for migration."""
@@ -85,3 +85,62 @@ class MySqlConnector(TargetConnector):
 
     def generate_ddl(self, schema: Any) -> str:
         return self._schema_mapper.map_table_ddl(schema, "mysql")
+
+    def get_capabilities(self) -> ConnectorCapabilities:
+        return ConnectorCapabilities(
+            supports_linked_insert_select=False,
+            supports_checksum=True,
+            supports_sampling=True,
+            preferred_batch_size=1000,
+        )
+
+    def get_row_count(self, table: str) -> int:
+        if not self.is_connected():
+            return 0
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(f"SELECT COUNT(*) FROM `{table}`")
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+        except Exception:
+            return 0
+
+    def get_checksum(self, table: str, columns: list[str]) -> str | None:
+        if not self.is_connected() or not columns:
+            return None
+        try:
+            quoted_columns = [f"`{column}`" for column in columns]
+            order_by_clause = ", ".join(quoted_columns)
+            value_expr = ", " .join([f"COALESCE(CAST({column} AS CHAR), '<NULL>')" for column in quoted_columns])
+            sql = (
+                f"SELECT MD5(COALESCE(GROUP_CONCAT(CONCAT_WS('|', {value_expr}) ORDER BY {order_by_clause} SEPARATOR '|'), '')) "
+                f"FROM `{table}`"
+            )
+            with self._conn.cursor() as cur:
+                cur.execute(sql)
+                row = cur.fetchone()
+                return str(row[0]) if row and row[0] is not None else None
+        except Exception:
+            return None
+
+    def sample_rows(self, table: str, columns: list[str], limit: int, offset: int = 0) -> list[dict]:
+        if not self.is_connected() or not columns or limit <= 0:
+            return []
+        try:
+            quoted_columns = [f"`{column}`" for column in columns]
+            select_clause = ", ".join(quoted_columns)
+            order_by_clause = ", ".join(quoted_columns)
+            sql = (
+                f"SELECT {select_clause} "
+                f"FROM `{table}` "
+                f"ORDER BY {order_by_clause} LIMIT %s OFFSET %s"
+            )
+            with self._conn.cursor() as cur:
+                cur.execute(sql, (limit, offset))
+                rows = cur.fetchall()
+                return [dict(zip(columns, row, strict=False)) for row in rows]
+        except Exception:
+            return []
+
+    def linked_transfer(self, source_adapter: Any, source_table: str, target_table: str) -> int:
+        raise NotImplementedError("Linked transfer is adapter-specific and not available in this connector")

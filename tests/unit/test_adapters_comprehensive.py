@@ -4,6 +4,15 @@ import pytest
 from ms_access_mcp.adapters.wincom import WinComAdapter
 from ms_access_mcp.adapters.odbc import OdbcAdapter
 from ms_access_mcp.adapters.base import AccessAdapter
+from ms_access_mcp.models.database import TableInfo, FieldInfo, QueryInfo
+from ms_access_mcp.models.migration import (
+    TableSchema,
+    ColumnSchema,
+    ForeignKeySchema,
+    IndexSchema,
+    UnknownMetadata,
+)
+from ms_access_mcp.services.migration import MigrationService
 
 
 class TestProtocolCompliance:
@@ -357,3 +366,96 @@ class TestAccessAdapterProtocol:
     def test_save_database_in_protocol(self):
         assert hasattr(AccessAdapter, "save_database")
         # engine is not present in early-return error cases
+
+    def test_get_table_schema_plan_in_protocol(self):
+        assert hasattr(AccessAdapter, "get_table_schema_plan")
+
+
+class _SchemaPlanFakeAdapter:
+    def get_tables(self) -> list[TableInfo]:
+        return [
+            TableInfo(
+                name="Orders",
+                fields=[
+                    FieldInfo(name="OrderID", type="Long Integer", required=True),
+                    FieldInfo(name="CustomerID", type="Long Integer", required=True),
+                    FieldInfo(name="Status", type="Text", size=50, required=True),
+                ],
+                record_count=2,
+            )
+        ]
+
+    def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]:
+        return (
+            [
+                TableSchema(
+                    name="Orders",
+                    columns=[
+                        ColumnSchema(
+                            name="OrderID",
+                            source_type="Long Integer",
+                            allow_null=False,
+                            is_autoincrement=True,
+                        ),
+                        ColumnSchema(
+                            name="CustomerID",
+                            source_type="Long Integer",
+                            allow_null=False,
+                            is_autoincrement=False,
+                        ),
+                        ColumnSchema(
+                            name="Status",
+                            source_type="Text",
+                            max_length=50,
+                            allow_null=False,
+                            default_value="PENDING",
+                            is_autoincrement=False,
+                        ),
+                    ],
+                    primary_key=["OrderID"],
+                    foreign_keys=[
+                        ForeignKeySchema(
+                            name="fk_orders_customer",
+                            columns=["CustomerID"],
+                            referenced_table="Customers",
+                            referenced_columns=["CustomerID"],
+                        )
+                    ],
+                    indexes=[
+                        IndexSchema(
+                            name="idx_orders_status",
+                            columns=["Status"],
+                            is_unique=False,
+                        )
+                    ],
+                ),
+                # This simulates an adapter bug where a saved query leaks into the table list.
+                TableSchema(name="SavedRevenueQuery", columns=[]),
+            ],
+            UnknownMetadata(defaults=True),
+        )
+
+    def get_queries(self) -> list[QueryInfo]:
+        return [
+            QueryInfo(name="SavedRevenueQuery", sql="SELECT 1", type="select"),
+        ]
+
+
+class TestSchemaFidelityExtractionPath:
+    def test_extract_schema_uses_metadata_contract(self):
+        service = MigrationService()
+        schema = service.extract_schema(_SchemaPlanFakeAdapter(), "source.accdb")
+
+        orders = next(t for t in schema.tables if t.name == "Orders")
+        assert orders.primary_key == ["OrderID"]
+        assert orders.foreign_keys[0].referenced_table == "Customers"
+        assert orders.indexes[0].name == "idx_orders_status"
+        assert orders.columns[0].is_autoincrement is True
+        assert orders.columns[2].default_value == "PENDING"
+        assert schema.unknown_metadata.defaults is True
+
+    def test_extract_schema_excludes_saved_queries(self):
+        service = MigrationService()
+        schema = service.extract_schema(_SchemaPlanFakeAdapter(), "source.accdb")
+
+        assert all(table.name != "SavedRevenueQuery" for table in schema.tables)
