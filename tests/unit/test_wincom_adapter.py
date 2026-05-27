@@ -1373,13 +1373,20 @@ class TestWinComSchemaServiceIntegration:
 
 
 class TestWinComGenerateSql:
-    """generate_sql — full Jet SQL DDL generation via WinComAdapter.
+    """generate_sql — full Jet SQL DDL generation via WinComAdapter."""
 
-    NOTE: WinComAdapter.generate_sql() has a nested-dispatch deadlock bug
-    (get_tables dispatches internally when already inside a dispatched closure).
-    This test verifies the non-live path only. JetSqlGenerator is tested
-    directly in test_schema_contracts.py.
-    """
+    def test_generate_sql_creates_file(self, adapter, mock_app, tmp_path):
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        # Create a real table so get_tables returns something
+        adapter.execute_query("CREATE TABLE gen_test (id INTEGER, name TEXT)")
+        out_path = tmp_path / "schema.sql"
+        result = adapter.generate_sql(str(out_path))
+        assert result["success"] is True
+        assert os.path.exists(out_path)
+        content = out_path.read_text()
+        assert "gen_test" in content
 
     def test_generate_sql_not_connected(self, adapter):
         result = adapter.generate_sql("/tmp/schema.sql")
@@ -1387,43 +1394,33 @@ class TestWinComGenerateSql:
 
 
 class TestWinComAdapterLifecycle:
-    """Adapter lifecycle — separate connect/disconnect cycles.
+    """Adapter lifecycle — connect/disconnect cycles."""
 
-    NOTE: ComDispatcher._stopping is not reset after shutdown(), so
-    reconnecting on the same adapter requires a workaround. This is a known
-    production issue in the dispatcher. Tests use separate adapter instances.
-    """
-
-    def test_reconnect_new_adapter(self, adapter, mock_app, tmp_path):
-        """Connect, disconnect, then connect a fresh adapter."""
+    def test_reconnect_same_adapter(self, adapter, mock_app, tmp_path):
+        """Connect, disconnect, then reconnect the SAME adapter."""
         db_path = tmp_path / "test.accdb"
         db_path.write_text("mock")
         assert adapter.connect(str(db_path)) is True
         assert adapter.is_connected() is True
         adapter.disconnect()
         assert adapter.is_connected() is False
-
-        from ms_access_mcp.adapters.wincom import WinComAdapter
-        adapter2 = WinComAdapter()
-        try:
-            assert adapter2.connect(str(db_path)) is True
-            assert adapter2.is_connected() is True
-        finally:
-            adapter2.disconnect()
-
-    def test_double_connect(self, adapter, mock_app, tmp_path):
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
+        # Reconnect — should work without creating a new adapter
         assert adapter.connect(str(db_path)) is True
+        assert adapter.is_connected() is True
+
+    def test_reconnect_different_db(self, adapter, mock_app, tmp_path):
+        """Disconnect and connect to a different database."""
+        db1 = tmp_path / "db1.accdb"
+        db2 = tmp_path / "db2.accdb"
+        db1.write_text("mock1")
+        db2.write_text("mock2")
+
+        assert adapter.connect(str(db1)) is True
+        assert adapter.is_connected() is True
         adapter.disconnect()
-        # Connecting again after disconnect (uses a new mock_app fixture
-        # resets the mock state). Reset _stopping for the re-connect.
-        from ms_access_mcp.adapters.wincom import WinComAdapter
-        adapter2 = WinComAdapter()
-        try:
-            assert adapter2.connect(str(db_path)) is True
-        finally:
-            adapter2.disconnect()
+
+        assert adapter.connect(str(db2)) is True
+        assert adapter.is_connected() is True
 
     def test_get_tables_cached_fresh(self, adapter, mock_app, tmp_path):
         """Each get_tables call should re-read the database."""

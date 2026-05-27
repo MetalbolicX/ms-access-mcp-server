@@ -57,9 +57,10 @@ class ComDispatcher:
         self._db_path: Optional[str] = None
 
     def start(self) -> None:
-        """Start the STA dispatcher thread (idempotent)."""
+        """Start the STA dispatcher thread (idempotent, reentrant after shutdown)."""
         if self._started:
             return
+        self._stopping = False  # Reset in case start() is called after shutdown()
         self._thread = threading.Thread(target=self._run, name="ComDispatcher-STA", daemon=True)
         self._thread.start()
         self._started = True
@@ -1622,8 +1623,43 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                # 1. Get tables (already dispatches internally)
-                base_tables = self.get_tables()
+                db = self._dispatcher._current_db
+                access_app = self._dispatcher._access_app
+
+                # 1. Read tables directly from DAO (avoid nested dispatch deadlock).
+                #    get_tables() internally dispatches, so we replicate the logic
+                #    here to stay on the STA thread within this single dispatch.
+                base_tables: list[TableInfo] = []
+                for i in range(db.TableDefs.Count):
+                    tdef = db.TableDefs(i)
+                    if tdef.Name.startswith("MSys") or tdef.Name.startswith("~"):
+                        continue
+                    if tdef.Attributes & 0x80000000:
+                        continue
+                    fields = []
+                    for j in range(tdef.Fields.Count):
+                        fld = tdef.Fields(j)
+                        fields.append({
+                            "name": fld.Name,
+                            "type": self._access_type_name(fld.Type),
+                            "size": fld.Size,
+                            "required": bool(fld.Required),
+                            "allow_zero_length": bool(fld.AllowZeroLength),
+                        })
+                    record_count = 0
+                    try:
+                        rs = db.OpenRecordset(f"SELECT COUNT(*) FROM [{tdef.Name}]")
+                        if not rs.EOF:
+                            record_count = rs.Fields(0).Value
+                        rs.Close()
+                    except Exception:
+                        pass
+                    base_tables.append(TableInfo(
+                        name=tdef.Name,
+                        fields=fields,
+                        record_count=record_count,
+                    ))
+
                 if not base_tables:
                     return {"success": True, "path": output_path, "statements": 0, "tables": []}
 
@@ -1632,22 +1668,42 @@ class WinComAdapter(AccessAdapter):
                 for base_table in base_tables:
                     table_name = base_table.name
 
-                    # Get field details (attributes, default_value) via direct dispatch
-                    field_details = self._dispatcher.call(self._get_field_details, table_name)
+                    # Get field details via direct DAO access (no dispatch needed)
+                    field_details: list[dict] = []
+                    field_detail_map: dict[str, dict] = {}
+                    try:
+                        tdef = db.TableDefs(table_name)
+                        for fld in tdef.Fields:
+                            default = None
+                            try:
+                                default = str(fld.DefaultValue) if fld.DefaultValue is not None else None
+                            except Exception:
+                                default = None
+                            detail = {
+                                "name": fld.Name,
+                                "type": fld.Type,
+                                "size": fld.Size,
+                                "attributes": fld.Attributes,
+                                "default_value": default,
+                            }
+                            field_details.append(detail)
+                            field_detail_map[fld.Name] = detail
+                    except Exception:
+                        pass
 
-                    # Get primary key columns for this table via direct dispatch
-                    indexes = self._dispatcher.call(self._get_table_indexes, table_name)
+                    # Get primary key columns via direct DAO access
                     pk_columns: list[str] = []
-                    for idx_name, idx_fields in indexes.items():
-                        if idx_name.startswith("~"):
-                            continue
-                        pk_columns = idx_fields
-                        break
+                    try:
+                        tdef = db.TableDefs(table_name)
+                        for idx in tdef.Indexes:
+                            if idx.Primary:
+                                pk_columns = [f.Name for f in idx.Fields]
+                                break
+                    except Exception:
+                        pass
 
                     # Merge field details into FieldInfo objects
                     enriched_fields: list[FieldInfo] = []
-                    field_detail_map = {fd["name"]: fd for fd in field_details}
-
                     for fld in base_table.fields:
                         detail = field_detail_map.get(fld.name, {})
                         attrs = detail.get("attributes", 0)
@@ -1672,9 +1728,41 @@ class WinComAdapter(AccessAdapter):
                     )
                     tables.append(enriched_table)
 
-                # 3. Get relationships and foreign keys
-                relationships = self.get_relationships()
-                foreign_keys = self._dispatcher.call(self._get_relationship_columns)
+                # 3. Get relationships via direct DAO access
+                relationships: list[RelationshipInfo] = []
+                try:
+                    for i in range(db.Relations.Count):
+                        rel = db.Relations(i)
+                        if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
+                            continue
+                        relationships.append(RelationshipInfo(
+                            name=rel.Name,
+                            table=rel.Table,
+                            foreign_table=rel.ForeignTable,
+                            attributes=str(rel.Attributes),
+                        ))
+                except Exception:
+                    pass
+
+                foreign_keys: list[ForeignKeyInfo] = []
+                try:
+                    for rel in db.Relations:
+                        if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
+                            continue
+                        child_columns: list[str] = []
+                        parent_columns: list[str] = []
+                        for rel_field in rel.Fields:
+                            child_columns.append(rel_field.Name)
+                            parent_name = getattr(rel_field, "ForeignName", rel_field.Name)
+                            parent_columns.append(parent_name)
+                        foreign_keys.append(ForeignKeyInfo(
+                            name=rel.Name,
+                            columns=child_columns,
+                            foreign_table=rel.ForeignTable,
+                            foreign_columns=parent_columns,
+                        ))
+                except Exception:
+                    pass
 
                 # 4. Instantiate JetSqlGenerator and generate
                 generator = JetSqlGenerator(tables, relationships, foreign_keys)
