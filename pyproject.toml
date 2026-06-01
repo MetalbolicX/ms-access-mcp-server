@@ -15,6 +15,11 @@ dependencies = [
 
 [project.optional-dependencies]
 windows = ["pywin32>=306"]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.5.0",
+    "pyright>=1.1.300",
+]
 
 [build-system]
 requires = ["hatchling"]

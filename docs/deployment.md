@@ -5,7 +5,7 @@
 ### 1. Install
 
 ```cmd
-pip install -e ".[windows]"
+uv sync --extra windows
 ```
 
 ### 2. Generate API key

@@ -62,17 +62,17 @@ A Model Context Protocol (MCP) server for Microsoft Access that enables AI assis
 
 ```bash
 cd ms-access-mcp-server
-pip install -e ".[windows]"  # Install with Windows dependencies
+uv sync --extra windows  # Install with Windows dependencies
 ```
 
 ### Running the MCP Server
 
 ```bash
 # Run directly (stdio transport for MCP clients)
-python -m ms_access_mcp.mcp.server
+uv run python -m ms_access_mcp.mcp.server
 
 # Or use the CLI
-ms-access-mcp --help
+uv run ms-access-mcp --help
 ```
 
 ### Frontend Development
@@ -137,19 +137,19 @@ Ensure Python and Microsoft Office have matching bitness (both 32-bit or both 64
 
 ```bash
 # Install dev dependencies
-pip install -e ".[dev]"
+uv sync --extra dev
 
 # Run tests
-pytest
+uv run pytest
 
 # Lint
-ruff check .
+uv run ruff check .
 
 # Format
-ruff format .
+uv run ruff format .
 
 # Type check
-pyright
+uv run pyright
 ```
 
 ## License
