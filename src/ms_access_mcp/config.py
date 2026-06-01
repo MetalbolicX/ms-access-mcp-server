@@ -1,5 +1,39 @@
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+@dataclass
+class LlmConfig:
+    """LLM adapter configuration — defaults to disabled for safety (LLMSPEC-01).
+
+    All secrets (API keys) are referenced by environment variable name, never
+    stored directly in config. The deterministic core is never impacted when
+    LLM is disabled — all existing MCP tools remain fully functional.
+
+    Attributes:
+        enabled: Whether LLM features are active. Default False (safe default).
+        provider: LLM provider name (e.g. "openai", "anthropic"). None = unset.
+        api_key_env_name: Name of the env var holding the API key.
+        base_url: Base URL for the LLM API endpoint. None = provider default.
+        model: Model name to request (e.g. "gpt-4"). None = provider default.
+        temperature: Sampling temperature; 0.0 = deterministic. Default 0.0.
+        timeout_seconds: Request timeout in seconds. Default 5.
+        allowlist: List of approved model names. Empty = all allowed (when enabled).
+        redact_rules: List of regex patterns for pre-flight redaction.
+        telemetry_enabled: Whether to write per-request audit logs. Default False.
+    """
+
+    enabled: bool = False
+    provider: str | None = None
+    api_key_env_name: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    temperature: float = 0.0
+    timeout_seconds: int = 5
+    allowlist: list[str] = field(default_factory=list)
+    redact_rules: list[str] = field(default_factory=list)
+    telemetry_enabled: bool = False
 
 
 class ServerConfig:
