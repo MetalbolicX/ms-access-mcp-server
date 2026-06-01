@@ -24,13 +24,26 @@ class TestSchemaConnectionGuards:
 class TestGetTables:
     """Tests for get_tables tool."""
 
+    def _patch_connected_schema(self, mock_schema, mock_adapter=None):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter or MagicMock()
+        return patch.dict(
+            server.get_tables.__globals__,
+            connection_service=mock_conn,
+            schema_service=mock_schema,
+        )
+
     def test_get_tables_returns_table_list(self):
         """get_tables should return list of table dumps."""
         mock_table = MagicMock()
         mock_table.model_dump.return_value = {"name": "Customers", "fields": [], "record_count": 10}
         mock_schema = MagicMock()
         mock_schema.get_tables.return_value = [mock_table]
-        with patch.dict(server.get_tables.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_tables.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_tables()
             assert result["success"] is True
             assert result["count"] == 1
@@ -40,7 +53,10 @@ class TestGetTables:
         """get_tables should return empty list when no tables found."""
         mock_schema = MagicMock()
         mock_schema.get_tables.return_value = []
-        with patch.dict(server.get_tables.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_tables.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_tables()
             assert result["success"] is True
             assert result["count"] == 0
@@ -55,7 +71,10 @@ class TestGetTableSchema:
         mock_table.model_dump.return_value = {"name": "Customers", "fields": []}
         mock_schema = MagicMock()
         mock_schema.get_table_schema.return_value = mock_table
-        with patch.dict(server.get_table_schema.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_table_schema.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_table_schema("Customers")
             assert result["success"] is True
             assert result["table"]["name"] == "Customers"
@@ -64,7 +83,10 @@ class TestGetTableSchema:
         """get_table_schema should return error when table not found."""
         mock_schema = MagicMock()
         mock_schema.get_table_schema.return_value = None
-        with patch.dict(server.get_table_schema.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_table_schema.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_table_schema("NonExistent")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -79,7 +101,10 @@ class TestGetRelationships:
         mock_rel.model_dump.return_value = {"name": "FK_Orders_Customers", "table": "Orders"}
         mock_schema = MagicMock()
         mock_schema.get_relationships.return_value = [mock_rel]
-        with patch.dict(server.get_relationships.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_relationships.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_relationships()
             assert result["success"] is True
             assert result["count"] == 1
@@ -95,6 +120,7 @@ class TestGenerateSql:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.generate_sql.return_value = {"success": True, "file_path": "/tmp/out.sql"}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.generate_sql.__globals__, connection_service=mock_conn):
             result = server.generate_sql("/tmp/out.sql")
             assert result["success"] is True
@@ -105,6 +131,7 @@ class TestGenerateSql:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = None
+        mock_conn.get_adapter.return_value = None
         with patch.dict(server.generate_sql.__globals__, connection_service=mock_conn):
             result = server.generate_sql("/tmp/out.sql")
             assert result["success"] is False
@@ -127,7 +154,10 @@ class TestGetErDiagram:
         mock_schema = MagicMock()
         mock_schema.get_tables.return_value = [mock_table]
         mock_schema.get_relationships.return_value = [mock_rel]
-        with patch.dict(server.get_er_diagram.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_er_diagram.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_er_diagram()
             assert result["success"] is True
             assert result["node_count"] == 1

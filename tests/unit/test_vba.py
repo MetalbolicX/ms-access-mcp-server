@@ -46,7 +46,10 @@ class TestGetVbaProjects:
         """get_vba_projects should return empty list when no project found."""
         mock_schema = MagicMock()
         mock_schema.get_vba_project_name.return_value = ""
-        with patch.dict(server.get_vba_projects.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_vba_projects.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_vba_projects()
             assert result["success"] is True
             assert result["projects"] == []
@@ -56,7 +59,10 @@ class TestGetVbaProjects:
         """get_vba_projects should return project name when found."""
         mock_schema = MagicMock()
         mock_schema.get_vba_project_name.return_value = "MyProject"
-        with patch.dict(server.get_vba_projects.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_vba_projects.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_vba_projects()
             assert result["success"] is True
             assert result["projects"] == ["MyProject"]
@@ -70,7 +76,10 @@ class TestGetVbaCode:
         """get_vba_code should return error when module not found or empty."""
         mock_schema = MagicMock()
         mock_schema.get_vba_code.return_value = ""
-        with patch.dict(server.get_vba_code.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_vba_code.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_vba_code("NonExistentModule")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -79,7 +88,10 @@ class TestGetVbaCode:
         """get_vba_code should return code when module exists."""
         mock_schema = MagicMock()
         mock_schema.get_vba_code.return_value = "Sub Test()\nEnd Sub"
-        with patch.dict(server.get_vba_code.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_vba_code.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_vba_code("modTest")
             assert result["success"] is True
             assert result["module"] == "modTest"
@@ -94,6 +106,7 @@ class TestSetVbaCode:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev_copy = MagicMock()
         mock_dev_copy.compile_with_retry.return_value = {"success": True, "module": "modTest"}
         with patch.dict(server.set_vba_code.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev_copy):
@@ -111,6 +124,7 @@ class TestAddVbaProcedure:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.add_vba_procedure.return_value = False
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev_copy = MagicMock()
         mock_dev_copy.compile_with_retry.return_value = {"success": False}
         with patch.dict(server.add_vba_procedure.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev_copy):
@@ -127,6 +141,7 @@ class TestDeleteModule:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.delete_module.return_value = True
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.delete_module.__globals__, connection_service=mock_conn):
             result = server.delete_module("modTest")
             assert result["success"] is True
@@ -138,6 +153,7 @@ class TestDeleteModule:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.delete_module.side_effect = RuntimeError("Module in use")
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.delete_module.__globals__, connection_service=mock_conn):
             result = server.delete_module("modTest")
             assert result["success"] is False
@@ -153,6 +169,7 @@ class TestVbaListProcedures:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.vba_list_procedures.return_value = []
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.vba_list_procedures.__globals__, connection_service=mock_conn):
             result = server.vba_list_procedures("Module1")
             assert result["success"] is True
@@ -167,6 +184,7 @@ class TestVbaListProcedures:
             {"name": "Init", "type": "Sub", "start_line": 1, "line_count": 10},
             {"name": "Validate", "type": "Function", "start_line": 12, "line_count": 25},
         ]
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.vba_list_procedures.__globals__, connection_service=mock_conn):
             result = server.vba_list_procedures("Module1")
             assert result["success"] is True
@@ -188,6 +206,7 @@ class TestVbaGetProcedure:
             "code": "Sub Init()\nMsgBox \"hi\"\nEnd Sub",
             "signature": "Sub Init()",
         }
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.vba_get_procedure.__globals__, connection_service=mock_conn):
             result = server.vba_get_procedure("Module1", "Init")
             assert result["success"] is True
@@ -201,6 +220,7 @@ class TestVbaGetProcedure:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.vba_get_procedure.return_value = {}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.vba_get_procedure.__globals__, connection_service=mock_conn):
             result = server.vba_get_procedure("Module1", "NonExistent")
             assert result["success"] is False
@@ -216,6 +236,7 @@ class TestVbaReplaceProcedure:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.vba_replace_procedure.return_value = True
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.vba_replace_procedure.__globals__, connection_service=mock_conn):
             result = server.vba_replace_procedure("Module1", "Init", "Sub Init()\nMsgBox \"new\"\nEnd Sub")
             assert result["success"] is True
@@ -227,6 +248,7 @@ class TestVbaReplaceProcedure:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.vba_replace_procedure.return_value = False
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.vba_replace_procedure.__globals__, connection_service=mock_conn):
             result = server.vba_replace_procedure("Module1", "NonExistent", "Sub Foo()\nEnd Sub")
             assert result["success"] is False
@@ -243,6 +265,7 @@ class TestSaveQuery:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_queries.return_value = []
         mock_conn.adapter.create_query.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.save_query.__globals__, connection_service=mock_conn):
             result = server.save_query("MyQuery", "SELECT * FROM Users")
             assert result["success"] is True
@@ -257,6 +280,7 @@ class TestSaveQuery:
         mock_query.name = "MyQuery"
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_queries.return_value = [mock_query]
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.save_query.__globals__, connection_service=mock_conn):
             result = server.save_query("MyQuery", "SELECT * FROM Users", overwrite=False)
             assert result["success"] is False
@@ -271,6 +295,7 @@ class TestSaveQuery:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_queries.return_value = [mock_query]
         mock_conn.adapter.set_query_sql.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.save_query.__globals__, connection_service=mock_conn):
             result = server.save_query("MyQuery", "SELECT * FROM NewTable", overwrite=True)
             assert result["success"] is True
@@ -283,6 +308,7 @@ class TestSaveQuery:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_queries.return_value = []
         mock_conn.adapter.create_query.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.save_query.__globals__, connection_service=mock_conn):
             result = server.save_query("NewQuery", "SELECT 1", overwrite=True)
             assert result["success"] is True
