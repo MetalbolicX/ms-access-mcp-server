@@ -37,7 +37,7 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent.parent / "src" / "ms_access_mcp"
 
 # Directories to skip (provider-specific code lives here)
-SKIP_DIRS = {"adapters", "adapters_llm"}
+SKIP_DIRS = {"adapters", "adapters_llm", "telemetry"}
 
 # Package-name tokens that indicate a provider SDK import.
 # Matches import statements and top-level string literals like
