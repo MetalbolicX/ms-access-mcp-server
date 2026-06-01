@@ -112,10 +112,10 @@ class TestCliExportVbaCommand:
 
 class TestCliImportVbaCommand:
     def test_import_vba(self):
-        result = runner.invoke(app, ["import-vba", "Module1", "/tmp/Module1.bas"])
+        result = runner.invoke(app, ["import-vba", "Module1", os.path.join(os.sep, "tmp", "Module1.bas")])
         assert result.exit_code == 0
         assert "Module1" in result.stdout
-        assert "/tmp/Module1.bas" in result.stdout
+        assert os.path.join(os.sep, "tmp", "Module1.bas") in result.stdout
 
 
 class TestCliHelp:

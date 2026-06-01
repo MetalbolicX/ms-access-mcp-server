@@ -4,6 +4,7 @@ These tools are defined in mcp/system.py and re-exported from mcp/server.py.
 Due to the circular import architecture (system.py <-> server.py), function
 globals are bound to a shared namespace that requires direct globals patching.
 """
+import sys
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -339,11 +340,13 @@ class TestDiagnoseEnvironmentTool:
         assert "platform" in result["diagnostics"]
         assert "python_version" in result["diagnostics"]
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Linux-only test")
     def test_diagnose_environment_has_pywin32_false_on_linux(self):
         """On Linux, pywin32_available should be False."""
         result = server.diagnose_environment()
         assert result["diagnostics"]["pywin32_available"] is False
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Linux-only test")
     def test_diagnose_environment_has_ace_provider_windows_only_on_linux(self):
         """On Linux, ace_provider should be windows_only."""
         result = server.diagnose_environment()
