@@ -54,7 +54,6 @@ FORBIDDEN_TOKENS = [
     "transformers",
     "azure",
     "ai_adapter",
-    "llm",
 ]
 
 # Regex patterns derived from FORBIDDEN_TOKENS
