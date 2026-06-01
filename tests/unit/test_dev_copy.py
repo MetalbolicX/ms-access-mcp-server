@@ -41,6 +41,7 @@ class TestCompactRepair:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.compact_repair.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
             result = server.compact_repair("compact", "/src.accdb", "/dst.accdb", True)
             assert result["success"] is True
@@ -52,6 +53,7 @@ class TestCompactRepair:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.compact_repair.side_effect = RuntimeError("File in use")
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
             result = server.compact_repair("compact", "/src.accdb", "/dst.accdb", True)
             assert result["success"] is False
@@ -67,6 +69,7 @@ class TestCopyDatabase:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.copy_database.return_value = True
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.copy_database.__globals__, connection_service=mock_conn):
             result = server.copy_database("/src.accdb", "/dst.accdb")
             assert result["success"] is True
@@ -81,6 +84,7 @@ class TestModuleBackupRestore:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.export_module_backup.return_value = {"success": True, "file_path": "/tmp/bak/modTest.bas"}
         with patch.dict(server.export_module_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -93,6 +97,7 @@ class TestModuleBackupRestore:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.import_module_from_text.return_value = {"success": True}
         with patch.dict(server.import_module_from_text.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -105,6 +110,7 @@ class TestModuleBackupRestore:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.restore_module_backup.return_value = {"success": True}
         with patch.dict(server.restore_module_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -121,6 +127,7 @@ class TestFormBackupRestore:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.export_form_backup.return_value = {"success": True, "file_path": "/tmp/bak/frmTest.txt"}
         with patch.dict(server.export_form_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -133,6 +140,7 @@ class TestFormBackupRestore:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.import_form_from_text.return_value = {"success": True}
         with patch.dict(server.import_form_from_file.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -145,6 +153,7 @@ class TestFormBackupRestore:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.restore_form_backup.return_value = {"success": True}
         with patch.dict(server.restore_form_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -161,6 +170,7 @@ class TestDevCopyLifecycle:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.create_dev_copy.return_value = {"success": True, "dev_path": "/tmp/dev.accdb"}
         with patch.dict(server.create_dev_copy.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
@@ -173,6 +183,7 @@ class TestDevCopyLifecycle:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.deploy_dev_copy.return_value = {"success": True}
         with patch.dict(server.deploy_dev_copy.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):

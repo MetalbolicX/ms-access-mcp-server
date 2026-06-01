@@ -38,6 +38,7 @@ class TestQueryCrudTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_q = MagicMock()
         mock_q.model_dump.return_value = {"name": "qryActive", "sql": "SELECT 1"}
         mock_conn.adapter.get_queries.return_value = [mock_q]
@@ -53,6 +54,7 @@ class TestQueryCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.create_query.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.create_query.__globals__, connection_service=mock_conn):
             result = server.create_query("q1", "SELECT 1")
             assert result["success"] is True
@@ -64,6 +66,7 @@ class TestQueryCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.set_query_sql.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.set_query_sql.__globals__, connection_service=mock_conn):
             result = server.set_query_sql("q1", "SELECT 2")
             assert result["success"] is True
@@ -75,6 +78,7 @@ class TestQueryCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.delete_query.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.delete_query.__globals__, connection_service=mock_conn):
             result = server.delete_query("q1")
             assert result["success"] is True
@@ -90,6 +94,7 @@ class TestTableCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.create_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         cols = [{"name": "ID", "type": "Long Integer"}]
         with patch.dict(server.create_table.__globals__, connection_service=mock_conn):
             result = server.create_table("T1", cols)
@@ -102,6 +107,7 @@ class TestTableCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.delete_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.delete_table.__globals__, connection_service=mock_conn):
             result = server.delete_table("T1")
             assert result["success"] is True
@@ -117,6 +123,7 @@ class TestDataCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.execute_query.return_value = {"success": True, "rows": [{"ID": 1}]}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.query_data.__globals__, connection_service=mock_conn):
             result = server.query_data("SELECT * FROM T1")
             assert result["success"] is True
@@ -128,6 +135,7 @@ class TestDataCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.insert_data.return_value = {"success": True, "rows_inserted": 1}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.insert_data.__globals__, connection_service=mock_conn):
             result = server.insert_data("T1", {"ID": 1})
             assert result["success"] is True
@@ -139,6 +147,7 @@ class TestDataCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.update_data.return_value = {"success": True, "rows_updated": 1}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.update_data.__globals__, connection_service=mock_conn):
             result = server.update_data("T1", {"Name": "Bob"}, {"ID": 1})
             assert result["success"] is True
@@ -150,6 +159,7 @@ class TestDataCrudTools:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.delete_data.return_value = {"success": True, "rows_deleted": 1}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.delete_data.__globals__, connection_service=mock_conn):
             result = server.delete_data("T1", {"ID": 1})
             assert result["success"] is True

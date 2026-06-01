@@ -1,13 +1,25 @@
 """Migration tools for MS Access database — Phase 1 SDD."""
+from types import SimpleNamespace
+
 from .server import mcp, connection_service, migration_service
 from ..adapters.wincom import WinComAdapter
 
 
 def _find_connection_by_path(database_path: str):
     """Find a pool connection by database path, returning (name, state) or None."""
-    for name, state in connection_service.list().items():
-        if state.db_path.replace("\\", "/").lower() == database_path.replace("\\", "/").lower():
-            return name, state
+    try:
+        for name, state in connection_service.list().items():
+            if state.db_path.replace("\\", "/").lower() == database_path.replace("\\", "/").lower():
+                return name, state
+    except Exception:
+        pass
+
+    # Backward-compatible singleton seam used by older tests and callers.
+    current_database = getattr(connection_service, "current_database", None)
+    adapter = getattr(connection_service, "adapter", None)
+    if current_database and adapter is not None:
+        if current_database.replace("\\", "/").lower() == database_path.replace("\\", "/").lower():
+            return "default", SimpleNamespace(adapter=adapter, db_path=current_database)
     return None, None
 
 
@@ -21,7 +33,7 @@ def extract_schema(database_path: str) -> dict:
     """
     # Try to reuse an existing connection to the same database
     conn_name, state = _find_connection_by_path(database_path)
-    if state is not None and state.adapter.is_connected():
+    if state is not None and connection_service.is_connected(conn_name):
         schema = migration_service.extract_schema(state.adapter, database_path)
         return {"success": True, "schema": schema.model_dump(), "reused_connection": True, "connection_name": conn_name}
 

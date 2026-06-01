@@ -8,6 +8,7 @@ import threading
 import concurrent.futures
 from datetime import datetime
 from typing import Optional, Callable, Any
+from ..config import ServerConfig
 from .base import AccessAdapter
 
 # DAO DBEngine.Execute option flags
@@ -1025,7 +1026,35 @@ class WinComAdapter(AccessAdapter):
             results: dict[str, bool] = {}
             for prop_name, value in properties.items():
                 try:
-                    success = self.set_control_property(form_name, control_name, prop_name, value)
+                    opened = False
+                    try:
+                        self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                        opened = True
+
+                        try:
+                            form = self._dispatcher._access_app.Screen.ActiveForm
+                        except Exception:
+                            form = self._dispatcher._access_app.Forms(form_name)
+
+                        success = False
+                        if form is not None:
+                            for i in range(form.Controls.Count):
+                                try:
+                                    ctrl = form.Controls(i)
+                                    if ctrl.Name == control_name:
+                                        ctrl.Properties(prop_name).Value = value
+                                        success = True
+                                        break
+                                except Exception:
+                                    pass
+                    except Exception:
+                        success = False
+                    finally:
+                        if opened:
+                            try:
+                                self._dispatcher._access_app.DoCmd.Close(2, form_name, 1)
+                            except Exception:
+                                pass
                     results[prop_name] = success
                 except Exception:
                     results[prop_name] = False
@@ -1595,9 +1624,7 @@ class WinComAdapter(AccessAdapter):
         Captures Trusted Locations before the call and restores them after,
         controlled by config.preserve_trusted_locations.
         """
-        # Import here to avoid circular import and to make it optional
         try:
-            from ..config import ServerConfig
             config = ServerConfig()
             preserve = config.preserve_trusted_locations
         except Exception:

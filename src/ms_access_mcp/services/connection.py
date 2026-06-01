@@ -16,7 +16,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 
 from ..adapters.base import AccessAdapter
 
@@ -38,9 +38,15 @@ class ConnectionPool:
     behavior.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, adapter: AccessAdapter | None = None) -> None:
         self._pool: dict[str, ConnectionState] = {}
         self._active: str = "default"
+        if adapter is not None:
+            self._pool["default"] = ConnectionState(
+                adapter=adapter,
+                db_path="",
+                adapter_type="odbc",
+            )
 
     # -------------------------------------------------------------------------
     # Connection lifecycle
@@ -69,7 +75,7 @@ class ConnectionPool:
         if db_path_or_adapter is not None and hasattr(db_path_or_adapter, 'connect') and hasattr(db_path_or_adapter, 'disconnect'):
             # Backward-compatible: connect(db_path, adapter)
             db_path = name_or_db_path
-            adapter = db_path_or_adapter
+            adapter = cast(AccessAdapter, db_path_or_adapter)
             # Remove existing default connection if present
             if "default" in self._pool:
                 self._pool["default"].adapter.disconnect()
@@ -115,10 +121,15 @@ class ConnectionPool:
         """
         target = name if name is not None else "default"
         if target not in self._pool:
+            if target == "default":
+                return
             raise KeyError(f"Connection '{target}' not found")
         state = self._pool[target]
         state.adapter.disconnect()
-        del self._pool[target]
+        if target == "default":
+            state.db_path = ""
+        else:
+            del self._pool[target]
 
     def get(self, name: Optional[str] = None) -> ConnectionState:
         """Get connection state by name.
@@ -260,7 +271,8 @@ class ConnectionPool:
         For backward compatibility with code expecting old singleton API.
         """
         try:
-            return self.get().db_path
+            db_path = self.get().db_path
+            return db_path or None
         except KeyError:
             return None
 

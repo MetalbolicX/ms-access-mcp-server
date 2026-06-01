@@ -31,6 +31,7 @@ class TestExportTableCsv:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.export_table_csv.return_value = {"success": True, "file_path": "/tmp/out.csv"}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.export_table_csv.__globals__, connection_service=mock_conn):
             result = server.export_table_csv("Customers", "/tmp/out.csv")
             assert result["success"] is True
@@ -43,6 +44,7 @@ class TestExportTableCsv:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.export_table_csv.return_value = {"success": False, "error": "File not found"}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.export_table_csv.__globals__, connection_service=mock_conn):
             result = server.export_table_csv("NonExistent", "/tmp/nonexistent.csv")
             assert result["success"] is False
@@ -58,6 +60,7 @@ class TestExportQueryJson:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.export_query_json.return_value = {"success": True, "file_path": "/tmp/out.json"}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.export_query_json.__globals__, connection_service=mock_conn):
             result = server.export_query_json("qryActive", "/tmp/out.json")
             assert result["success"] is True
@@ -70,6 +73,7 @@ class TestExportQueryJson:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.export_query_json.return_value = {"success": False, "error": "Query not found"}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.export_query_json.__globals__, connection_service=mock_conn):
             result = server.export_query_json("NonExistent", "/tmp/nonexistent.json")
             assert result["success"] is False

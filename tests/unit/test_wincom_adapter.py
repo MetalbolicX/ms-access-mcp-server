@@ -446,6 +446,11 @@ class MockCodeModule:
                 "count": p["line_count"],
                 "kind": p.get("kind", 0),
             }
+        if not self._lines:
+            max_line = 0
+            for p in procedures:
+                max_line = max(max_line, p["start_line"] + p["line_count"] - 1)
+            self._lines = ["" for _ in range(max_line)]
 
     @property
     def CountOfLines(self) -> int:

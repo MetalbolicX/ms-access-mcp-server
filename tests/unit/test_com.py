@@ -67,7 +67,10 @@ class TestFormDiscoveryTools:
         mock_form.model_dump.return_value = {"name": "TestForm"}
         mock_schema = MagicMock()
         mock_schema.get_forms.return_value = [mock_form]
-        with patch.dict(server.get_forms.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_forms.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_forms()
             assert result["success"] is True
             assert result["count"] == 1
@@ -79,7 +82,10 @@ class TestFormDiscoveryTools:
         mock_report.model_dump.return_value = {"name": "TestReport"}
         mock_schema = MagicMock()
         mock_schema.get_reports.return_value = [mock_report]
-        with patch.dict(server.get_reports.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_reports.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_reports()
             assert result["success"] is True
             assert result["count"] == 1
@@ -90,7 +96,10 @@ class TestFormDiscoveryTools:
         mock_macro.model_dump.return_value = {"name": "TestMacro"}
         mock_schema = MagicMock()
         mock_schema.get_macros.return_value = [mock_macro]
-        with patch.dict(server.get_macros.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_macros.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_macros()
             assert result["success"] is True
             assert result["count"] == 1
@@ -101,7 +110,10 @@ class TestFormDiscoveryTools:
         mock_module.model_dump.return_value = {"name": "modTest"}
         mock_schema = MagicMock()
         mock_schema.get_modules.return_value = [mock_module]
-        with patch.dict(server.get_modules.__globals__, schema_service=mock_schema):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock()
+        with patch.dict(server.get_modules.__globals__, connection_service=mock_conn, schema_service=mock_schema):
             result = server.get_modules()
             assert result["success"] is True
             assert result["count"] == 1

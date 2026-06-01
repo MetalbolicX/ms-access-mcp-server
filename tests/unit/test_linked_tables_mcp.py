@@ -33,6 +33,7 @@ class TestGetLinkedTables:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_linked_tables.return_value = {"success": True, "tables": []}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.get_linked_tables.__globals__, connection_service=mock_conn):
             result = server.get_linked_tables()
             assert result["success"] is True
@@ -44,6 +45,7 @@ class TestGetLinkedTables:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_linked_tables.side_effect = RuntimeError("DAO error")
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.get_linked_tables.__globals__, connection_service=mock_conn):
             result = server.get_linked_tables()
             assert result["success"] is False
@@ -59,6 +61,7 @@ class TestCreateLinkedTable:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.create_linked_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         args = ("lnkName", "RemoteT", "ODBC;DSN=test")
         with patch.dict(server.create_linked_table.__globals__, connection_service=mock_conn):
             result = server.create_linked_table(*args)
@@ -71,6 +74,7 @@ class TestCreateLinkedTable:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.create_linked_table.side_effect = RuntimeError("Link failed")
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         args = ("lnkName", "RemoteT", "ODBC;DSN=bad")
         with patch.dict(server.create_linked_table.__globals__, connection_service=mock_conn):
             result = server.create_linked_table(*args)
@@ -87,6 +91,7 @@ class TestRefreshLinkedTable:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.refresh_linked_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.refresh_linked_table.__globals__, connection_service=mock_conn):
             result = server.refresh_linked_table("existing_link")
             assert result["success"] is True
@@ -102,6 +107,7 @@ class TestUnlinkTable:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.unlink_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.dict(server.unlink_table.__globals__, connection_service=mock_conn):
             result = server.unlink_table("lnkName")
             assert result["success"] is True
