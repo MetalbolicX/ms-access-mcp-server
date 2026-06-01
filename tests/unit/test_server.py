@@ -126,3 +126,34 @@ class TestHttpConfigInit:
 
             server._init_http_config()
             MockConfig.assert_not_called()
+
+
+class TestNewReExports:
+    """Tests for newly added tool re-exports."""
+
+    def test_new_connection_tools_exported(self):
+        """Should export list_connections, set_active_connection, get_active_connection."""
+        from ms_access_mcp.mcp.server import list_connections, set_active_connection, get_active_connection
+        assert callable(list_connections)
+        assert callable(set_active_connection)
+        assert callable(get_active_connection)
+
+    def test_new_com_tools_exported(self):
+        """Should export set_control_properties, get_control_event_procedures."""
+        from ms_access_mcp.mcp.server import set_control_properties, get_control_event_procedures
+        assert callable(set_control_properties)
+        assert callable(get_control_event_procedures)
+
+    def test_new_vba_tools_exported(self):
+        """Should export vba_list_procedures, vba_get_procedure, vba_replace_procedure, save_query."""
+        from ms_access_mcp.mcp.server import vba_list_procedures, vba_get_procedure, vba_replace_procedure, save_query
+        assert callable(vba_list_procedures)
+        assert callable(vba_get_procedure)
+        assert callable(vba_replace_procedure)
+        assert callable(save_query)
+
+    def test_new_system_tools_exported(self):
+        """Should export recover_access, diagnose_environment."""
+        from ms_access_mcp.mcp.server import recover_access, diagnose_environment
+        assert callable(recover_access)
+        assert callable(diagnose_environment)

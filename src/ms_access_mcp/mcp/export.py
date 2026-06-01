@@ -1,9 +1,22 @@
-"""Data export tools for MS Access database."""
+"""Data export tools for MS Access database — Phase 1 SDD."""
 from .server import mcp, connection_service
 
 
+def _get_adapter(connection_name: str = "default"):
+    """Get adapter for a named connection, or return None if not found."""
+    try:
+        return connection_service.get_adapter(connection_name)
+    except KeyError:
+        return None
+
+
+def _check_connected(connection_name: str = "default"):
+    """Check if a named connection is connected."""
+    return connection_service.is_connected(connection_name)
+
+
 @mcp.tool()
-def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = ",", header: bool = True) -> dict:
+def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = ",", header: bool = True, connection_name: str = "default") -> dict:
     """
     Export a table or query to a CSV file.
 
@@ -12,11 +25,12 @@ def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = 
         file_path: Path to the output CSV file
         delimiter: Field delimiter (default ',')
         header: Whether to write header row (default True)
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -28,7 +42,7 @@ def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = 
 
 
 @mcp.tool()
-def export_query_json(query_name: str, file_path: str, pretty: bool = False) -> dict:
+def export_query_json(query_name: str, file_path: str, pretty: bool = False, connection_name: str = "default") -> dict:
     """
     Export a query to a JSON file.
 
@@ -36,11 +50,12 @@ def export_query_json(query_name: str, file_path: str, pretty: bool = False) -> 
         query_name: Name of the query to export
         file_path: Path to the output JSON file
         pretty: Whether to format JSON with indentation (default False)
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 

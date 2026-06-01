@@ -1,22 +1,31 @@
-"""Migration tools for MS Access database."""
+"""Migration tools for MS Access database — Phase 1 SDD."""
 from .server import mcp, connection_service, migration_service
 from ..adapters.wincom import WinComAdapter
 
 
+def _find_connection_by_path(database_path: str):
+    """Find a pool connection by database path, returning (name, state) or None."""
+    for name, state in connection_service.list().items():
+        if state.db_path.replace("\\", "/").lower() == database_path.replace("\\", "/").lower():
+            return name, state
+    return None, None
+
+
 @mcp.tool()
 def extract_schema(database_path: str) -> dict:
-    """Extract schema from an Access database."""
-    # Reuse active connection when possible to avoid opening the same Access DB
-    # in a second COM adapter instance (can fail due to Access COM singleton behavior).
-    active_adapter = connection_service.adapter
-    active_db = connection_service.current_database
-    if active_adapter is not None and active_db and connection_service.is_connected():
-        norm_active = active_db.replace("\\", "/").lower()
-        norm_target = database_path.replace("\\", "/").lower()
-        if norm_active == norm_target:
-            schema = migration_service.extract_schema(active_adapter, database_path)
-            return {"success": True, "schema": schema.model_dump(), "reused_connection": True}
+    """
+    Extract schema from an Access database.
 
+    Args:
+        database_path: Path to the Access database to extract schema from
+    """
+    # Try to reuse an existing connection to the same database
+    conn_name, state = _find_connection_by_path(database_path)
+    if state is not None and state.adapter.is_connected():
+        schema = migration_service.extract_schema(state.adapter, database_path)
+        return {"success": True, "schema": schema.model_dump(), "reused_connection": True, "connection_name": conn_name}
+
+    # Create a new adapter and connection
     adapter = WinComAdapter()
     if not adapter.connect(database_path):
         return {"success": False, "error": "Failed to connect to database"}
@@ -27,8 +36,9 @@ def extract_schema(database_path: str) -> dict:
 
 @mcp.tool()
 def upload_schema(target_type: str, connection_string: str, schema_json: dict) -> dict:
-    """Upload schema to target database.
-    
+    """
+    Upload schema to target database.
+
     Args:
         target_type: Target database type (postgres, mysql, mariadb, sqlite, sqlserver)
         connection_string: Connection string for target database
@@ -50,8 +60,9 @@ def transfer_data(
     verification_mode: str = "full",
     table_overrides: dict | None = None,
 ) -> dict:
-    """Transfer data from Access to target database.
-    
+    """
+    Transfer data from Access to target database.
+
     Args:
         target_type: Target database type (postgres, mysql, mariadb, sqlite, sqlserver)
         connection_string: Connection string for target database
@@ -65,20 +76,20 @@ def transfer_data(
             All fields optional — missing fields default to full-table transfer.
     """
     from ..models.migration import ExtractedSchema, TableTransferConfig
-    
+
     adapter = WinComAdapter()
     if not adapter.connect(database_path):
         return {"success": False, "error": "Failed to connect to Access database"}
-    
+
     if schema_json:
         schema = ExtractedSchema(**schema_json)
     else:
         schema = migration_service.extract_schema(adapter, database_path)
-    
+
     deserialized_overrides: dict[str, TableTransferConfig] | None = None
     if table_overrides is not None:
         deserialized_overrides = {k: TableTransferConfig(**v) for k, v in table_overrides.items()}
-    
+
     result = migration_service.transfer_data(
         target_type,
         connection_string,
@@ -94,7 +105,8 @@ def transfer_data(
 
 @mcp.tool()
 def get_migration_status(job_id: str) -> dict:
-    """Get status of a migration job.
+    """
+    Get status of a migration job.
 
     Args:
         job_id: Migration job ID returned from transfer_data

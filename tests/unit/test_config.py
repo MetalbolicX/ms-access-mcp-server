@@ -89,3 +89,31 @@ class TestServerConfigEnvOverrides:
         monkeypatch.setenv("ACCESS_MCP_ALLOWED_DIRS", "C:\\Data ; D:\\DBs ; ")
         config = ServerConfig()
         assert config.allowed_dirs == ["C:\\Data", "D:\\DBs"]
+
+
+class TestServerConfigTrustedLocations:
+    """ServerConfig trusted locations settings."""
+
+    def setup_method(self):
+        os.environ.setdefault("ACCESS_MCP_API_KEY", "test-key")
+
+    def test_default_preserve_trusted_locations_is_false(self, monkeypatch):
+        """ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS not set → defaults to False."""
+        monkeypatch.delenv("ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS", raising=False)
+        config = ServerConfig()
+        assert config.preserve_trusted_locations is False
+
+    def test_preserve_trusted_locations_true_from_env_var(self, monkeypatch):
+        """ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS=true → True."""
+        monkeypatch.setenv("ACCESS_MCP_API_KEY", "key")
+        monkeypatch.setenv("ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS", "true")
+        config = ServerConfig()
+        assert config.preserve_trusted_locations is True
+
+    @pytest.mark.parametrize("truthy_value", ["1", "yes"])
+    def test_preserve_trusted_locations_accepts_truthy_values(self, monkeypatch, truthy_value):
+        """ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS with truthy values → True."""
+        monkeypatch.setenv("ACCESS_MCP_API_KEY", "key")
+        monkeypatch.setenv("ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS", truthy_value)
+        config = ServerConfig()
+        assert config.preserve_trusted_locations is True

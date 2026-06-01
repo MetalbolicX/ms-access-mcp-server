@@ -58,6 +58,9 @@ class TestProtocolCompleteness:
         "compact_repair", "copy_database",
         # Schema extraction
         "get_table_schema_plan",
+        # Feature-expansion VBA methods
+        "set_control_properties", "get_control_event_procedures",
+        "vba_list_procedures", "vba_get_procedure", "vba_replace_procedure",
     ]
 
     @pytest.mark.parametrize("method", ADAPTER_METHODS)
@@ -415,6 +418,31 @@ class TestReturnTypeInvariants:
         val = a.set_control_property("frm", "ctrl", "prop", "val")
         assert isinstance(val, bool)
 
+    def test_wincom_set_control_properties_returns_dict(self):
+        a = WinComAdapter()
+        val = a.set_control_properties("frm", "ctrl", {"prop": "val"})
+        assert isinstance(val, dict)
+
+    def test_wincom_get_control_event_procedures_returns_list(self):
+        a = WinComAdapter()
+        val = a.get_control_event_procedures("frm", "")
+        assert isinstance(val, list)
+
+    def test_wincom_vba_list_procedures_returns_list(self):
+        a = WinComAdapter()
+        val = a.vba_list_procedures("mod")
+        assert isinstance(val, list)
+
+    def test_wincom_vba_get_procedure_returns_dict(self):
+        a = WinComAdapter()
+        val = a.vba_get_procedure("mod", "proc")
+        assert isinstance(val, dict)
+
+    def test_wincom_vba_replace_procedure_returns_bool(self):
+        a = WinComAdapter()
+        val = a.vba_replace_procedure("mod", "proc", "code")
+        assert isinstance(val, bool)
+
 
 # =============================================================================
 # ODBC-only constraints — ODBC must raise NotImplementedError for COM-only ops
@@ -454,6 +482,21 @@ class TestOdbcNotImplemented:
 
     def test_copy_database_returns_false(self):
         assert OdbcAdapter().copy_database("s.accdb", "d.accdb") is False
+
+    def test_set_control_properties_returns_none(self):
+        assert OdbcAdapter().set_control_properties("frm", "ctrl", {}) is None
+
+    def test_get_control_event_procedures_returns_none(self):
+        assert OdbcAdapter().get_control_event_procedures("frm", "") is None
+
+    def test_vba_list_procedures_returns_none(self):
+        assert OdbcAdapter().vba_list_procedures("mod") is None
+
+    def test_vba_get_procedure_returns_none(self):
+        assert OdbcAdapter().vba_get_procedure("mod", "proc") is None
+
+    def test_vba_replace_procedure_returns_none(self):
+        assert OdbcAdapter().vba_replace_procedure("mod", "proc", "code") is None
 
 
 # =============================================================================

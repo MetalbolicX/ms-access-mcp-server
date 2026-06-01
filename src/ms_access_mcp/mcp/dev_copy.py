@@ -1,5 +1,30 @@
-"""Dev copy, backup/restore, and compact/repair tools for MS Access."""
+"""Dev copy, backup/restore, and compact/repair tools for MS Access — Phase 1 SDD.
+
+Note: Dev copy operations work with the active connection and require
+connection_service to have adapter and current_database properties.
+"""
 from .server import mcp, connection_service, dev_copy_service
+
+
+def _get_adapter(connection_name: str = "default"):
+    """Get adapter for a named connection, or return None if not found."""
+    try:
+        return connection_service.get_adapter(connection_name)
+    except KeyError:
+        return None
+
+
+def _check_connected(connection_name: str = "default"):
+    """Check if a named connection is connected."""
+    return connection_service.is_connected(connection_name)
+
+
+def _get_current_db_path(connection_name: str = "default"):
+    """Get current database path for a connection."""
+    try:
+        return connection_service.get(connection_name).db_path
+    except KeyError:
+        return None
 
 
 # ============================================================================
@@ -8,19 +33,21 @@ from .server import mcp, connection_service, dev_copy_service
 
 
 @mcp.tool()
-def compact_repair(action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
-    """Compact or repair an Access database file.
+def compact_repair(action: str, source_path: str, dest_path: str, keep_original: bool = True, connection_name: str = "default") -> dict:
+    """
+    Compact or repair an Access database file.
 
     Args:
         action: "compact" to compact to a new file, or "repair" to compact in place
         source_path: Path to the .accdb source file
         dest_path: Path for the output file (for compact) or same as source (for repair)
         keep_original: If True, keep original as .bak backup (default True)
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -32,17 +59,19 @@ def compact_repair(action: str, source_path: str, dest_path: str, keep_original:
 
 
 @mcp.tool()
-def copy_database(source: str, dest: str) -> dict:
-    """Copy an Access database file.
+def copy_database(source: str, dest: str, connection_name: str = "default") -> dict:
+    """
+    Copy an Access database file.
 
     Args:
         source: Path to source .accdb/.mdb file
         dest: Path to destination file
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -59,16 +88,18 @@ def copy_database(source: str, dest: str) -> dict:
 
 
 @mcp.tool()
-def export_module_backup(module_name: str, backup_dir: str | None = None) -> dict:
-    """Export a VBA module's code to a .bas text file.
+def export_module_backup(module_name: str, backup_dir: str | None = None, connection_name: str = "default") -> dict:
+    """
+    Export a VBA module's code to a .bas text file.
 
     Args:
         module_name: Name of the VBA module to export
         backup_dir: Optional custom backup directory (default: {tempdir}/ms_access_dev/backups/)
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -79,8 +110,9 @@ def export_module_backup(module_name: str, backup_dir: str | None = None) -> dic
 
 
 @mcp.tool()
-def import_module_from_text(module_name: str, file_path: str) -> dict:
-    """Import a VBA module from a .bas text file.
+def import_module_from_text(module_name: str, file_path: str, connection_name: str = "default") -> dict:
+    """
+    Import a VBA module from a .bas text file.
 
     Deletes the original module and recreates from the .bas file.
     Creates a NEW module if it doesn't already exist.
@@ -88,10 +120,11 @@ def import_module_from_text(module_name: str, file_path: str) -> dict:
     Args:
         module_name: Name of the VBA module to import
         file_path: Path to the .bas text file
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -102,16 +135,18 @@ def import_module_from_text(module_name: str, file_path: str) -> dict:
 
 
 @mcp.tool()
-def restore_module_backup(module_name: str, backup_path: str) -> dict:
-    """Restore a VBA module from a .bas backup file.
+def restore_module_backup(module_name: str, backup_path: str, connection_name: str = "default") -> dict:
+    """
+    Restore a VBA module from a .bas backup file.
 
     Args:
         module_name: Name of the module to restore
         backup_path: Path to the .bas backup file
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -122,16 +157,18 @@ def restore_module_backup(module_name: str, backup_path: str) -> dict:
 
 
 @mcp.tool()
-def export_form_backup(form_name: str, backup_dir: str | None = None) -> dict:
-    """Export a form (including VBA code-behind) to a .txt file.
+def export_form_backup(form_name: str, backup_dir: str | None = None, connection_name: str = "default") -> dict:
+    """
+    Export a form (including VBA code-behind) to a .txt file.
 
     Args:
         form_name: Name of the form to export
         backup_dir: Optional custom backup directory
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -142,8 +179,9 @@ def export_form_backup(form_name: str, backup_dir: str | None = None) -> dict:
 
 
 @mcp.tool()
-def import_form_from_file(form_name: str, file_path: str) -> dict:
-    """Import a form from a .txt file on disk.
+def import_form_from_file(form_name: str, file_path: str, connection_name: str = "default") -> dict:
+    """
+    Import a form from a .txt file on disk.
 
     Deletes the original form and recreates from the .txt file.
     Unlike import_form_from_text (which takes raw text data), this
@@ -152,10 +190,11 @@ def import_form_from_file(form_name: str, file_path: str) -> dict:
     Args:
         form_name: Name of the form to import
         file_path: Path to the .txt file
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -166,16 +205,18 @@ def import_form_from_file(form_name: str, file_path: str) -> dict:
 
 
 @mcp.tool()
-def restore_form_backup(form_name: str, backup_path: str) -> dict:
-    """Restore a form from a .txt backup file.
+def restore_form_backup(form_name: str, backup_path: str, connection_name: str = "default") -> dict:
+    """
+    Restore a form from a .txt backup file.
 
     Args:
         form_name: Name of the form to restore
         backup_path: Path to the .txt backup file
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -191,8 +232,9 @@ def restore_form_backup(form_name: str, backup_path: str) -> dict:
 
 
 @mcp.tool()
-def create_dev_copy(backup_dir: str | None = None) -> dict:
-    """Create a development copy of the production database.
+def create_dev_copy(backup_dir: str | None = None, connection_name: str = "default") -> dict:
+    """
+    Create a development copy of the production database.
 
     Copies the entire .accdb to a temp sandbox, switches the connection to
     the dev copy, and writes a manifest for deploy/discard operations.
@@ -203,12 +245,18 @@ def create_dev_copy(backup_dir: str | None = None) -> dict:
     Args:
         backup_dir: Optional custom backup base directory
                    (default: {tempdir}/ms_access_dev/)
+        connection_name: Connection identifier (defaults to "default")
+
+    Note: This function works with the active connection and temporarily
+    disconnects/reconnects during the operation.
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
+
     try:
         result = dev_copy_service.create_dev_copy(connection_service, adapter, backup_dir)
         return result
@@ -217,8 +265,9 @@ def create_dev_copy(backup_dir: str | None = None) -> dict:
 
 
 @mcp.tool()
-def deploy_dev_copy(production_path: str | None = None) -> dict:
-    """Deploy the active dev copy back to production.
+def deploy_dev_copy(production_path: str | None = None, connection_name: str = "default") -> dict:
+    """
+    Deploy the active dev copy back to production.
 
     Creates a .bak backup of the current production database, copies the
     dev copy over production, reconnects to production, and removes the
@@ -229,12 +278,15 @@ def deploy_dev_copy(production_path: str | None = None) -> dict:
     Args:
         production_path: Optional explicit production path. If not provided,
                         uses the production_path from the dev copy manifest.
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
+
     try:
         result = dev_copy_service.deploy_dev_copy(connection_service, adapter, production_path)
         return result
@@ -243,20 +295,24 @@ def deploy_dev_copy(production_path: str | None = None) -> dict:
 
 
 @mcp.tool()
-def discard_dev_copy(production_path: str | None = None) -> dict:
-    """Discard the active dev copy and reconnect to production.
+def discard_dev_copy(production_path: str | None = None, connection_name: str = "default") -> dict:
+    """
+    Discard the active dev copy and reconnect to production.
 
     Deletes the dev copy file, removes the manifest, and reconnects to
     the production database. Your production changes are lost.
 
     Args:
         production_path: Optional explicit production path.
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
+
     try:
         result = dev_copy_service.discard_dev_copy(connection_service, adapter, production_path)
         return result
@@ -266,7 +322,8 @@ def discard_dev_copy(production_path: str | None = None) -> dict:
 
 @mcp.tool()
 def get_dev_copy_status(db_path: str | None = None) -> dict:
-    """Get the current dev copy status.
+    """
+    Get the current dev copy status.
 
     Returns whether a dev copy is active, and if so, the production and dev
     copy paths, creation timestamp, database size, and linked table info.
@@ -276,7 +333,6 @@ def get_dev_copy_status(db_path: str | None = None) -> dict:
                 uses the production_path from the current manifest.
     """
     if db_path is None:
-        # Try to get from current manifest
         try:
             result = dev_copy_service.get_dev_copy_status()
             return result

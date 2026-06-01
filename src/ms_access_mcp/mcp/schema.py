@@ -1,25 +1,52 @@
-"""Schema and metadata tools for MS Access database."""
+"""Schema and metadata tools for MS Access database — Phase 1 SDD."""
 from .server import mcp, connection_service, schema_service, _path_guard
 
 
+def _get_adapter(connection_name: str = "default"):
+    """Get adapter for a named connection, or return None if not found."""
+    try:
+        return connection_service.get_adapter(connection_name)
+    except KeyError:
+        return None
+
+
+def _check_connected(connection_name: str = "default"):
+    """Check if a named connection is connected."""
+    return connection_service.is_connected(connection_name)
+
+
 @mcp.tool()
-def get_tables() -> dict:
+def get_tables(connection_name: str = "default") -> dict:
     """
     Get all user tables from the connected database.
     Excludes system tables (MSys*).
     """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    # Update schema service to use the correct adapter
+    schema_service.set_adapter(adapter)
     tables = schema_service.get_tables()
     return {"success": True, "tables": [t.model_dump() for t in tables], "count": len(tables)}
 
 
 @mcp.tool()
-def get_table_schema(table_name: str) -> dict:
+def get_table_schema(table_name: str, connection_name: str = "default") -> dict:
     """
     Get detailed schema for a specific table.
 
     Args:
         table_name: Name of the table
+        connection_name: Connection identifier (defaults to "default")
     """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
     table = schema_service.get_table_schema(table_name)
     if table is None:
         return {"success": False, "error": f"Table '{table_name}' not found"}
@@ -27,8 +54,19 @@ def get_table_schema(table_name: str) -> dict:
 
 
 @mcp.tool()
-def get_relationships() -> dict:
-    """Get all foreign key relationships."""
+def get_relationships(connection_name: str = "default") -> dict:
+    """
+    Get all foreign key relationships.
+
+    Args:
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
     relationships = schema_service.get_relationships()
     return {
         "success": True,
@@ -38,19 +76,21 @@ def get_relationships() -> dict:
 
 
 @mcp.tool()
-def generate_sql(output_path: str) -> dict:
-    """Generate Jet SQL DDL script from the Access database schema.
+def generate_sql(output_path: str, connection_name: str = "default") -> dict:
+    """
+    Generate Jet SQL DDL script from the Access database schema.
 
     Writes CREATE TABLE statements for all tables with primary keys,
     autoincrement, default values, and foreign key constraints.
 
     Args:
         output_path: Path to write the generated .sql file
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -65,14 +105,23 @@ def generate_sql(output_path: str) -> dict:
 
 
 @mcp.tool()
-def get_er_diagram() -> dict:
+def get_er_diagram(connection_name: str = "default") -> dict:
     """
     Get the database schema as nodes and edges for ER diagram visualization.
+
+    Args:
+        connection_name: Connection identifier (defaults to "default")
 
     Returns:
         nodes: List of table nodes with columns
         edges: List of relationship edges (FK connections)
     """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
     tables = schema_service.get_tables()
     relationships = schema_service.get_relationships()
 

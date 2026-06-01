@@ -1,5 +1,18 @@
-"""CRUD tools for queries, tables, and data in MS Access database."""
+"""CRUD tools for queries, tables, and data in MS Access database — Phase 1 SDD."""
 from .server import mcp, connection_service
+
+
+def _get_adapter(connection_name: str = "default"):
+    """Get adapter for a named connection, or return None if not found."""
+    try:
+        return connection_service.get_adapter(connection_name)
+    except KeyError:
+        return None
+
+
+def _check_connected(connection_name: str = "default"):
+    """Check if a named connection is connected."""
+    return connection_service.is_connected(connection_name)
 
 
 # ============================================================================
@@ -8,11 +21,11 @@ from .server import mcp, connection_service
 
 
 @mcp.tool()
-def get_queries() -> dict:
+def get_queries(connection_name: str = "default") -> dict:
     """Get all saved queries from the database."""
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -23,17 +36,18 @@ def get_queries() -> dict:
 
 
 @mcp.tool()
-def create_query(name: str, sql: str) -> dict:
+def create_query(name: str, sql: str, connection_name: str = "default") -> dict:
     """
     Create a stored query.
 
     Args:
         name: Name of the query to create
         sql: SQL statement for the query
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -44,17 +58,18 @@ def create_query(name: str, sql: str) -> dict:
 
 
 @mcp.tool()
-def set_query_sql(name: str, sql: str) -> dict:
+def set_query_sql(name: str, sql: str, connection_name: str = "default") -> dict:
     """
     Update SQL of an existing query.
 
     Args:
         name: Name of the existing query
         sql: New SQL statement
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -65,16 +80,17 @@ def set_query_sql(name: str, sql: str) -> dict:
 
 
 @mcp.tool()
-def delete_query(name: str) -> dict:
+def delete_query(name: str, connection_name: str = "default") -> dict:
     """
     Delete a stored query.
 
     Args:
         name: Name of the query to delete
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -90,7 +106,7 @@ def delete_query(name: str) -> dict:
 
 
 @mcp.tool()
-def create_table(table_name: str, columns: list[dict]) -> dict:
+def create_table(table_name: str, columns: list[dict], connection_name: str = "default") -> dict:
     """
     Create a new table in the connected database.
 
@@ -102,10 +118,11 @@ def create_table(table_name: str, columns: list[dict]) -> dict:
                    Date/Time, Currency, Memo, Double, Single, Binary)
                  - size (int, optional): Size for Text type (default 255)
                  - nullable (bool, optional): Whether column allows NULL (default True)
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -116,16 +133,17 @@ def create_table(table_name: str, columns: list[dict]) -> dict:
 
 
 @mcp.tool()
-def delete_table(table_name: str) -> dict:
+def delete_table(table_name: str, connection_name: str = "default") -> dict:
     """
     Delete a table from the connected database.
 
     Args:
         table_name: Name of the table to delete
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
@@ -141,18 +159,19 @@ def delete_table(table_name: str) -> dict:
 
 
 @mcp.tool()
-def query_data(sql: str, params: list | None = None) -> dict:
+def query_data(sql: str, params: list | None = None, connection_name: str = "default") -> dict:
     """
     Execute SQL query and return results.
 
     Args:
         sql: SQL query to execute
         params: Optional list of parameters for parameterized queries
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -164,18 +183,19 @@ def query_data(sql: str, params: list | None = None) -> dict:
 
 
 @mcp.tool()
-def insert_data(table_name: str, data: dict | list[dict]) -> dict:
+def insert_data(table_name: str, data: dict | list[dict], connection_name: str = "default") -> dict:
     """
     Insert one or more rows into a table.
 
     Args:
         table_name: Name of the table
         data: A single dict for one row, or a list of dicts for multiple rows
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -187,7 +207,7 @@ def insert_data(table_name: str, data: dict | list[dict]) -> dict:
 
 
 @mcp.tool()
-def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None = None, connection_name: str = "default") -> dict:
     """
     Update rows in a table.
 
@@ -195,11 +215,12 @@ def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None =
         table_name: Name of the table
         set_dict: Dict of column=value pairs to set
         where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 
@@ -211,18 +232,19 @@ def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None =
 
 
 @mcp.tool()
-def delete_data(table_name: str, where_dict: dict | str | None = None) -> dict:
+def delete_data(table_name: str, where_dict: dict | str | None = None, connection_name: str = "default") -> dict:
     """
     Delete rows from a table.
 
     Args:
         table_name: Name of the table
         where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+        connection_name: Connection identifier (defaults to "default")
     """
-    if not connection_service.is_connected():
+    if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
-    adapter = connection_service.adapter
+    adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
 

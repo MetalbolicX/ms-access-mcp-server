@@ -1,4 +1,4 @@
-from typing import Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable, Any
 from ..models.database import (
     TableInfo,
     FormInfo,
@@ -97,6 +97,12 @@ class AccessAdapter(Protocol):
 
     def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool: ...
 
+    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties at once. Returns dict of {property_name: success}."""
+
+    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
+        """List event procedures for a specific control in a form."""
+
     def get_object_metadata(self, object_name: str) -> dict: ...
 
     def get_relationships(self) -> list[RelationshipInfo]: ...
@@ -124,5 +130,27 @@ class AccessAdapter(Protocol):
     def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict: ...
 
     def copy_database(self, source: str, dest: str) -> bool: ...
+
+    def vba_list_procedures(self, module_name: str) -> list[dict]:
+        """List all procedures in a module with name, type, line info.
+
+        Returns:
+            List of dicts with keys: name, type ("Sub"|"Function"|"Property"),
+            start_line, line_count
+        """
+
+    def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict:
+        """Get full source code of a specific procedure.
+
+        Returns:
+            dict with keys: name, type, code, signature
+        """
+
+    def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
+        """Replace a procedure's body with new code (preserves signature).
+
+        Returns:
+            True on success, False on failure
+        """
 
     def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]: ...

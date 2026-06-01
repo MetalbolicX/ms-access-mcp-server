@@ -310,3 +310,46 @@ class TestSystemToolSuccessPaths:
             result = server.execute_sql_script("/tmp/script.sql")
             mock_schema.execute_sql_script.assert_called_once_with("/tmp/script.sql")
             assert result["success"] is True
+
+
+class TestRecoverAccessTool:
+    """Tests for recover_access tool."""
+
+    def test_recover_access_delegates_to_connection_service(self):
+        """recover_access should delegate to connection_service.recover_access."""
+        mock_conn = MagicMock()
+        mock_conn.recover_access.return_value = {"success": True, "reconnected": ["default"]}
+        with patch.dict(server.recover_access.__globals__, connection_service=mock_conn):
+            result = server.recover_access()
+            mock_conn.recover_access.assert_called_once()
+            assert result["success"] is True
+
+
+class TestDiagnoseEnvironmentTool:
+    """Tests for diagnose_environment tool."""
+
+    def test_diagnose_environment_returns_success(self):
+        """diagnose_environment should return success True."""
+        result = server.diagnose_environment()
+        assert result["success"] is True
+
+    def test_diagnose_environment_contains_platform_keys(self):
+        """diagnose_environment diagnostics should contain platform and python_version."""
+        result = server.diagnose_environment()
+        assert "platform" in result["diagnostics"]
+        assert "python_version" in result["diagnostics"]
+
+    def test_diagnose_environment_has_pywin32_false_on_linux(self):
+        """On Linux, pywin32_available should be False."""
+        result = server.diagnose_environment()
+        assert result["diagnostics"]["pywin32_available"] is False
+
+    def test_diagnose_environment_has_ace_provider_windows_only_on_linux(self):
+        """On Linux, ace_provider should be windows_only."""
+        result = server.diagnose_environment()
+        assert result["diagnostics"]["ace_provider"] == "windows_only"
+
+    def test_diagnose_environment_returns_allowed_dirs_list(self):
+        """diagnose_environment should return allowed_dirs as a list."""
+        result = server.diagnose_environment()
+        assert isinstance(result["diagnostics"]["allowed_dirs"], list)

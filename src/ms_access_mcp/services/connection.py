@@ -1,57 +1,302 @@
-from typing import Optional
+"""Connection pool management for MS Access databases — Phase 1 SDD.
+
+Implements ConnectionPool with:
+- dict[str, ConnectionState] pool
+- active connection pointer (defaults to "default")
+- connect(name, db_path, adapter_type) → creates named connection
+- disconnect(name) → removes from pool
+- get(name=None) → returns ConnectionState, uses active or "default"
+- list() → returns all connections with status
+- set_active(name) → sets active pointer
+- get_active() → returns active name
+- Backward compatible: "default" name maps to old singleton behavior
+"""
+from __future__ import annotations
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Literal, Optional
+
 from ..adapters.base import AccessAdapter
 
 
-class ConnectionService:
-    """Manages connection state and lifecycle for Access databases."""
+@dataclass
+class ConnectionState:
+    """Holds the state for a single named connection."""
+    adapter: AccessAdapter
+    db_path: str
+    adapter_type: Literal["com", "odbc"]
+    created_at: datetime = field(default_factory=datetime.now)
 
-    def __init__(self, adapter: Optional[AccessAdapter] = None):
-        self._adapter = adapter
-        self._current_database: Optional[str] = None
 
-    def connect(self, db_path: str, adapter: AccessAdapter) -> bool:
-        """Connect to an Access database using the provided adapter."""
-        self._adapter = adapter
-        result = self._adapter.connect(db_path)
-        if result:
-            self._current_database = db_path
-        return result
+class ConnectionPool:
+    """Manages multiple named connections to Access databases.
 
-    def disconnect(self) -> None:
-        """Disconnect from the current database."""
-        if self._adapter:
-            self._adapter.disconnect()
-            self._current_database = None
+    Provides connection isolation via named pools with an active context
+    pointer. The "default" name preserves backward-compatible singleton
+    behavior.
+    """
 
-    def is_connected(self) -> bool:
-        """Check if currently connected to a database."""
-        if self._adapter is None:
+    def __init__(self) -> None:
+        self._pool: dict[str, ConnectionState] = {}
+        self._active: str = "default"
+
+    # -------------------------------------------------------------------------
+    # Connection lifecycle
+    # -------------------------------------------------------------------------
+
+    def connect(
+        self,
+        name_or_db_path: str,
+        db_path_or_adapter: Optional[str | AccessAdapter] = None,
+        adapter_type: Literal["com", "odbc"] = "odbc",
+    ) -> ConnectionState | bool:
+        """Create or replace a named connection, or backward-compatible connect.
+
+        New API (positional):
+            pool.connect("name", "/path/db.accdb", "odbc") -> ConnectionState
+
+        Backward-compatible (2 positional args):
+            pool.connect("/path/db.accdb", adapter) -> bool
+
+        Args:
+            name_or_db_path: Connection name (new API) or db_path (old API)
+            db_path_or_adapter: db_path (new API) or adapter instance (old API)
+            adapter_type: Adapter type for new API (default "odbc")
+        """
+        # Detect backward-compatible call: 2 positional args, second looks like an adapter
+        if db_path_or_adapter is not None and hasattr(db_path_or_adapter, 'connect') and hasattr(db_path_or_adapter, 'disconnect'):
+            # Backward-compatible: connect(db_path, adapter)
+            db_path = name_or_db_path
+            adapter = db_path_or_adapter
+            # Remove existing default connection if present
+            if "default" in self._pool:
+                self._pool["default"].adapter.disconnect()
+                del self._pool["default"]
+            result = adapter.connect(db_path)
+            if result:
+                self._pool["default"] = ConnectionState(
+                    adapter=adapter,
+                    db_path=db_path,
+                    adapter_type="com",
+                )
+                self._active = "default"
+            return result
+
+        # New API: connect(name, db_path, adapter_type)
+        name = name_or_db_path
+        db_path = db_path_or_adapter
+        assert isinstance(db_path, str), "db_path must be a string for new API"
+        if name in self._pool:
+            raise KeyError(f"Connection '{name}' already exists. Use disconnect('{name}') first.")
+
+        from ..adapters.wincom import WinComAdapter
+        from ..adapters.odbc import OdbcAdapter
+
+        adapter_obj: AccessAdapter = WinComAdapter() if adapter_type == "com" else OdbcAdapter()
+        result = adapter_obj.connect(db_path)
+        if not result:
+            raise RuntimeError(f"Failed to connect to {db_path} with {adapter_type} adapter")
+
+        state = ConnectionState(
+            adapter=adapter_obj,
+            db_path=db_path,
+            adapter_type=adapter_type,
+        )
+        self._pool[name] = state
+        return state
+
+    def disconnect(self, name: Optional[str] = None) -> None:
+        """Remove a named connection from the pool.
+
+        Args:
+            name: Connection identifier to remove. If None, uses "default".
+        """
+        target = name if name is not None else "default"
+        if target not in self._pool:
+            raise KeyError(f"Connection '{target}' not found")
+        state = self._pool[target]
+        state.adapter.disconnect()
+        del self._pool[target]
+
+    def get(self, name: Optional[str] = None) -> ConnectionState:
+        """Get connection state by name.
+
+        Args:
+            name: Connection identifier. If None, uses active connection.
+
+        Returns:
+            ConnectionState for the named connection
+
+        Raises:
+            KeyError: If name not found or no active connection set
+        """
+        target = name if name is not None else self._active
+        if target not in self._pool:
+            raise KeyError(f"Connection '{target}' not found")
+        return self._pool[target]
+
+    def list(self) -> dict[str, ConnectionState]:
+        """List all connections in the pool.
+
+        Returns:
+            Dict mapping connection names to their ConnectionState
+        """
+        return dict(self._pool)
+
+    # -------------------------------------------------------------------------
+    # Active context
+    # -------------------------------------------------------------------------
+
+    def set_active(self, name: str) -> None:
+        """Set the active connection context.
+
+        Args:
+            name: Connection identifier to make active
+
+        Raises:
+            KeyError: If name is not in the pool
+        """
+        if name not in self._pool:
+            raise KeyError(f"Connection '{name}' not found")
+        self._active = name
+
+    def get_active(self) -> str:
+        """Get the name of the currently active connection.
+
+        Returns:
+            Name of the active connection
+        """
+        return self._active
+
+    # -------------------------------------------------------------------------
+    # Convenience accessors
+    # -------------------------------------------------------------------------
+
+    def get_adapter(self, name: Optional[str] = None) -> AccessAdapter:
+        """Get the adapter for a connection.
+
+        Args:
+            name: Connection identifier. If None, uses active connection.
+
+        Returns:
+            AccessAdapter instance
+
+        Raises:
+            KeyError: If connection not found
+        """
+        return self.get(name).adapter
+
+    def is_connected(self, name: Optional[str] = None) -> bool:
+        """Check if a connection is connected.
+
+        Args:
+            name: Connection identifier. If None, uses active connection.
+
+        Returns:
+            True if the connection exists and adapter is connected
+        """
+        try:
+            state = self.get(name)
+            return state.adapter.is_connected()
+        except KeyError:
             return False
-        return self._adapter.is_connected()
+
+    # -------------------------------------------------------------------------
+    # Recovery
+    # -------------------------------------------------------------------------
+
+    def recover_access(self) -> dict:
+        """Kill hung MSACCESS.EXE process and reconnect all managed connections.
+
+        Executes taskkill /F /IM MSACCESS.EXE on Windows and attempts to
+        reconnect all previously managed connections.
+
+        Returns:
+            dict with success status, reconnected connection names, and any errors
+        """
+        if sys.platform != "win32":
+            return {
+                "success": False,
+                "error": "Not supported on this platform",
+            }
+
+        reconnected: list[str] = []
+        errors: list[str] = []
+
+        # Kill MSACCESS.EXE
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "MSACCESS.EXE"],
+                capture_output=True,
+                check=False,
+            )
+        except Exception as e:
+            errors.append(f"Failed to kill MSACCESS.EXE: {e}")
+
+        # Reconnect all managed connections
+        for name, state in list(self._pool.items()):
+            try:
+                state.adapter.connect(state.db_path)
+                reconnected.append(name)
+            except Exception as e:
+                errors.append(f"Failed to reconnect '{name}': {e}")
+
+        return {
+            "success": len(reconnected) == len(self._pool),
+            "reconnected": reconnected,
+            "errors": errors if errors else None,
+        }
+
+    # -------------------------------------------------------------------------
+    # Backward compatibility properties (for dev_copy_service)
+    # -------------------------------------------------------------------------
 
     @property
     def current_database(self) -> Optional[str]:
-        """Get the path of the currently connected database."""
-        return self._current_database
+        """Get the path of the currently active (or default) database.
+
+        For backward compatibility with code expecting old singleton API.
+        """
+        try:
+            return self.get().db_path
+        except KeyError:
+            return None
 
     @property
     def adapter(self) -> Optional[AccessAdapter]:
-        """Get the currently configured adapter instance."""
-        return self._adapter
+        """Get the adapter of the currently active (or default) connection.
+
+        For backward compatibility with code expecting old singleton API.
+        """
+        try:
+            return self.get().adapter
+        except KeyError:
+            return None
 
     def reconnect(self, new_path: str) -> bool:
-        """Disconnect and reconnect to a new database path.
-
-        Preserves the current adapter instance but reconnects to a different
-        database file (e.g., after deploying dev copy back to production).
+        """Reconnect to a new database path (backward compatible API).
 
         Args:
             new_path: Path to the new database file
 
         Returns:
-            True if reconnection succeeded, False otherwise
+            True if reconnection succeeded
         """
-        if self._adapter is None:
+        if "default" not in self._pool:
             return False
-        self.disconnect()
-        return self.connect(new_path, self._adapter)
+        adapter = self._pool["default"].adapter
+        self._pool["default"].adapter.disconnect()
+        result = adapter.connect(new_path)
+        if result:
+            self._pool["default"] = ConnectionState(
+                adapter=adapter,
+                db_path=new_path,
+                adapter_type=self._pool["default"].adapter_type,
+            )
+        return result
+
+
+# Alias for backward compatibility
+ConnectionService = ConnectionPool

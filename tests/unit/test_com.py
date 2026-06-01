@@ -15,6 +15,9 @@ class TestComToolsConnectionGuards:
         (server.get_form_controls, ("TestForm",)),
         (server.get_control_properties, ("TestForm", "txtName")),
         (server.set_control_property, ("TestForm", "txtName", "BackColor", "16777215")),
+        (server.set_control_properties, ("TestForm", "txtName", {"BackColor": "16777215"})),
+        (server.get_control_event_procedures, ("TestForm", "txtName")),
+        (server.get_control_event_procedures, ("TestForm",)),  # empty control_name = all events
     ])
     def test_com_tools_return_error_when_not_connected(self, tool_func, args):
         """Each COM tool should return error when not connected."""
@@ -163,3 +166,74 @@ class TestControlTools:
             result = server.form_exists("TestForm")
             assert result["success"] is True
             assert result["exists"] is True
+
+
+class TestSetControlProperties:
+    """Tests for set_control_properties tool."""
+
+    def test_set_control_properties_returns_results(self):
+        """set_control_properties should return per-property success dict."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_control_properties.return_value = {"Visible": True, "Width": False}
+        with patch.dict(server.set_control_properties.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+            result = server.set_control_properties("TestForm", "txtName", {"Visible": "True", "Width": "200"})
+            assert result["success"] is True
+            assert "properties" in result
+            assert result["properties"]["Visible"] is True
+
+    def test_set_control_properties_empty_result_returns_error(self):
+        """set_control_properties should return error when control not found."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_control_properties.return_value = {}
+        with patch.dict(server.set_control_properties.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+            result = server.set_control_properties("TestForm", "NonExistent", {"Width": "200"})
+            assert result["success"] is False
+            assert "not found" in result["error"].lower()
+
+
+class TestGetControlEventProcedures:
+    """Tests for get_control_event_procedures tool."""
+
+    def test_get_control_event_procedures_all_events(self):
+        """get_control_event_procedures should return all events when control_name is empty."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_control_event_procedures.return_value = [
+            {"procedure_name": "cmdSave_Click", "event_name": "Click", "code": "Sub cmdSave_Click()\nEnd Sub", "start_line": 1},
+            {"procedure_name": "cmdSave_Enter", "event_name": "Enter", "code": "Sub cmdSave_Enter()\nEnd Sub", "start_line": 7},
+        ]
+        with patch.dict(server.get_control_event_procedures.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+            result = server.get_control_event_procedures("TestForm", "")
+            assert result["success"] is True
+            assert result["count"] == 2
+            assert result["control"] == "(all)"
+
+    def test_get_control_event_procedures_filtered(self):
+        """get_control_event_procedures should filter by control_name."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_control_event_procedures.return_value = [
+            {"procedure_name": "cmdSave_Click", "event_name": "Click", "code": "Sub cmdSave_Click()\nEnd Sub", "start_line": 1},
+        ]
+        with patch.dict(server.get_control_event_procedures.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+            result = server.get_control_event_procedures("TestForm", "cmdSave")
+            assert result["success"] is True
+            assert result["control"] == "cmdSave"
+            assert result["count"] == 1
+
+    def test_get_control_event_procedures_form_module_not_found(self):
+        """get_control_event_procedures should return error when form module not found."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_control_event_procedures.return_value = None
+        with patch.dict(server.get_control_event_procedures.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+            result = server.get_control_event_procedures("NonExistentForm", "")
+            assert result["success"] is False
+            assert "not found" in result["error"].lower()

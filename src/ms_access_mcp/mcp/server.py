@@ -1,5 +1,5 @@
 from fastmcp import FastMCP
-from ..services.connection import ConnectionService
+from ..services.connection import ConnectionPool
 from ..services.schema import SchemaService
 from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
@@ -12,7 +12,7 @@ from ..path_guard import PathGuard
 mcp = FastMCP("MS Access MCP Server")
 
 # Initialize services
-connection_service = ConnectionService()
+connection_service = ConnectionPool()
 schema_service = SchemaService()
 com_automation_service = COMAutomationService()
 migration_service = MigrationService()
@@ -37,7 +37,10 @@ def _init_http_config() -> None:
 from . import connection, schema, crud, export, com, vba, system, migration, linked_tables, dev_copy  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
-from .connection import connect_access, disconnect_access, is_connected  # noqa: E402
+from .connection import (  # noqa: E402
+    connect_access, disconnect_access, is_connected,
+    list_connections, set_active_connection, get_active_connection,
+)
 from .schema import get_tables, get_table_schema, get_relationships, generate_sql, get_er_diagram  # noqa: E402
 from .crud import (  # noqa: E402
     get_queries, create_query, set_query_sql, delete_query,
@@ -50,11 +53,14 @@ from .com import (  # noqa: E402
     get_forms, get_reports, get_macros, get_modules,
     open_form, close_form,
     form_exists, get_form_controls, get_control_properties, set_control_property,
+    set_control_properties, get_control_event_procedures,
 )
 from .vba import (  # noqa: E402
     get_vba_projects, get_vba_code,
     set_vba_code, add_vba_procedure,
     compile_vba, save_database, delete_module,
+    vba_list_procedures, vba_get_procedure, vba_replace_procedure,
+    save_query,
 )
 from .system import (  # noqa: E402
     get_system_tables, get_object_metadata,
@@ -62,6 +68,7 @@ from .system import (  # noqa: E402
     export_report_to_text, import_report_from_text, delete_report,
     export_module_to_text, export_macro_to_text,
     export_all_versioning, execute_sql_script,
+    recover_access, diagnose_environment,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import get_linked_tables, create_linked_table, refresh_linked_table, unlink_table  # noqa: E402

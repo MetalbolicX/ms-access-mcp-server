@@ -63,6 +63,18 @@ class COMAutomationService:
             return False
         return self._adapter.set_control_property(form_name, control_name, property_name, value)
 
+    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, str]) -> dict[str, bool]:
+        """Set multiple properties of a control at once."""
+        if self._adapter is None:
+            return {}
+        return self._adapter.set_control_properties(form_name, control_name, properties)
+
+    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
+        """List event procedures for a specific control in a form."""
+        if self._adapter is None:
+            return []
+        return self._adapter.get_control_event_procedures(form_name, control_name)
+
     def compile_vba(self) -> dict:
         """Compile VBA code in the database."""
         if self._adapter is None:

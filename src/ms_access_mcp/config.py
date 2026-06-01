@@ -33,6 +33,12 @@ class ServerConfig:
         else:
             self.allowed_dirs = [str(Path.home())]
 
+        # Trusted Locations preservation (opt-in, Windows only)
+        # When True, captures registry Trusted Locations before and restores after VBA-modifying operations.
+        self.preserve_trusted_locations = os.environ.get(
+            "ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS", "false"
+        ).lower() in ("true", "1", "yes")
+
     def is_path_allowed(self, path: str) -> bool:
         """Check if a database path is within an allowed directory.
 

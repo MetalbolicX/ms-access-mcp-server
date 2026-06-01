@@ -814,7 +814,7 @@ class WinComAdapter(AccessAdapter):
             except Exception:
                 return False
 
-        return self._dispatcher.call(_do)
+        return self._dispatcher.call(self._trusted_locations_wrap, _do)
 
     # ========================================================================
     # FORM OPERATIONS
@@ -1009,6 +1009,123 @@ class WinComAdapter(AccessAdapter):
                         self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)
                     except Exception:
                         pass
+
+        return self._dispatcher.call(_do)
+
+    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, str]) -> dict[str, bool]:
+        """Set multiple properties at once. Returns dict of {property_name: success}.
+
+        Iterates through all properties and calls set_control_property for each.
+        Continues even if some properties fail. Returns per-property success dict.
+        """
+        if not self.is_connected():
+            return {}
+
+        def _do() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for prop_name, value in properties.items():
+                try:
+                    success = self.set_control_property(form_name, control_name, prop_name, value)
+                    results[prop_name] = success
+                except Exception:
+                    results[prop_name] = False
+            return results
+
+        return self._dispatcher.call(_do)
+
+    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
+        """List event procedures for a specific control in a form.
+
+        Access stores event procedures with ControlName_EventName convention
+        in the form's code module (e.g., cmdSave_Click, txtName_AfterUpdate).
+
+        If control_name is empty, returns ALL event procedures in the form module.
+        If control_name is specified, filters to procedures with that prefix.
+
+        Returns list of {procedure_name, event_name, code, start_line}.
+        """
+        if not self.is_connected():
+            return []
+
+        def _do() -> list[dict]:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return []
+            try:
+                # Find the form module - Access names form modules as "Form_<form_name>"
+                form_module_name = f"Form_{form_name}"
+                target_module = None
+                for comp in vb_project.VBComponents:
+                    if comp.Name == form_module_name:
+                        target_module = comp.CodeModule
+                        break
+                if target_module is None:
+                    return []
+
+                # List all procedures in the module
+                total_lines = target_module.CountOfLines
+                if total_lines == 0:
+                    return []
+
+                all_procedures: list[dict] = []
+                seen_procs: set[str] = set()
+
+                for line in range(1, total_lines + 1):
+                    try:
+                        proc_name = target_module.ProcOfLine(line, 0)
+                        if proc_name and proc_name not in seen_procs:
+                            seen_procs.add(proc_name)
+                            start_line = target_module.ProcStartLine(proc_name, 0)
+                            line_count = target_module.ProcCountLines(proc_name, 0)
+                            code = target_module.Lines(start_line, line_count)
+                            all_procedures.append({
+                                "procedure_name": proc_name,
+                                "start_line": start_line,
+                                "line_count": line_count,
+                                "code": code,
+                            })
+                    except Exception:
+                        pass
+
+                # Filter by control_name prefix if specified
+                if control_name:
+                    prefix = f"{control_name}_"
+                    filtered = []
+                    for proc in all_procedures:
+                        if proc["procedure_name"].startswith(prefix):
+                            # Extract event name (part after control_name_)
+                            event_name = proc["procedure_name"][len(prefix):]
+                            filtered.append({
+                                "procedure_name": proc["procedure_name"],
+                                "event_name": event_name,
+                                "code": proc["code"],
+                                "start_line": proc["start_line"],
+                            })
+                    return filtered
+                else:
+                    # Return all procedures with event_name parsed from name
+                    result = []
+                    for proc in all_procedures:
+                        # Try to find underscore to split control_name from event
+                        proc_name = proc["procedure_name"]
+                        if "_" in proc_name:
+                            parts = proc_name.split("_", 1)
+                            result.append({
+                                "procedure_name": proc_name,
+                                "event_name": parts[1] if len(parts) > 1 else "",
+                                "code": proc["code"],
+                                "start_line": proc["start_line"],
+                            })
+                        else:
+                            result.append({
+                                "procedure_name": proc_name,
+                                "event_name": "",
+                                "code": proc["code"],
+                                "start_line": proc["start_line"],
+                            })
+                    return result
+            except Exception:
+                return []
 
         return self._dispatcher.call(_do)
 
@@ -1246,7 +1363,7 @@ class WinComAdapter(AccessAdapter):
             except Exception:
                 return False
 
-        return self._dispatcher.call(_do)
+        return self._dispatcher.call(self._trusted_locations_wrap, _do)
 
     def delete_module(self, module_name: str) -> bool:
         """Delete a VBA module from the database.
@@ -1349,9 +1466,152 @@ class WinComAdapter(AccessAdapter):
             }
 
         try:
-            return self._dispatcher.call(_do)
+            return self._dispatcher.call(self._trusted_locations_wrap, _do)
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    # ========================================================================
+    # TRUSTED LOCATIONS (Pre/Post Hook for VBA Operations)
+    # ========================================================================
+
+    def _capture_trusted_locations(self) -> list[dict]:
+        """Capture current Trusted Locations from Windows registry.
+
+        Uses PowerShell to read HKLM and HKCU Trusted Locations registry keys.
+        Returns list of dicts: [{"path": "...", "description": "..."}] or empty list.
+
+        Returns:
+            List of Trusted Location dicts, or empty list on non-Windows or error.
+        """
+        if sys.platform != "win32":
+            return []
+
+        try:
+            import winreg
+        except ImportError:
+            print("[WinComAdapter] winreg not available, skipping Trusted Locations capture", file=sys.stderr)
+            return []
+
+        locations: list[dict] = []
+
+        def read_key(hkey, subkey_path: str) -> None:
+            """Read Trusted Locations from a specific registry key."""
+            try:
+                key = winreg.OpenKey(hkey, subkey_path, 0, winreg.KEY_READ)
+                try:
+                    i = 0
+                    while True:
+                        try:
+                            loc_name = winreg.EnumKey(key, i)
+                            loc_path_key = winreg.OpenKey(key, loc_name, 0, winreg.KEY_READ)
+                            try:
+                                path_val, _ = winreg.QueryValueEx(loc_path_key, "Path")
+                                desc_val, _ = winreg.QueryValueEx(loc_path_key, "Description")
+                                locations.append({
+                                    "path": path_val,
+                                    "description": desc_val if desc_val else "",
+                                })
+                            except FileNotFoundError:
+                                # Path not found, skip silently
+                                pass
+                            except Exception:
+                                # Skip entries we can't read
+                                pass
+                            finally:
+                                winreg.CloseKey(loc_path_key)
+                            i += 1
+                        except OSError:
+                            break
+                finally:
+                    winreg.CloseKey(key)
+            except FileNotFoundError:
+                # Key doesn't exist, nothing to capture
+                pass
+            except Exception:
+                pass
+
+        try:
+            read_key(winreg.HKEY_LOCAL_MACHINE,
+                     r"SOFTWARE\Microsoft\Office\16.0\Access\Security\Trusted Locations")
+            read_key(winreg.HKEY_CURRENT_USER,
+                     r"SOFTWARE\Microsoft\Office\16.0\Access\Security\Trusted Locations")
+        except Exception:
+            pass
+
+        return locations
+
+    def _restore_trusted_locations(self, locations: list[dict]) -> bool:
+        """Restore Trusted Locations to Windows registry.
+
+        Args:
+            locations: List of dicts with "path" and "description" keys.
+
+        Returns:
+            True on success, False on failure.
+        """
+        if sys.platform != "win32":
+            return False
+
+        if not locations:
+            return True
+
+        try:
+            import winreg
+        except ImportError:
+            print("[WinComAdapter] winreg not available, skipping Trusted Locations restore", file=sys.stderr)
+            return False
+
+        def write_location(hkey, subkey_path: str, locations: list[dict]) -> None:
+            """Write Trusted Locations to a specific registry key."""
+            try:
+                key = winreg.CreateKey(hkey, subkey_path)
+                for idx, loc in enumerate(locations):
+                    loc_name = f"Location{idx + 1}"
+                    loc_key = winreg.CreateKey(key, loc_name)
+                    try:
+                        winreg.SetValueEx(loc_key, "Path", 0, winreg.REG_SZ, loc.get("path", ""))
+                        desc = loc.get("description", "")
+                        if desc:
+                            winreg.SetValueEx(loc_key, "Description", 0, winreg.REG_SZ, desc)
+                    finally:
+                        winreg.CloseKey(loc_key)
+                winreg.CloseKey(key)
+            except Exception:
+                pass
+
+        try:
+            hklm_path = r"SOFTWARE\Microsoft\Office\16.0\Access\Security\Trusted Locations"
+            hkcu_path = r"SOFTWARE\Microsoft\Office\16.0\Access\Security\Trusted Locations"
+            write_location(winreg.HKEY_LOCAL_MACHINE, hklm_path, locations)
+            write_location(winreg.HKEY_CURRENT_USER, hkcu_path, locations)
+            return True
+        except Exception as e:
+            print(f"[WinComAdapter] Failed to restore Trusted Locations: {e}", file=sys.stderr)
+            return False
+
+    def _trusted_locations_wrap(self, func, *args, **kwargs):
+        """Execute func(*args, **kwargs) with Trusted Locations preservation if enabled.
+
+        Captures Trusted Locations before the call and restores them after,
+        controlled by config.preserve_trusted_locations.
+        """
+        # Import here to avoid circular import and to make it optional
+        try:
+            from ..config import ServerConfig
+            config = ServerConfig()
+            preserve = config.preserve_trusted_locations
+        except Exception:
+            preserve = False
+
+        if not preserve:
+            return func(*args, **kwargs)
+
+        captured = self._capture_trusted_locations()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            if captured:
+                self._restore_trusted_locations(captured)
 
     # ========================================================================
     # SYSTEM TABLES
@@ -2321,3 +2581,143 @@ class WinComAdapter(AccessAdapter):
             return True
         except Exception:
             return False
+
+    # ========================================================================
+    # VBA PROCEDURE OPERATIONS
+    # ========================================================================
+
+    def vba_list_procedures(self, module_name: str) -> list[dict]:
+        """List all procedures in a module with name, type, line info.
+
+        Uses CodeModule.ProcOfLine to detect procedure boundaries.
+
+        Returns:
+            List of dicts with keys: name, type ("Sub"|"Function"|"Property"),
+            start_line, line_count
+        """
+        if not self.is_connected():
+            return []
+
+        def _do() -> list[dict]:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return []
+            try:
+                target_module = None
+                for comp in vb_project.VBComponents:
+                    if comp.Name == module_name:
+                        target_module = comp.CodeModule
+                        break
+                if target_module is None:
+                    return []
+
+                total_lines = target_module.CountOfLines
+                if total_lines == 0:
+                    return []
+
+                procedures: list[dict] = []
+                seen_procs: set[str] = set()
+
+                for line in range(1, total_lines + 1):
+                    try:
+                        proc_name = target_module.ProcOfLine(line, 0)
+                        if proc_name and proc_name not in seen_procs:
+                            seen_procs.add(proc_name)
+                            proc_kind = target_module.ProcKind(line, 0)
+                            proc_type = {0: "Sub", 1: "Function", 2: "Property"}.get(proc_kind, "Sub")
+                            start_line = target_module.ProcStartLine(proc_name, 0)
+                            line_count = target_module.ProcCountLines(proc_name, 0)
+                            procedures.append({
+                                "name": proc_name,
+                                "type": proc_type,
+                                "start_line": start_line,
+                                "line_count": line_count,
+                            })
+                    except Exception:
+                        pass
+                return procedures
+            except Exception:
+                return []
+
+        return self._dispatcher.call(_do)
+
+    def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict:
+        """Get full source code of a specific procedure.
+
+        Returns:
+            dict with keys: name, type, code, signature
+        """
+        if not self.is_connected():
+            return {}
+
+        def _do() -> dict:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return {}
+            try:
+                target_module = None
+                for comp in vb_project.VBComponents:
+                    if comp.Name == module_name:
+                        target_module = comp.CodeModule
+                        break
+                if target_module is None:
+                    return {}
+
+                start_line = target_module.ProcStartLine(procedure_name, 0)
+                line_count = target_module.ProcCountLines(procedure_name, 0)
+                code = target_module.Lines(start_line, line_count)
+
+                # Extract signature (first line of the procedure)
+                lines = code.split("\n")
+                signature = lines[0] if lines else ""
+
+                proc_kind = target_module.ProcKind(start_line, 0)
+                proc_type = {0: "Sub", 1: "Function", 2: "Property"}.get(proc_kind, "Sub")
+
+                return {
+                    "name": procedure_name,
+                    "type": proc_type,
+                    "code": code,
+                    "signature": signature,
+                }
+            except Exception:
+                return {}
+
+        return self._dispatcher.call(_do)
+
+    def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
+        """Replace a procedure's body with new code (preserves signature).
+
+        Deletes the old procedure lines and inserts new code at the same position.
+
+        Returns:
+            True on success, False on failure
+        """
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
+            try:
+                target_module = None
+                for comp in vb_project.VBComponents:
+                    if comp.Name == module_name:
+                        target_module = comp.CodeModule
+                        break
+                if target_module is None:
+                    return False
+
+                start_line = target_module.ProcStartLine(procedure_name, 0)
+                line_count = target_module.ProcCountLines(procedure_name, 0)
+
+                # Delete old procedure lines
+                target_module.DeleteLines(start_line, line_count)
+                # Insert new code at the same position
+                target_module.InsertLines(start_line, new_code)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(self._trusted_locations_wrap, _do)
