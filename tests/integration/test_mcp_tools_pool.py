@@ -7,6 +7,7 @@ to the right adapter in the pool, without requiring Windows or MS Access.
 
 import os
 import sqlite3
+import sys
 import tempfile
 import pytest
 from unittest.mock import patch, MagicMock
@@ -326,6 +327,7 @@ class TestDiagnoseEnvironmentTool:
 class TestRecoverAccessTool:
     """recover_access tool with real pool."""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Linux-only test")
     def test_recover_access_not_supported_on_linux(self, pool_with_sqlite):
         """recover_access returns success=False on non-Windows."""
         result = _call_tool(
