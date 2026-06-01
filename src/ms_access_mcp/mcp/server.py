@@ -1,3 +1,4 @@
+from typing import Optional, Any
 from fastmcp import FastMCP
 from ..services.connection import ConnectionPool
 from ..services.schema import SchemaService
@@ -7,6 +8,7 @@ from ..services.dev_copy_service import DevCopyService
 from ..config import ServerConfig
 from ..auth import ApiKeyMiddleware
 from ..path_guard import PathGuard
+import uvicorn
 
 # Create FastMCP server
 mcp = FastMCP("MS Access MCP Server")
@@ -27,10 +29,12 @@ _auth_middleware: ApiKeyMiddleware | None = None
 def _init_http_config() -> None:
     """Initialize HTTP config, auth, and path guard from environment."""
     global _config, _path_guard, _auth_middleware
-    if _config is None:
-        _config = ServerConfig()
-        _path_guard = PathGuard(allowed_dirs=_config.allowed_dirs)
-        _auth_middleware = ApiKeyMiddleware(api_key=_config.api_key)
+    if _config is not None:
+        return
+    _config = ServerConfig()
+    _path_guard = PathGuard(allowed_dirs=_config.allowed_dirs)
+    _auth_middleware = ApiKeyMiddleware(api_key=_config.api_key)
+    mcp.add_middleware(_auth_middleware)
 
 
 # Import tool modules to register their @mcp.tool() decorators
@@ -80,13 +84,34 @@ from .dev_copy import (  # noqa: E402
 )
 
 
-def run_http(host: str = "127.0.0.1", port: int = 8000, transport: str = "http") -> None:
+def get_asgi_app(transport: str = "http"):
+    """Initialize HTTP config and return the FastMCP ASGI application.
+
+    Args:
+        transport: HTTP transport type ("http", "streamable-http", "sse")
+
+    Returns:
+        The ASGI application suitable for use with uvicorn or TestClient.
+    """
+    _init_http_config()
+    return mcp.http_app(transport=transport, json_response=True, stateless_http=True)
+
+
+def run_http(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    transport: str = "http",
+    app: Optional[Any] = None,
+) -> None:
     """Run the MCP server with HTTP transport and auth.
 
     Args:
         host: Bind address (default 127.0.0.1)
         port: Bind port (default 8000)
         transport: HTTP transport type ("http", "streamable-http", "sse")
+        app: Optional ASGI app to use (for testing). If not provided,
+             creates app via get_asgi_app().
     """
-    _init_http_config()
-    mcp.run(transport=transport, host=host, port=port)
+    if app is None:
+        app = get_asgi_app(transport=transport)
+    uvicorn.run(app, host=host, port=port)
