@@ -12,10 +12,17 @@ No provider SDK imports — this lives in the deterministic core (LLMSPEC-11).
 
 from __future__ import annotations
 
+import time
 from typing import Callable
 
 from ms_access_mcp.adapters.llm import LlmAdapter, LlmResponse, LlmTimeoutError
 from ms_access_mcp.config import LlmConfig
+from ms_access_mcp.telemetry.metrics import (
+    increment_calls_fallbacks,
+    increment_calls_failed,
+    increment_calls_total,
+    measure_latency,
+)
 
 
 # Default redaction hook: identity (no-op)
@@ -53,16 +60,24 @@ class LlmService:
             dict with at least one key from the LLM response.
             On timeout: ``{"fallback": True, "reason": "llm_timeout"}``.
         """
+        provider = getattr(self._adapter, "provider_name", "unknown")
+        model = getattr(self._adapter, "model_name", "unknown")
+
         redacted_prompt = self._redaction_hook(nl)
-        try:
-            response = self._adapter.chat_completion(
-                prompt=redacted_prompt,
-                context=context,
-            )
-            # Parse JSON response or return raw content
-            return self._parse_response(response)
-        except LlmTimeoutError:
-            return {"fallback": True, "reason": "llm_timeout"}
+        with measure_latency(provider, model):
+            increment_calls_total(provider, model)
+            try:
+                response = self._adapter.chat_completion(
+                    prompt=redacted_prompt,
+                    context=context,
+                )
+                return self._parse_response(response)
+            except LlmTimeoutError:
+                increment_calls_fallbacks(provider, model)
+                return {"fallback": True, "reason": "llm_timeout"}
+            except Exception:
+                increment_calls_failed(provider, model, "provider_error")
+                raise
 
     def generate_structured_plan(self, goal: str, schema: dict) -> dict:
         """Generate a structured plan for a given goal using the LLM.
@@ -75,15 +90,24 @@ class LlmService:
             dict representing the structured plan.
             On timeout: ``{"fallback": True, "reason": "llm_timeout"}``.
         """
+        provider = getattr(self._adapter, "provider_name", "unknown")
+        model = getattr(self._adapter, "model_name", "unknown")
+
         redacted_goal = self._redaction_hook(goal)
-        try:
-            response = self._adapter.chat_completion(
-                prompt=f"Generate a structured plan for: {redacted_goal}\nSchema: {schema}",
-                context={"goal": goal, "schema": schema},
-            )
-            return self._parse_response(response)
-        except LlmTimeoutError:
-            return {"fallback": True, "reason": "llm_timeout"}
+        with measure_latency(provider, model):
+            increment_calls_total(provider, model)
+            try:
+                response = self._adapter.chat_completion(
+                    prompt=f"Generate a structured plan for: {redacted_goal}\nSchema: {schema}",
+                    context={"goal": goal, "schema": schema},
+                )
+                return self._parse_response(response)
+            except LlmTimeoutError:
+                increment_calls_fallbacks(provider, model)
+                return {"fallback": True, "reason": "llm_timeout"}
+            except Exception:
+                increment_calls_failed(provider, model, "provider_error")
+                raise
 
     @staticmethod
     def _parse_response(response: LlmResponse) -> dict:
