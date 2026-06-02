@@ -162,7 +162,6 @@ class TestSystemWinComHappyPath:
 
     pytestmark = [skip_unless_windows, skip_unless_db]
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_import_form_from_text_via_wincom(self, temp_db_copy):
         """import_form_from_text creates a form via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -173,7 +172,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "import_form_from_text",
@@ -193,7 +192,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_delete_form_via_wincom(self, temp_db_copy):
         """delete_form removes a form via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -204,7 +202,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "delete_form",
@@ -223,7 +221,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_export_report_to_text_via_wincom(self, temp_db_copy):
         """export_report_to_text exports a report via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -234,7 +231,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "export_report_to_text",
@@ -253,7 +250,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_import_report_from_text_via_wincom(self, temp_db_copy):
         """import_report_from_text creates a report via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -264,7 +260,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "import_report_from_text",
@@ -284,7 +280,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_delete_report_via_wincom(self, temp_db_copy):
         """delete_report removes a report via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -295,7 +290,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "delete_report",
@@ -314,7 +309,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_export_module_to_text_via_wincom(self, temp_db_copy):
         """export_module_to_text exports a VBA module via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -325,7 +319,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "export_module_to_text",
@@ -344,7 +338,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_export_macro_to_text_via_wincom(self, temp_db_copy):
         """export_macro_to_text exports macro metadata via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -355,7 +348,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "export_macro_to_text",
@@ -374,7 +367,6 @@ class TestSystemWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_export_all_versioning_via_wincom(self, temp_db_copy):
         """export_all_versioning exports all database objects via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -385,7 +377,7 @@ class TestSystemWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_sys", temp_db_copy, "com")
+            pool.connect("test_sys", temp_db_copy, adapter, "com")
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 result = call_mcp_tool(

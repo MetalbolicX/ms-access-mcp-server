@@ -52,7 +52,6 @@ class TestLinkedTablesWinComHappyPath:
 
     pytestmark = [skip_unless_windows, skip_unless_db]
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_get_linked_tables_via_wincom(self, temp_db_copy):
         """get_linked_tables returns linked table list via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -63,7 +62,7 @@ class TestLinkedTablesWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_linked", temp_db_copy, "com")
+            pool.connect("test_linked", temp_db_copy, adapter, "com")
 
             result = call_mcp_tool(
                 "get_linked_tables",
@@ -82,7 +81,6 @@ class TestLinkedTablesWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_create_linked_table_via_wincom(self, temp_db_copy):
         """create_linked_table creates a linked table definition via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -93,7 +91,7 @@ class TestLinkedTablesWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_linked", temp_db_copy, "com")
+            pool.connect("test_linked", temp_db_copy, adapter, "com")
 
             # Create a small SQLite table to use as the source
             import sqlite3, tempfile, os
@@ -130,7 +128,6 @@ class TestLinkedTablesWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_refresh_linked_table_via_wincom(self, temp_db_copy):
         """refresh_linked_table refreshes a linked table via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -141,7 +138,7 @@ class TestLinkedTablesWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_linked", temp_db_copy, "com")
+            pool.connect("test_linked", temp_db_copy, adapter, "com")
 
             # Try to refresh a non-existent table - should return proper error dict
             result = call_mcp_tool(
@@ -163,7 +160,6 @@ class TestLinkedTablesWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_unlink_table_via_wincom(self, temp_db_copy):
         """unlink_table removes a linked table definition via WinComAdapter."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -174,7 +170,7 @@ class TestLinkedTablesWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_linked", temp_db_copy, "com")
+            pool.connect("test_linked", temp_db_copy, adapter, "com")
 
             # Try to unlink a non-existent table - should return proper error dict
             result = call_mcp_tool(

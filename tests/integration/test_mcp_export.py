@@ -92,7 +92,6 @@ class TestExportWinComHappyPath:
 
     pytestmark = [skip_unless_windows, skip_unless_db]
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_export_table_csv_produces_file(self, temp_db_copy):
         """export_table_csv via WinComAdapter produces a real CSV file."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -103,7 +102,7 @@ class TestExportWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_export", temp_db_copy, "com")
+            pool.connect("test_export", temp_db_copy, adapter, "com")
 
             with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
                 csv_path = f.name
@@ -135,7 +134,6 @@ class TestExportWinComHappyPath:
             except Exception:
                 pass
 
-    @pytest.mark.skip(reason="pool.connect API broken - pre-existing issue in connection.py")
     def test_export_query_json_produces_file(self, temp_db_copy):
         """export_query_json via WinComAdapter produces a real JSON file."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -146,7 +144,7 @@ class TestExportWinComHappyPath:
 
         try:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
-            pool.connect("test_export", temp_db_copy, "com")
+            pool.connect("test_export", temp_db_copy, adapter, "com")
 
             with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
                 json_path = f.name

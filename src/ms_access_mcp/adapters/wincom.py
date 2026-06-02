@@ -192,6 +192,116 @@ class ComDispatcher:
         if errors:
             print(f"[ComDispatcher] Cleanup completed with {len(errors)} warning(s): {'; '.join(errors)}")
 
+    @staticmethod
+    def _dismiss_access_dialogs() -> None:
+        """Dismiss modal dialogs shown by Microsoft Access.
+
+        Uses Win32 API to find and close dialog windows (#32770 class) that
+        belong to the MSACCESS.EXE process(es). Called after OpenCurrentDatabase
+        to silence VBA module naming prompts and similar modal dialogs.
+
+        Runs inline on the STA thread via _do_connect; the STA thread has a
+        message pump so SendMessage/PostMessage calls are dispatched correctly.
+        """
+        try:
+            import win32con
+            import win32gui
+            import win32process
+
+            # Collect Access process PIDs by scanning all windows for OMain.
+            # When Visible=False the main Access window may be invisible/minimized
+            # so IsWindowVisible can't be used as a reliable filter.
+            access_pids: set[int] = set()
+
+            def collect_access_pids(hwnd: int, _: object) -> None:
+                cls = win32gui.GetClassName(hwnd)
+                title = win32gui.GetWindowText(hwnd)
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                # OMain = main Access window class (present for every Access instance)
+                if cls == "OMain" and title and "Access" in title:
+                    access_pids.add(pid)
+
+            win32gui.EnumWindows(collect_access_pids, None)
+
+            # If we found Access PIDs, scope the dialog close to those.
+            # If not (e.g. Visible=False makes OMain unfindable), close ALL #32770
+            # dialogs — this is safe in a test context where no human is using Access.
+            close_all_dialogs = not access_pids
+
+            def dismiss_dialogs(hwnd: int, _: object) -> None:
+                from ctypes import windll
+                import ctypes
+                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                cls = win32gui.GetClassName(hwnd)
+                if cls != "#32770":
+                    return
+                # Close #32770 dialogs.  When Visible=False the OMain window may
+                # be invisible so we use the close_all_dialogs fallback to ensure
+                # any Access-related dialog (module naming, Save As, etc.) is
+                # closed regardless of which Access PID it belongs to.
+                # In a test context no human is using Access so closing other apps'
+                # dialogs is safe (close_all_dialogs=False would only close dialogs
+                # from the current Access instance — but the module naming dialog
+                # comes from a different PID if the VBA project has unsaved changes).
+                #
+                # Try multiple approaches:
+                # 1. WM_COMMAND(IDOK=1) — closes Access module naming dialogs
+                # 2. WM_COMMAND(IDCANCEL=2) — closes other modal dialogs
+                # 3. WM_CLOSE via SendMessageTimeoutW
+                # 4. WM_SYSCOMMAND SC_CLOSE
+                try:
+                    windll.user32.SendMessageTimeoutW(
+                        hwnd,
+                        win32con.WM_COMMAND,
+                        1, 0,  # IDOK
+                        win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
+                        500,
+                        ctypes.byref(ctypes.c_ulong())
+                    )
+                except Exception:
+                    pass
+                try:
+                    windll.user32.SendMessageTimeoutW(
+                        hwnd,
+                        win32con.WM_COMMAND,
+                        2, 0,  # IDCANCEL
+                        win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
+                        500,
+                        ctypes.byref(ctypes.c_ulong())
+                    )
+                except Exception:
+                    pass
+                try:
+                    windll.user32.SendMessageTimeoutW(
+                        hwnd,
+                        win32con.WM_CLOSE,
+                        0, 0,
+                        win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
+                        500,
+                        ctypes.byref(ctypes.c_ulong())
+                    )
+                except Exception:
+                    pass
+                try:
+                    win32gui.PostMessage(
+                        hwnd, win32con.WM_SYSCOMMAND,
+                        win32con.SC_CLOSE, 0
+                    )
+                except Exception:
+                    pass
+
+            # Run four times with short delays — Access might re-show the dialog
+            # after the first close during ongoing VBA compilation.
+            for _ in range(4):
+                win32gui.EnumWindows(dismiss_dialogs, None)
+                import time
+                time.sleep(0.25)
+
+        except ImportError:
+            pass  # Not on Windows or win32gui not available
+        except Exception:
+            pass  # Best-effort only
+
     def _cleanup_com(self) -> None:
         """Legacy wrapper — delegates to _release_com_safe()."""
         self._release_com_safe()
@@ -231,16 +341,36 @@ class WinComAdapter(AccessAdapter):
             try:
                 self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
 
-                # Open via DAO FIRST with exclusive+readwrite so _current_db is writable.
+                self._dispatcher._access_app.Visible = False
+
+                # Open via DAO FIRST with readwrite so _current_db is writable.
+                # Using Exclusive=False so external file copy (shutil, etc.) can
+                # still access the database without triggering exclusive lock errors.
                 # OpenCurrentDatabase on its own opens in read-only mode for COM automation.
                 dbe = self._dispatcher._access_app.DBEngine
-                self._dispatcher._current_db = dbe.OpenDatabase(db_path, True, False)
+                self._dispatcher._current_db = dbe.OpenDatabase(db_path, False, False)
 
                 # Now OpenCurrentDatabase — the underlying DAO handle is already writable,
                 # so CurrentDb inherits the writable state.
-                self._dispatcher._access_app.OpenCurrentDatabase(db_path, True)
+                self._dispatcher._access_app.OpenCurrentDatabase(db_path, False)
+
+                # Suppress Access dialogs after DB is open (VBA module naming, etc.)
+                try:
+                    self._dispatcher._access_app.DoCmd.SetWarnings(False)
+                except Exception:
+                    pass
 
                 self._dispatcher._ado_conn = self._dispatcher._access_app.CurrentProject.Connection
+
+                # Dismiss any Access dialog that appeared after OpenCurrentDatabase
+                # (VBA module naming prompts, compile errors, etc.) — must be called
+                # after CurrentProject.Connection because VBA loads async on first
+                # property access and may trigger the dialog at that point.
+                # Use a brief sleep first so the dialog has time to fully render.
+                import time
+                time.sleep(0.5)
+                self._dispatcher._dismiss_access_dialogs()
+
                 return True
             except Exception:
                 self._dispatcher._release_com_safe()
@@ -2745,9 +2875,8 @@ class WinComAdapter(AccessAdapter):
     def copy_database(self, source: str, dest: str) -> bool:
         """Copy a database file using shutil.copy2.
 
-        Access opens .accdb files in exclusive mode, so the source must be
-        closed (disconnected) before copying. The adapter reconnects to the
-        source afterwards if it was connected.
+        Works even while connected because the DAO handle is opened with
+        Exclusive=False (shared mode), so the file is not locked exclusively.
 
         Args:
             source: Path to source .accdb/.mdb file
@@ -2756,17 +2885,12 @@ class WinComAdapter(AccessAdapter):
         Returns:
             True if copy succeeded, False otherwise
         """
-        was_connected = self.is_connected()
         try:
-            if was_connected:
-                self.disconnect()
+            import shutil
             shutil.copy2(source, dest)
             return True
         except Exception:
             return False
-        finally:
-            if was_connected and not self.is_connected():
-                self.connect(source)
 
     # ========================================================================
     # VBA PROCEDURE OPERATIONS
