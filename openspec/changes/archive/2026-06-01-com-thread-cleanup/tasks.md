@@ -19,11 +19,11 @@ Chain strategy: size-exception
 
 ### Unit 1: Implement `_release_com_safe()` in ComDispatcher (~120 lines)
 
-- [ ] 1.1 Add `import subprocess` at top of wincom.py
-- [ ] 1.2 Create `_release_com_safe(self)` in `ComDispatcher` with ordered release + per-step logging + set-to-None after each
-- [ ] 1.3 Add `Quit()` watchdog via `concurrent.futures.ThreadPoolExecutor` with 5s timeout
-- [ ] 1.4 Add taskkill fallback after watchdog timeout, guarded by `sys.platform == 'win32'`
-- [ ] 1.5 Replace `_cleanup_com()` body to delegate to `self._release_com_safe()`
+- [x] 1.1 Add `import subprocess` at top of wincom.py
+- [x] 1.2 Create `_release_com_safe(self)` in `ComDispatcher` with ordered release + per-step logging + set-to-None after each
+- [x] 1.3 Add `Quit()` watchdog via `concurrent.futures.ThreadPoolExecutor` with 5s timeout
+- [x] 1.4 Add taskkill fallback after watchdog timeout, guarded by `sys.platform == 'win32'`
+- [x] 1.5 Replace `_cleanup_com()` body to delegate to `self._release_com_safe()`
 
 Implementation:
 
@@ -85,11 +85,11 @@ def _force_kill_access(self) -> None:
 
 ### Unit 2: Wire Cleanup Into All Entry Points (~80 lines)
 
-- [ ] 2.1 In `_run()` finally: replace `self._cleanup_com()` → `self._release_com_safe()`
-- [ ] 2.2 In `disconnect()`: replace `self._dispatcher._cleanup_com()` → call `_release_com_safe()` via dispatcher
-- [ ] 2.3 In `close_access()`: replace inline cleanup → delegate to `_release_com_safe()`
-- [ ] 2.4 In `connect()` error path: replace `self._dispatcher._cleanup_com()` → `self._dispatcher._release_com_safe()`
-- [ ] 2.5 Extend `shutdown()` join timeout: `5.0` → `15.0` to accommodate the 5s watchdog + cleanup
+- [x] 2.1 In `_run()` finally: replace `self._cleanup_com()` → `self._release_com_safe()`
+- [x] 2.2 In `disconnect()`: replace `self._dispatcher._cleanup_com()` → call `_release_com_safe()` via dispatcher
+- [x] 2.3 In `close_access()`: replace inline cleanup → delegate to `_release_com_safe()`
+- [x] 2.4 In `connect()` error path: replace `self._dispatcher._cleanup_com()` → `self._dispatcher._release_com_safe()`
+- [x] 2.5 Extend `shutdown()` join timeout: `5.0` → `15.0` to accommodate the 5s watchdog + cleanup
 
 Implementation:
 
@@ -126,9 +126,9 @@ Implementation:
 
 ### Unit 3: Cleanup Logging Audit (~50 lines)
 
-- [ ] 3.1 In `_cleanup_com()` delegate path: remove duplicate logging (already in `_release_com_safe()`)
-- [ ] 3.2 In `disconnect()`: replace `except Exception: pass` → `except Exception as e: print(...)`
-- [ ] 3.3 In `close_access()`: replace `except Exception: pass` → `except Exception as e: print(...)`
+- [x] 3.1 In `_cleanup_com()` delegate path: remove duplicate logging (already in `_release_com_safe()`)
+- [x] 3.2 In `disconnect()`: replace `except Exception: pass` → `except Exception as e: print(...)`
+- [x] 3.3 In `close_access()`: replace `except Exception: pass` → `except Exception as e: print(...)`
 
 Implementation:
 
