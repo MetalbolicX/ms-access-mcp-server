@@ -256,7 +256,7 @@ class MigrationService:
 
         connector = connector_cls()
         if not connector.connect(connection_string):
-            return {"success": False, "error": "Failed to connect to target database"}
+            return {"success": False, "error": "Failed to connect to target database", "tables_created": [], "tables_failed": []}
 
         created = []
         failed = []
