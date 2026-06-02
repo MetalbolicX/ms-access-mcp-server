@@ -109,16 +109,25 @@ class TestComDispatcherLifecycle:
 
     def test_dispatcher_thread_is_sta(self, temp_db_copy: str):
         """Verify the dispatcher thread runs in STA mode (apartment state)."""
-        import pythoncom
+        import ctypes
+        from ctypes import wintypes
 
         assert self.adapter.connect(temp_db_copy)
 
         def check_apartment():
-            return pythoncom.GetCurrentThreadApartment()
+            ole32 = ctypes.windll.ole32
+            apt_type = wintypes.ULONG()
+            apt_qualifier = wintypes.ULONG()
+            hr = ole32.CoGetApartmentType(
+                ctypes.byref(apt_type), ctypes.byref(apt_qualifier)
+            )
+            if hr == 0:  # S_OK
+                return apt_type.value
+            return -1
 
         apt = self.adapter._dispatcher.call(check_apartment)
-        # STA = 2
-        assert apt == 2, f"Expected STA apartment (2), got {apt}"
+        # APTTYPE_STA = 0 (apartment-threaded, not main STA)
+        assert apt == 0, f"Expected STA apartment (0), got {apt}"
 
 
 class TestComDispatcherErrorHandling:
