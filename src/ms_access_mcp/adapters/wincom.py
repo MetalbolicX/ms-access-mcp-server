@@ -960,21 +960,18 @@ class WinComAdapter(AccessAdapter):
                 if target_module is None:
                     target_module = vb_project.VBComponents.Add(1)
                     target_module.Name = module_name
-                # Start dialog killer — AddFromString may trigger "Save As"
-                dismissed = threading.Event()
-                killer_thread = threading.Thread(
-                    target=self._dialog_killer,
-                    args=(dismissed,),
-                    daemon=True,
-                )
-                killer_thread.start()
+                    # Save the new module to disk so AddFromString doesn't
+                    # trigger Access's "Save As" modal dialog.
+                    try:
+                        self._dispatcher._access_app.DoCmd.Save(5, module_name)
+                    except Exception:
+                        pass  # Best-effort
                 try:
                     target_module.CodeModule.DeleteLines(1, target_module.CodeModule.CountOfLines)
                     target_module.CodeModule.AddFromString(code)
                     return True
-                finally:
-                    dismissed.set()
-                    killer_thread.join(timeout=2.0)
+                except Exception:
+                    return False
             except Exception as set_vba_exc:
                 import traceback
                 traceback.print_exc()
@@ -1570,6 +1567,11 @@ class WinComAdapter(AccessAdapter):
                 if target_module is None:
                     target_module = vb_project.VBComponents.Add(1)
                     target_module.Name = module_name
+                    # Save to avoid "Save As" dialog on AddFromString
+                    try:
+                        self._dispatcher._access_app.DoCmd.Save(5, module_name)
+                    except Exception:
+                        pass
                 target_module.CodeModule.AddFromString(code)
                 return True
             except Exception:
@@ -1667,7 +1669,15 @@ class WinComAdapter(AccessAdapter):
                 return {"success": False, "error": "No VBA project"}
             app = self._dispatcher._access_app
 
-            # Start dialog killer — RunCommand may trigger "Save As"
+            # Save all modules first so compilation doesn't trigger "Save As" dialog
+            for comp in vb_project.VBComponents:
+                if comp.Type == 1:  # vbext_ct_StdModule
+                    try:
+                        app.DoCmd.Save(5, comp.Name)
+                    except Exception:
+                        pass
+
+            # Start dialog killer as safety net for any remaining dialogs
             dismissed = threading.Event()
             killer_thread = threading.Thread(
                 target=self._dialog_killer,
@@ -3098,8 +3108,14 @@ class WinComAdapter(AccessAdapter):
                         else:
                             # Create via VBE
                             def _do():
-                                comp = self._dispatcher._access_app.VBE.VBProjects(1).VBComponents.Add(1)
+                                app = self._dispatcher._access_app
+                                comp = app.VBE.VBProjects(1).VBComponents.Add(1)
                                 comp.Name = name
+                                # Save so AddFromString doesn't trigger "Save As" dialog
+                                try:
+                                    app.DoCmd.Save(5, name)
+                                except Exception:
+                                    pass
                                 comp.CodeModule.AddFromString(data)
                                 return True
                             try:
