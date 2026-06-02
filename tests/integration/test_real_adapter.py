@@ -138,6 +138,11 @@ class TestWinComAdapterWithRealDb:
             result = self.adapter.execute_sql_script(script_path)
             assert result["success"] is True
             assert result["statements_executed"] == 2
+            # Spec fields are None on success
+            assert result["failing_statement"] is None
+            assert result["failing_line"] is None
+            assert result["access_error_code"] is None
+            assert result["access_error_message"] is None
         finally:
             os.unlink(script_path)
 
@@ -155,6 +160,11 @@ class TestWinComAdapterWithRealDb:
             result = self.adapter.execute_sql_script(script_path)
             assert result["success"] is False
             assert "statements_executed" in result
+            # Spec fields are present on failure
+            assert "failing_statement" in result
+            assert "failing_line" in result
+            assert "access_error_code" in result
+            assert "access_error_message" in result
         finally:
             os.unlink(script_path)
 

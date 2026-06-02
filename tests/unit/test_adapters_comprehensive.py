@@ -351,6 +351,192 @@ class TestWinComAdapterExecuteSqlScript:
             os.unlink(temp_path)
 
 
+class TestWinComAdapterExecuteSqlScriptConnected:
+    """Test execute_sql_script with a mocked connected adapter.
+
+    Mocks is_connected() and the dispatcher to exercise the _do() inner
+    function, file I/O, statement parsing, and error extraction.
+    """
+
+    def setup_method(self):
+        from unittest.mock import MagicMock, patch
+
+        self.adapter = WinComAdapter()
+
+        # Mock is_connected to return True
+        self._connected_patch = patch.object(WinComAdapter, 'is_connected', return_value=True)
+        self._connected_patch.start()
+
+        # Mock dispatcher.call to execute functions inline (skips STA thread)
+        self.adapter._dispatcher.call = lambda fn, *a, **kw: fn(*a, **kw)
+
+        # Mock the database object with a controllable Execute
+        self.mock_db = MagicMock()
+        self.adapter._dispatcher._current_db = self.mock_db
+
+    def teardown_method(self):
+        self._connected_patch.stop()
+
+    # --- Success paths ---
+
+    def test_empty_file_connected_returns_success(self):
+        """Empty file while connected → success: true, executed: 0."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 0
+            assert result["failing_statement"] is None
+            assert result["failing_line"] is None
+            assert result["access_error_code"] is None
+            assert result["access_error_message"] is None
+        finally:
+            os.unlink(temp_path)
+
+    def test_comments_only_file_connected_returns_success(self):
+        """Comments-only file while connected → success: true, executed: 0."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("-- just a comment\n/* block comment */")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 0
+        finally:
+            os.unlink(temp_path)
+
+    def test_blank_lines_between_statements_ignored(self):
+        """Blank lines between statements don't affect the count."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;\n  \nSELECT 2;\n\nSELECT 3;")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 3
+        finally:
+            os.unlink(temp_path)
+
+    def test_successful_execution_returns_correct_count(self):
+        """Multiple statements execute successfully, all spec fields None."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("CREATE TABLE A (ID INT);\nCREATE TABLE B (ID INT);")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 2
+            assert result["failing_statement"] is None
+            assert result["failing_line"] is None
+            assert result["access_error_code"] is None
+            assert result["access_error_message"] is None
+        finally:
+            os.unlink(temp_path)
+
+    def test_no_trailing_semicolon(self):
+        """Single statement without trailing semicolon executes."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 1
+        finally:
+            os.unlink(temp_path)
+
+    def test_mixed_comments_and_sql(self):
+        """Comments interleaved with SQL parse correctly."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write(
+                "-- Create users table\n"
+                "CREATE TABLE Users (ID COUNTER PRIMARY KEY);\n"
+                "/* Insert default */\n"
+                "INSERT INTO Users (ID) VALUES (1);\n"
+            )
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is True
+            assert result["statements_executed"] == 2
+        finally:
+            os.unlink(temp_path)
+
+    def test_line_numbers_are_correct(self):
+        """Line numbers point to the statement line, not whitespace before it."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;\n\nSELECT 2;\n-- comment\nSELECT 3;")
+            temp_path = f.name
+        try:
+            # First statement succeeds, second fails so we can check line
+            def execute_side_effect(sql, *a):
+                if "SELECT 2" in sql:
+                    raise Exception("Fake error")
+            self.mock_db.Execute.side_effect = execute_side_effect
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is False
+            assert result["failing_line"] == 3  # SELECT 2 is on line 3
+            assert "SELECT 2" in result["failing_statement"]
+        finally:
+            os.unlink(temp_path)
+
+    # --- Failure paths ---
+
+    def test_execute_raises_generic_exception(self):
+        """When db.Execute raises generic Exception, error message is preserved."""
+        self.mock_db.Execute.side_effect = Exception("Syntax error in query")
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("CREATE TABLE Bad (ID INT);")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is False
+            assert result["statements_executed"] == 0
+            assert "Syntax error" in result["error"]
+            assert "CREATE TABLE Bad" in result["failing_statement"]
+            assert result["failing_line"] == 1
+        finally:
+            os.unlink(temp_path)
+
+    def test_first_statement_succeeds_second_fails(self):
+        """First statement succeeds, second fails → executed: 1."""
+        def execute_side_effect(sql, *a):
+            if "BAD" in sql:
+                raise Exception("Constraint violation")
+        self.mock_db.Execute.side_effect = execute_side_effect
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("CREATE TABLE Good (ID INT);\nCREATE TABLE BAD (ID INT);")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is False
+            assert result["statements_executed"] == 1
+            assert "BAD" in result["failing_statement"]
+        finally:
+            os.unlink(temp_path)
+
+    def test_failure_response_contains_spec_fields(self):
+        """Failure response has all spec-required keys."""
+        self.mock_db.Execute.side_effect = Exception("Error")
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert "success" in result
+            assert "statements_executed" in result
+            assert "error" in result
+            assert "failing_statement" in result
+            assert "failing_line" in result
+            assert "access_error_code" in result
+            assert "access_error_message" in result
+        finally:
+            os.unlink(temp_path)
+
+
 class TestOdbcAdapterDeleteModule:
     """Test that delete_module returns False for OdbcAdapter (COM-only)."""
 

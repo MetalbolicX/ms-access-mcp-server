@@ -2683,14 +2683,19 @@ class WinComAdapter(AccessAdapter):
                 pos += len(raw_chunk) + (1 if semi_idx >= 0 else 0)
                 continue
 
+            # Find where actual SQL content starts (skip leading whitespace)
+            # so line numbers point to the statement, not to whitespace before it
+            first_content = len(raw_chunk) - len(raw_chunk.lstrip())
+            stmt_pos = pos + first_content
+
             # Strip comments from the chunk — this is safe per-statement
             clean = self._strip_sql_comments(raw_stripped).strip()
             if not clean:
                 pos += len(raw_chunk) + (1 if semi_idx >= 0 else 0)
                 continue
 
-            # Original line number: count newlines before current pos + 1
-            line = raw_sql[:pos].count("\n") + 1
+            # Original line number (1-based) of the statement in the file
+            line = raw_sql[:stmt_pos].count("\n") + 1
 
             statements.append({"text": clean, "line": line})
             pos += len(raw_chunk) + (1 if semi_idx >= 0 else 0)
