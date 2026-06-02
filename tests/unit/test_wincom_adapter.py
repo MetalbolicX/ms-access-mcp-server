@@ -23,6 +23,8 @@ import tempfile
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from ms_access_mcp.adapters.wincom import WinComAdapter
+
 import pytest
 
 
@@ -1817,3 +1819,82 @@ class TestWinComTrustedLocations:
         # but at minimum the wrapper was set up correctly
         # We just verify the method doesn't crash
         assert isinstance(result, bool)
+
+
+class TestStripSqlComments:
+    """Unit tests for the _strip_sql_comments static method.
+
+    Covers: -- single-line comments, /* */ block comments,
+    mixed comments, empty string, no comments, indented comments.
+    """
+
+    def test_removes_single_line_comments(self):
+        sql = "SELECT * FROM customers\n-- fetch all customers\nWHERE active = -1"
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert "--" not in result
+        assert "SELECT" in result
+        assert "WHERE" in result
+
+    def test_removes_block_comments(self):
+        sql = "SELECT /* comment */ 1"
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert "/*" not in result
+        assert "*/" not in result
+        assert "SELECT" in result
+
+    def test_mixed_comments(self):
+        sql = """-- header comment
+CREATE TABLE Test (ID INTEGER);
+/* multi
+line */
+INSERT INTO Test VALUES (1);"""
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert "--" not in result
+        assert "/*" not in result
+        assert "CREATE" in result
+        assert "INSERT" in result
+
+    def test_empty_string_returns_empty(self):
+        result = WinComAdapter._strip_sql_comments("")
+        assert result == ""
+
+    def test_no_comments_unchanged(self):
+        sql = "SELECT 1;\nINSERT INTO T VALUES (1);"
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert result == sql or result.replace("\n", "") == sql.replace("\n", "")
+
+    def test_only_comments_returns_empty(self):
+        result = WinComAdapter._strip_sql_comments("-- just a comment\n/* another */")
+        assert result.strip() == "" or result == ""
+
+    def test_indented_comment(self):
+        sql = "  -- indented comment\nSELECT 1"
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert "SELECT 1" in result
+        assert "indented" not in result
+
+    def test_block_comment_same_line(self):
+        sql = "SELECT /* inline */ 1, 2, 3"
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert "SELECT" in result
+        assert "1, 2, 3" in result
+        assert "inline" not in result
+
+    def test_multiple_block_comments(self):
+        sql = "SELECT /* a */ 1 /* b */ , 2 /* c */"
+        result = WinComAdapter._strip_sql_comments(sql)
+        assert "SELECT" in result
+        assert "1" in result and "2" in result
+        assert "a" not in result
+        assert "b" not in result
+        assert "c" not in result
+
+    def test_comment_only_lines_removed(self):
+        sql = "SELECT 1;\n-- clean\nSELECT 2;\n-- more\nSELECT 3;"
+        result = WinComAdapter._strip_sql_comments(sql)
+        lines = [l.strip() for l in result.split("\n") if l.strip()]
+        assert "SELECT 1;" in result
+        assert "SELECT 2;" in result
+        assert "SELECT 3;" in result
+        assert "clean" not in result
+        assert "more" not in result

@@ -316,6 +316,36 @@ class TestWinComAdapterExecuteSqlScript:
         assert "statements_executed" in result
         assert "error" in result
 
+    def test_statements_executed_is_zero_on_file_not_found(self):
+        """statements_executed is 0 when file doesn't exist."""
+        result = self.adapter.execute_sql_script("Z:\\nonexistent\\test.sql")
+        assert result["statements_executed"] == 0
+
+    def test_statements_executed_is_zero_when_not_connected(self):
+        """statements_executed is 0 when not connected."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            assert result["statements_executed"] == 0
+        finally:
+            os.unlink(temp_path)
+
+    def test_comments_only_file_returns_not_connected(self):
+        """File with only SQL comments returns not-connected error (pre-connection check)."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("-- just a comment\n/* block comment */")
+            temp_path = f.name
+        try:
+            result = self.adapter.execute_sql_script(temp_path)
+            # Not connected check fires before file content is evaluated
+            assert result["success"] is False
+            assert "not connected" in result["error"].lower()
+            assert result["statements_executed"] == 0
+        finally:
+            os.unlink(temp_path)
+
 
 class TestOdbcAdapterDeleteModule:
     """Test that delete_module returns False for OdbcAdapter (COM-only)."""
