@@ -2745,6 +2745,10 @@ class WinComAdapter(AccessAdapter):
     def copy_database(self, source: str, dest: str) -> bool:
         """Copy a database file using shutil.copy2.
 
+        Access opens .accdb files in exclusive mode, so the source must be
+        closed (disconnected) before copying. The adapter reconnects to the
+        source afterwards if it was connected.
+
         Args:
             source: Path to source .accdb/.mdb file
             dest: Path to destination file
@@ -2752,11 +2756,17 @@ class WinComAdapter(AccessAdapter):
         Returns:
             True if copy succeeded, False otherwise
         """
+        was_connected = self.is_connected()
         try:
+            if was_connected:
+                self.disconnect()
             shutil.copy2(source, dest)
             return True
         except Exception:
             return False
+        finally:
+            if was_connected and not self.is_connected():
+                self.connect(source)
 
     # ========================================================================
     # VBA PROCEDURE OPERATIONS

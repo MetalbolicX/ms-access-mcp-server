@@ -56,12 +56,16 @@ class ConnectionPool:
         self,
         name_or_db_path: str,
         db_path_or_adapter: Optional[str | AccessAdapter] = None,
-        adapter_type: Literal["com", "odbc"] = "odbc",
+        adapter: str | AccessAdapter | None = "odbc",
+        adapter_type: Literal["com", "odbc"] | None = None,
     ) -> ConnectionState | bool:
         """Create or replace a named connection, or backward-compatible connect.
 
         New API (positional):
             pool.connect("name", "/path/db.accdb", "odbc") -> ConnectionState
+
+        Named connection with pre-created adapter:
+            pool.connect("name", "/path/db.accdb", adapter_instance, "com") -> ConnectionState
 
         Backward-compatible (2 positional args):
             pool.connect("/path/db.accdb", adapter) -> bool
@@ -69,28 +73,30 @@ class ConnectionPool:
         Args:
             name_or_db_path: Connection name (new API) or db_path (old API)
             db_path_or_adapter: db_path (new API) or adapter instance (old API)
-            adapter_type: Adapter type for new API (default "odbc")
+            adapter: Adapter type string ("com"/"odbc") for new API, or pre-created
+                     AccessAdapter instance for named connections with an existing adapter.
+            adapter_type: Override adapter_type in ConnectionState when using a
+                          pre-created adapter (3rd arg). Ignored when adapter is a string.
         """
         # Detect backward-compatible call: 2 positional args, second looks like an adapter
         if db_path_or_adapter is not None and hasattr(db_path_or_adapter, 'connect') and hasattr(db_path_or_adapter, 'disconnect'):
             # Backward-compatible: connect(db_path, adapter)
             db_path = name_or_db_path
-            adapter = cast(AccessAdapter, db_path_or_adapter)
+            adapter_instance = cast(AccessAdapter, db_path_or_adapter)
             # Remove existing default connection if present
             if "default" in self._pool:
                 self._pool["default"].adapter.disconnect()
                 del self._pool["default"]
-            result = adapter.connect(db_path)
+            result = adapter_instance.connect(db_path)
             if result:
                 self._pool["default"] = ConnectionState(
-                    adapter=adapter,
+                    adapter=adapter_instance,
                     db_path=db_path,
                     adapter_type="com",
                 )
                 self._active = "default"
             return result
 
-        # New API: connect(name, db_path, adapter_type)
         name = name_or_db_path
         db_path = db_path_or_adapter
         assert isinstance(db_path, str), "db_path must be a string for new API"
@@ -100,15 +106,30 @@ class ConnectionPool:
         from ..adapters.wincom import WinComAdapter
         from ..adapters.odbc import OdbcAdapter
 
-        adapter_obj: AccessAdapter = WinComAdapter() if adapter_type == "com" else OdbcAdapter()
+        # 3rd arg is a pre-created adapter instance → named connection with it
+        # The caller is responsible for connecting the adapter before registering it.
+        if adapter is not None and hasattr(adapter, 'connect') and hasattr(adapter, 'disconnect'):
+            adapter_obj = cast(AccessAdapter, adapter)
+            actual_adapter_type: Literal["com", "odbc"] = adapter_type or "com"
+            state = ConnectionState(
+                adapter=adapter_obj,
+                db_path=db_path,
+                adapter_type=actual_adapter_type,
+            )
+            self._pool[name] = state
+            return state
+
+        # Standard new API: connect(name, db_path, adapter_type_string)
+        actual_adapter_type = cast(str, adapter) if isinstance(adapter, str) else (adapter_type or "odbc")
+        adapter_obj = WinComAdapter() if actual_adapter_type == "com" else OdbcAdapter()
         result = adapter_obj.connect(db_path)
         if not result:
-            raise RuntimeError(f"Failed to connect to {db_path} with {adapter_type} adapter")
+            raise RuntimeError(f"Failed to connect to {db_path} with {actual_adapter_type} adapter")
 
         state = ConnectionState(
             adapter=adapter_obj,
             db_path=db_path,
-            adapter_type=adapter_type,
+            adapter_type=actual_adapter_type,
         )
         self._pool[name] = state
         return state

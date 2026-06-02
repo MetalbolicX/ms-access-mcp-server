@@ -419,7 +419,6 @@ class TestMcpDevCopyTools:
         result = call_mcp_tool(
             "get_dev_copy_status",
             db_path=temp_db_copy,
-            connection_name="test_db",
             connection_service=self.pool,
         )
         # Should return inactive status (no dev copy active)
