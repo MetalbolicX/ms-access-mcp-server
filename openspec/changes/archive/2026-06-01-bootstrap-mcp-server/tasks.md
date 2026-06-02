@@ -50,8 +50,8 @@ Chain strategy: stacked-to-main
 ## Phase 4: CLI and Testing
 
 - [x] 4.1 Implement `Typer` commands mapping to core services.
-- [ ] 4.2 Write unit tests for `WinComAdapter` (mocked) and `OdbcAdapter`.
-- [ ] 4.3 Write tests for schema extraction output formats.
+- [x] 4.2 Write unit tests for `WinComAdapter` (mocked) and `OdbcAdapter`.
+- [x] 4.3 Write tests for schema extraction output formats.
 
 ## Phase 5: Cleanup & Verification
 
