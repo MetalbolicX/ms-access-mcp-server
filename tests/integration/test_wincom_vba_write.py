@@ -125,11 +125,16 @@ class TestWinComVbaSetCode:
         assert "AddThree" in read_back
 
     def test_set_vba_code_nonexistent_module(self, temp_db_copy: str):
-        """Setting code on a non-existent module must return False."""
+        """Setting code on a non-existent module creates it and returns True."""
         assert self.adapter.connect(temp_db_copy)
 
         ok = self.adapter.set_vba_code("modDoesNotExist_xyz", "Public Sub Dummy()\nEnd Sub")
-        assert ok is False, "set_vba_code should return False for non-existent module"
+        assert ok is True, "set_vba_code should create the module and return True"
+
+        # Verify the module was created
+        modules = self.adapter.get_modules()
+        names = [m.name for m in modules]
+        assert "modDoesNotExist_xyz" in names, f"Module not found in {names}"
 
 
 # =============================================================================

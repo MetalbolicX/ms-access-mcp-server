@@ -952,13 +952,33 @@ class WinComAdapter(AccessAdapter):
             if vb_project is None:
                 return False
             try:
+                target_module = None
                 for mod in vb_project.VBComponents:
                     if mod.Name == module_name:
-                        mod.CodeModule.DeleteLines(1, mod.CodeModule.CountOfLines)
-                        mod.CodeModule.AddFromString(code)
-                        return True
-                return False
-            except Exception:
+                        target_module = mod
+                        break
+                if target_module is None:
+                    target_module = vb_project.VBComponents.Add(1)
+                    target_module.Name = module_name
+                # Start dialog killer — AddFromString may trigger "Save As"
+                dismissed = threading.Event()
+                killer_thread = threading.Thread(
+                    target=self._dialog_killer,
+                    args=(dismissed,),
+                    daemon=True,
+                )
+                killer_thread.start()
+                try:
+                    target_module.CodeModule.DeleteLines(1, target_module.CodeModule.CountOfLines)
+                    target_module.CodeModule.AddFromString(code)
+                    return True
+                finally:
+                    dismissed.set()
+                    killer_thread.join(timeout=2.0)
+            except Exception as set_vba_exc:
+                import traceback
+                traceback.print_exc()
+                print(f"[set_vba_code] Exception: {set_vba_exc}", file=sys.stderr)
                 return False
 
         return self._dispatcher.call(self._trusted_locations_wrap, _do)
@@ -1646,21 +1666,81 @@ class WinComAdapter(AccessAdapter):
             if vb_project is None:
                 return {"success": False, "error": "No VBA project"}
             app = self._dispatcher._access_app
-            for cmd_id in _COMPILE_CMD_IDS:
-                try:
-                    app.DoCmd.RunCommand(cmd_id)
-                    return {"success": True}
-                except Exception:
-                    continue
-            return {
-                "success": False,
-                "error": "Could not find working compile command for this Access version",
-            }
+
+            # Start dialog killer — RunCommand may trigger "Save As"
+            dismissed = threading.Event()
+            killer_thread = threading.Thread(
+                target=self._dialog_killer,
+                args=(dismissed,),
+                daemon=True,
+            )
+            killer_thread.start()
+
+            try:
+                for cmd_id in _COMPILE_CMD_IDS:
+                    try:
+                        app.DoCmd.RunCommand(cmd_id)
+                        return {"success": True}
+                    except Exception:
+                        continue
+                return {
+                    "success": False,
+                    "error": "Could not find working compile command for this Access version",
+                }
+            finally:
+                dismissed.set()
+                killer_thread.join(timeout=2.0)
 
         try:
             return self._dispatcher.call(self._trusted_locations_wrap, _do)
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    @staticmethod
+    def _dialog_killer(stop_event: threading.Event) -> None:
+        """Background thread that clicks the accept button on Access 'Save As' dialogs.
+
+        The 'Save As' dialog appears when Access VBA compilation encounters an
+        unnamed module.  It blocks the COM/STA thread, so we run this from a
+        separate daemon thread to dismiss it by clicking the accept button.
+
+        Args:
+            stop_event: threading.Event — set when the dialog killer should stop.
+        """
+        try:
+            import win32con
+            import win32gui
+            import time
+
+            while not stop_event.is_set():
+                def find_and_click(hwnd: int, _: object) -> bool:
+                    if stop_event.is_set():
+                        return False
+                    cls = win32gui.GetClassName(hwnd)
+                    title = win32gui.GetWindowText(hwnd)
+                    if cls != "#32770" or "save" not in title.lower():
+                        return True
+                    # Found the dialog — find the accept button (OK, Save, etc.)
+                    btn = win32gui.FindWindowEx(hwnd, None, "Button", None)
+                    while btn:
+                        btn_title = win32gui.GetWindowText(btn).strip()
+                        if btn_title in ("OK", "Save", "&OK", "&Save"):
+                            win32gui.PostMessage(hwnd, win32con.WM_COMMAND,
+                                                 win32gui.GetWindowLong(btn, win32con.GWL_ID), 0)
+                            return True
+                        btn = win32gui.FindWindowEx(hwnd, btn, "Button", None)
+                    # Fallback: press Enter on the dialog itself
+                    win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x0D, 0)
+                    return True
+
+                win32gui.EnumWindows(find_and_click, None)
+                if not stop_event.is_set():
+                    time.sleep(0.1)
+
+        except ImportError:
+            pass  # Not on Windows
+        except Exception:
+            pass  # Best-effort
 
     # ========================================================================
     # TRUSTED LOCATIONS (Pre/Post Hook for VBA Operations)
