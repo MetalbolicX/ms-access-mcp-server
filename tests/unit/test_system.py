@@ -288,16 +288,98 @@ class TestSystemToolSuccessPaths:
             assert result["macro"] == "TestMacro"
             assert result["data"]["name"] == "TestMacro"
 
-    def test_export_all_versioning_delegates_to_schema_service(self):
-        """export_all_versioning should delegate to schema_service."""
+    def test_export_all_versioning_delegates_to_versioning_orchestrator(self):
+        """export_all_versioning should delegate to VersioningOrchestrator.export_all."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.export_all.return_value = {"success": True, "exported": 10}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.export_all_versioning.__globals__, connection_service=mock_conn):
+                result = server.export_all_versioning("/tmp/export")
+                mock_orch.export_all.assert_called_once()
+                args = mock_orch.export_all.call_args
+                assert args[0][0] == "/tmp/export"  # output_dir
+                assert args[0][1] == mock_adapter     # adapter
+                assert result["success"] is True
+
+    def test_import_all_versioning_delegates_to_versioning_orchestrator(self):
+        """import_all_versioning should delegate to VersioningOrchestrator.import_all."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.import_all.return_value = {"success": True, "imported": 5}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.import_all_versioning.__globals__, connection_service=mock_conn):
+                result = server.import_all_versioning("/tmp/import")
+                mock_orch.import_all.assert_called_once()
+                args = mock_orch.import_all.call_args
+                assert args[0][0] == "/tmp/import"  # input_dir
+                assert args[0][1] == mock_adapter     # adapter
+                assert result["success"] is True
+
+    def test_compare_versioning_delegates_to_versioning_orchestrator(self):
+        """compare_versioning should delegate to VersioningOrchestrator.compare."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.compare.return_value = {"success": True, "new": [], "missing": [], "changed": []}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.compare_versioning.__globals__, connection_service=mock_conn):
+                result = server.compare_versioning("/tmp/compare")
+                mock_orch.compare.assert_called_once()
+                args = mock_orch.compare.call_args
+                assert args[0][0] == "/tmp/compare"  # export_dir
+                assert args[0][1] == mock_adapter     # adapter
+                assert result["success"] is True
+
+    def test_export_schema_ddl_delegates_to_versioning_orchestrator(self):
+        """export_schema_ddl should delegate to VersioningOrchestrator.export_schema_ddl."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.export_schema_ddl.return_value = {"success": True, "ddl_tables": "schema/ddl_tables.sql"}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.export_schema_ddl.__globals__, connection_service=mock_conn):
+                result = server.export_schema_ddl("/tmp/ddl")
+                mock_orch.export_schema_ddl.assert_called_once()
+                args = mock_orch.export_schema_ddl.call_args
+                assert args[0][0] == "/tmp/ddl"  # output_dir
+                assert args[0][1] == mock_adapter  # adapter
+                assert result["success"] is True
+
+    def test_export_query_to_text_still_delegates_to_schema_service(self):
+        """export_query_to_text is NOT a versioning tool - still delegates to schema_service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_schema = MagicMock()
-        mock_schema.export_all_versioning.return_value = {"success": True, "exported": 10}
+        mock_schema.export_query_to_text.return_value = "SELECT * FROM Table1"
 
-        with patch.dict(server.export_all_versioning.__globals__, connection_service=mock_conn, schema_service=mock_schema):
-            result = server.export_all_versioning("/tmp/export")
-            mock_schema.export_all_versioning.assert_called_once_with("/tmp/export")
+        with patch.dict(server.export_query_to_text.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+            result = server.export_query_to_text("q1")
+            mock_schema.export_query_to_text.assert_called_once_with("q1")
+            assert result["success"] is True
+            assert result["query"] == "q1"
+            assert result["data"] == "SELECT * FROM Table1"
+
+    def test_import_query_from_text_still_delegates_to_schema_service(self):
+        """import_query_from_text is NOT a versioning tool - still delegates to schema_service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_schema = MagicMock()
+        mock_schema.import_query_from_text.return_value = True
+
+        with patch.dict(server.import_query_from_text.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+            result = server.import_query_from_text("q1", "SELECT 1")
+            mock_schema.import_query_from_text.assert_called_once_with("q1", "SELECT 1")
             assert result["success"] is True
 
     def test_export_query_to_text_delegates_to_schema_service(self):
@@ -344,18 +426,6 @@ class TestSystemToolSuccessPaths:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
-    def test_export_schema_ddl_delegates_to_schema_service(self):
-        """export_schema_ddl should delegate to schema_service."""
-        mock_conn = MagicMock()
-        mock_conn.is_connected.return_value = True
-        mock_schema = MagicMock()
-        mock_schema.export_schema_ddl.return_value = {"success": True, "ddl_tables": "schema/ddl_tables.sql", "ddl_relationships": "schema/ddl_relationships.sql"}
-
-        with patch.dict(server.export_schema_ddl.__globals__, connection_service=mock_conn, schema_service=mock_schema):
-            result = server.export_schema_ddl("/tmp/ddl")
-            mock_schema.export_schema_ddl.assert_called_once_with("/tmp/ddl")
-            assert result["success"] is True
-
     def test_export_schema_ddl_returns_error_when_not_connected(self):
         """export_schema_ddl should return error when not connected."""
         mock_conn = MagicMock()
@@ -364,39 +434,6 @@ class TestSystemToolSuccessPaths:
             result = server.export_schema_ddl("/tmp/ddl")
             assert result["success"] is False
             assert "Not connected" in result["error"]
-
-    def test_compare_versioning_delegates_to_schema_service(self):
-        """compare_versioning should delegate to schema_service."""
-        mock_conn = MagicMock()
-        mock_conn.is_connected.return_value = True
-        mock_schema = MagicMock()
-        mock_schema.compare_versioning.return_value = {"success": True, "new": [], "missing": [], "changed": []}
-
-        with patch.dict(server.compare_versioning.__globals__, connection_service=mock_conn, schema_service=mock_schema):
-            result = server.compare_versioning("/tmp/compare")
-            mock_schema.compare_versioning.assert_called_once_with("/tmp/compare")
-            assert result["success"] is True
-
-    def test_compare_versioning_returns_error_when_not_connected(self):
-        """compare_versioning should return error when not connected."""
-        mock_conn = MagicMock()
-        mock_conn.is_connected.return_value = False
-        with patch.dict(server.compare_versioning.__globals__, connection_service=mock_conn):
-            result = server.compare_versioning("/tmp/compare")
-            assert result["success"] is False
-            assert "Not connected" in result["error"]
-
-    def test_import_all_versioning_delegates_to_schema_service(self):
-        """import_all_versioning should delegate to schema_service."""
-        mock_conn = MagicMock()
-        mock_conn.is_connected.return_value = True
-        mock_schema = MagicMock()
-        mock_schema.import_all_versioning.return_value = {"success": True, "imported": 5}
-
-        with patch.dict(server.import_all_versioning.__globals__, connection_service=mock_conn, schema_service=mock_schema):
-            result = server.import_all_versioning("/tmp/import")
-            mock_schema.import_all_versioning.assert_called_once_with("/tmp/import")
-            assert result["success"] is True
 
     def test_import_all_versioning_returns_error_when_not_connected(self):
         """import_all_versioning should return error when not connected."""
@@ -423,18 +460,22 @@ class TestSystemToolSuccessPaths:
 class TestReportBackupTools:
     """Tests for export_report_backup, import_report_from_file, restore_report_backup."""
 
-    def test_export_report_backup_delegates_to_dev_copy_service(self):
-        """export_report_backup should delegate to dev_copy_service."""
+    def test_export_report_backup_delegates_to_versioning_orchestrator(self):
+        """export_report_backup should delegate to VersioningOrchestrator."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.adapter = MagicMock()
-        mock_conn.get_adapter.return_value = mock_conn.adapter
-        mock_dev = MagicMock()
-        mock_dev.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
-        with patch.dict(server.export_report_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
-            result = server.export_report_backup("rptTest", None)
-            assert result["success"] is True
-            mock_dev.export_report_backup.assert_called_once()
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.export_report_backup.__globals__, connection_service=mock_conn):
+                result = server.export_report_backup("rptTest", None)
+                assert result["success"] is True
+                mock_orch.export_report_backup.assert_called_once()
+                args = mock_orch.export_report_backup.call_args
+                assert args[0][0] == "rptTest"  # report_name
+                assert args[0][1] == mock_adapter  # adapter
 
     def test_export_report_backup_returns_error_when_not_connected(self):
         """export_report_backup should return error when not connected."""
@@ -445,18 +486,23 @@ class TestReportBackupTools:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
-    def test_import_report_from_file_delegates_to_dev_copy_service(self):
-        """import_report_from_file should delegate to dev_copy_service."""
+    def test_import_report_from_file_delegates_to_versioning_orchestrator(self):
+        """import_report_from_file should delegate to VersioningOrchestrator."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.adapter = MagicMock()
-        mock_conn.get_adapter.return_value = mock_conn.adapter
-        mock_dev = MagicMock()
-        mock_dev.import_report_from_file.return_value = {"success": True}
-        with patch.dict(server.import_report_from_file.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
-            result = server.import_report_from_file("rptTest", "/tmp/rptTest.txt")
-            assert result["success"] is True
-            mock_dev.import_report_from_file.assert_called_once()
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.import_report_from_file.return_value = {"success": True}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.import_report_from_file.__globals__, connection_service=mock_conn):
+                result = server.import_report_from_file("rptTest", "/tmp/rptTest.txt")
+                assert result["success"] is True
+                mock_orch.import_report_from_file.assert_called_once()
+                args = mock_orch.import_report_from_file.call_args
+                assert args[0][0] == "rptTest"  # report_name
+                assert args[0][1] == "/tmp/rptTest.txt"  # file_path
+                assert args[0][2] == mock_adapter  # adapter
 
     def test_import_report_from_file_returns_error_when_not_connected(self):
         """import_report_from_file should return error when not connected."""
@@ -467,18 +513,23 @@ class TestReportBackupTools:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
-    def test_restore_report_backup_delegates_to_dev_copy_service(self):
-        """restore_report_backup should delegate to dev_copy_service."""
+    def test_restore_report_backup_delegates_to_versioning_orchestrator(self):
+        """restore_report_backup should delegate to VersioningOrchestrator."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.adapter = MagicMock()
-        mock_conn.get_adapter.return_value = mock_conn.adapter
-        mock_dev = MagicMock()
-        mock_dev.restore_report_backup.return_value = {"success": True}
-        with patch.dict(server.restore_report_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
-            result = server.restore_report_backup("rptTest", "/tmp/rptTest.txt")
-            assert result["success"] is True
-            mock_dev.restore_report_backup.assert_called_once()
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+        mock_orch = MagicMock()
+        mock_orch.restore_report_backup.return_value = {"success": True}
+        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+            with patch.dict(server.restore_report_backup.__globals__, connection_service=mock_conn):
+                result = server.restore_report_backup("rptTest", "/tmp/rptTest.txt")
+                assert result["success"] is True
+                mock_orch.restore_report_backup.assert_called_once()
+                args = mock_orch.restore_report_backup.call_args
+                assert args[0][0] == "rptTest"  # report_name
+                assert args[0][1] == "/tmp/rptTest.txt"  # backup_path
+                assert args[0][2] == mock_adapter  # adapter
 
     def test_restore_report_backup_returns_error_when_not_connected(self):
         """restore_report_backup should return error when not connected."""

@@ -247,9 +247,12 @@ def export_all_versioning(output_dir: str, connection_name: str = "default") -> 
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    result = schema_service.export_all_versioning(output_dir)
-    return result
+    try:
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.export_all(output_dir, adapter, dedup=True, module_ext=".bas")
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @mcp.tool()
@@ -310,9 +313,12 @@ def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    result = schema_service.export_schema_ddl(output_dir)
-    return result
+    try:
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.export_schema_ddl(output_dir, adapter)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @mcp.tool()
@@ -331,9 +337,12 @@ def compare_versioning(export_dir: str, connection_name: str = "default") -> dic
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    result = schema_service.compare_versioning(export_dir)
-    return result
+    try:
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.compare(export_dir, adapter)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @mcp.tool()
@@ -350,9 +359,12 @@ def import_all_versioning(input_dir: str, connection_name: str = "default") -> d
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    result = schema_service.import_all_versioning(input_dir)
-    return result
+    try:
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.import_all(input_dir, adapter)
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @mcp.tool()

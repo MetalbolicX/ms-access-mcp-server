@@ -103,8 +103,9 @@ def export_module_backup(module_name: str, backup_dir: str | None = None, connec
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.export_module_backup(adapter, module_name, backup_dir)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.export_module_backup(module_name, adapter, backup_dir)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -128,8 +129,9 @@ def import_module_from_text(module_name: str, file_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.import_module_from_text(adapter, module_name, file_path)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.import_module_from_text(module_name, file_path, adapter)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -150,8 +152,9 @@ def restore_module_backup(module_name: str, backup_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.restore_module_backup(adapter, module_name, backup_path)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.restore_module_backup(module_name, backup_path, adapter)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -172,8 +175,9 @@ def export_form_backup(form_name: str, backup_dir: str | None = None, connection
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.export_form_backup(adapter, form_name, backup_dir)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.export_form_backup(form_name, adapter, backup_dir)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -198,8 +202,9 @@ def import_form_from_file(form_name: str, file_path: str, connection_name: str =
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.import_form_from_text(adapter, form_name, file_path)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.import_form_from_file(form_name, file_path, adapter)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -220,8 +225,9 @@ def restore_form_backup(form_name: str, backup_path: str, connection_name: str =
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.restore_form_backup(adapter, form_name, backup_path)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.restore_form_backup(form_name, backup_path, adapter)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -242,8 +248,9 @@ def export_report_backup(report_name: str, backup_dir: str | None = None, connec
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.export_report_backup(adapter, report_name, backup_dir)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.export_report_backup(report_name, adapter, backup_dir)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -264,8 +271,9 @@ def import_report_from_file(report_name: str, file_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.import_report_from_file(adapter, report_name, file_path)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.import_report_from_file(report_name, file_path, adapter)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -286,8 +294,9 @@ def restore_report_backup(report_name: str, backup_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
-        result = dev_copy_service.restore_report_backup(adapter, report_name, backup_path)
-        return result
+        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
+        orch = VersioningOrchestrator()
+        return orch.restore_report_backup(report_name, backup_path, adapter)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
