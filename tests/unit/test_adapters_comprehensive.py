@@ -1,5 +1,6 @@
 import os
 import tempfile
+from unittest.mock import patch
 import pytest
 from ms_access_mcp.adapters.wincom import WinComAdapter
 from ms_access_mcp.adapters.odbc import OdbcAdapter
@@ -533,6 +534,35 @@ class TestWinComAdapterExecuteSqlScriptConnected:
             assert "failing_line" in result
             assert "access_error_code" in result
             assert "access_error_message" in result
+        finally:
+            os.unlink(temp_path)
+
+    def test_file_read_error_returns_failure(self):
+        """File exists but can't be read returns error with details."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;")
+            temp_path = f.name
+        try:
+            with patch("builtins.open", side_effect=PermissionError("Access denied")):
+                result = self.adapter.execute_sql_script(temp_path)
+            assert result["success"] is False
+            assert "Access denied" in result["error"]
+            assert result["statements_executed"] == 0
+            assert result["failing_statement"] is None
+            assert result["failing_line"] is None
+        finally:
+            os.unlink(temp_path)
+
+    def test_execute_called_with_db_fail_on_error_flag(self):
+        """Execute is called with DAO_DB_FAIL_ON_ERROR (128) flag."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
+            f.write("SELECT 1;")
+            temp_path = f.name
+        try:
+            self.adapter.execute_sql_script(temp_path)
+            self.mock_db.Execute.assert_called_once()
+            args, _ = self.mock_db.Execute.call_args
+            assert args[1] == 128
         finally:
             os.unlink(temp_path)
 

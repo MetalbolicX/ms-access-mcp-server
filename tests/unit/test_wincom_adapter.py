@@ -1901,3 +1901,194 @@ INSERT INTO Test VALUES (1);"""
         assert "SELECT 3;" in result
         assert "clean" not in result
         assert "more" not in result
+
+
+class TestExtractComError:
+    """Direct tests for WinComAdapter._extract_com_error static method.
+
+    Covers: generic Exception, pywin32 com_error-like exceptions,
+    exceptions with winerror attribute.
+    """
+
+    def test_generic_exception_returns_str_error(self):
+        """Plain Exception uses str(e) as error, code and message are None."""
+        result = WinComAdapter._extract_com_error(Exception("Something broke"))
+        assert result["error"] == "Something broke"
+        assert result["code"] is None
+        assert result["message"] is None
+
+    def test_com_error_with_dao_info_extracts_code_and_description(self):
+        """com_error with excepinfo[2] tuple extracts scode and description."""
+        # pywin32 com_error: args = (hresult, msg, excepinfo, arg)
+        # excepinfo = (help, context, description, helpfile, helpid, scode)
+        excepinfo = (None, None, "Syntax error in CREATE TABLE statement.", None, None, -3289)
+        err = Exception("Exception occurred.")
+        err.args = (-2147352567, "Exception occurred.", excepinfo, None)
+
+        result = WinComAdapter._extract_com_error(err)
+        assert result["error"] == "Syntax error in CREATE TABLE statement."
+        assert result["code"] == -3289
+        assert result["message"] == "Syntax error in CREATE TABLE statement."
+
+    def test_com_error_with_no_description_falls_back_to_str(self):
+        """com_error with empty description falls back to str(e) as error."""
+        excepinfo = (None, None, "", None, None, -3289)
+        err = Exception("Exception occurred.")
+        err.args = (-2147352567, "Exception occurred.", excepinfo, None)
+
+        result = WinComAdapter._extract_com_error(err)
+        assert result["code"] == -3289
+        assert result["message"] is None  # empty description not stored
+
+    def test_com_error_with_no_scode_returns_none_code(self):
+        """com_error without scode returns None for code.
+
+        When excepinfo[2] is a short 3-tuple (not 6-element), the DAO
+        extraction is skipped entirely. Falls back to str(e).
+        """
+        excepinfo = (None, None, "DAO error msg")
+        err = Exception("Exception occurred.")
+        err.args = (-2147352567, "Exception occurred.", excepinfo, None)
+
+        result = WinComAdapter._extract_com_error(err)
+        # info is a 3-tuple (len < 6) → skipped → falls back to str(e)
+        # str(e) returns repr of args tuple since args has >1 element
+        assert result["error"] is not None
+        assert result["code"] is None
+
+    def test_com_error_non_tuple_excepinfo_falls_back(self):
+        """com_error where excepinfo is not a tuple falls back to str(e)."""
+        err = Exception("OLE error 0x80040E14")
+        err.args = (-2147352567, "OLE error 0x80040E14", None, None)
+
+        result = WinComAdapter._extract_com_error(err)
+        # excepinfo[2] is None, not a tuple → skipped → str(e) = repr of args
+        assert result["error"] is not None
+        assert result["code"] is None
+
+    def test_exception_with_winerror_uses_it_as_code(self):
+        """Exception with winerror attribute uses it as code."""
+        err = Exception("Access denied")
+        err.winerror = 5
+
+        result = WinComAdapter._extract_com_error(err)
+        assert result["error"] == "Access denied"
+        assert result["code"] == 5
+
+    def test_exception_without_args_returns_str_error(self):
+        """Exception with no args attribute returns str(e)."""
+        err = Exception("simple")
+
+        result = WinComAdapter._extract_com_error(err)
+        assert result["error"] == "simple"
+        assert result["code"] is None
+        assert result["message"] is None
+
+
+class TestParseScriptLines:
+    """Direct tests for WinComAdapter._parse_script_lines method.
+
+    Covers: statement splitting, line number tracking, comments,
+    blank lines, missing trailing semicolons.
+    """
+
+    def _parse(self, sql: str) -> list[dict]:
+        """Helper to call _parse_script_lines and return statements list."""
+        adapter = WinComAdapter()
+        return adapter._parse_script_lines(sql)["statements"]
+
+    def test_empty_string_returns_empty_list(self):
+        assert self._parse("") == []
+
+    def test_whitespace_only_returns_empty_list(self):
+        assert self._parse("  \n  \n  ") == []
+
+    def test_single_statement_returns_one_entry(self):
+        stmts = self._parse("SELECT 1")
+        assert len(stmts) == 1
+        assert stmts[0]["text"] == "SELECT 1"
+        assert stmts[0]["line"] == 1
+
+    def test_two_statements_with_semicolons(self):
+        stmts = self._parse("SELECT 1;\nSELECT 2;")
+        assert len(stmts) == 2
+        assert stmts[0]["text"] == "SELECT 1"
+        assert stmts[0]["line"] == 1
+        assert stmts[1]["text"] == "SELECT 2"
+        assert stmts[1]["line"] == 2
+
+    def test_no_trailing_semicolon(self):
+        """Last statement without trailing semicolon is still parsed."""
+        stmts = self._parse("SELECT 1;\nSELECT 2")
+        assert len(stmts) == 2
+        assert stmts[1]["text"] == "SELECT 2"
+        assert stmts[1]["line"] == 2
+
+    def test_blank_lines_between_statements_ignored(self):
+        stmts = self._parse("SELECT 1;\n\n  \nSELECT 2;")
+        assert len(stmts) == 2
+        assert stmts[0]["line"] == 1
+        assert stmts[1]["line"] == 4  # line 4 = after 3 blank lines
+
+    def test_comments_are_stripped_from_statements(self):
+        """Comments before SQL in same chunk: line points to first content.
+
+        Since the `;` delimiter groups comment+SQL into one chunk, the
+        line number tracks the chunk's first non-whitespace content,
+        not the SQL statement itself (which starts after the comment).
+        """
+        stmts = self._parse("-- header\nSELECT 1;\n/* mid */\nSELECT 2;")
+        assert len(stmts) == 2
+        assert stmts[0]["text"] == "SELECT 1"
+        assert stmts[0]["line"] == 1
+        assert stmts[1]["text"] == "SELECT 2"
+        # line is 3: `/* mid */` starts on line 3 (after `;\n`)
+        assert stmts[1]["line"] == 3
+
+    def test_leading_whitespace_before_statement(self):
+        """Line number points to actual content, not whitespace."""
+        stmts = self._parse("  SELECT 1;")
+        assert stmts[0]["text"] == "SELECT 1"
+        assert stmts[0]["line"] == 1  # whitespace on same line → still line 1
+
+    def test_statement_with_trailing_whitespace(self):
+        stmts = self._parse("SELECT 1;  \nSELECT 2;")
+        assert len(stmts) == 2
+        assert stmts[0]["text"] == "SELECT 1"
+        assert stmts[0]["line"] == 1
+        assert stmts[1]["line"] == 2
+
+    def test_multiple_semicolons_in_a_row(self):
+        """Empty statements between consecutive semicolons are skipped."""
+        stmts = self._parse("SELECT 1;;;SELECT 2;")
+        assert len(stmts) == 2
+        assert stmts[0]["text"] == "SELECT 1"
+        assert stmts[1]["text"] == "SELECT 2"
+
+    def test_newline_after_semicolon_line_number(self):
+        """Line number tracks correctly with newline after semicolon."""
+        stmts = self._parse("SELECT 1;\nSELECT 2;\nSELECT 3;")
+        assert stmts[0]["line"] == 1
+        assert stmts[1]["line"] == 2
+        assert stmts[2]["line"] == 3
+
+    def test_comment_only_chunks_are_skipped(self):
+        """Chunks that are only comments after stripping are skipped."""
+        stmts = self._parse("SELECT 1;\n-- just a comment\nSELECT 2;")
+        assert len(stmts) == 2
+        assert stmts[1]["text"] == "SELECT 2"
+        # line = 2: chunk starts on line 2 (-- just a comment), first
+        # non-whitespace content is `--` at start of line 2
+        assert stmts[1]["line"] == 2
+
+    def test_inline_comment_in_statement(self):
+        """Inline /* block */ comments are stripped from statement text.
+
+        Note: comment removal leaves the surrounding spaces intact,
+        so `SELECT /* keep */ 1` becomes `SELECT  1` (double space).
+        """
+        stmts = self._parse("SELECT /* keep */ 1;")
+        # Comment removal leaves surrounding spaces
+        assert "SELECT  1" in stmts[0]["text"]
+        assert "keep" not in stmts[0]["text"]
+        assert stmts[0]["line"] == 1
