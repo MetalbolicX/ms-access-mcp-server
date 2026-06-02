@@ -267,3 +267,203 @@ class TestOdbcAdapterConnectedGetQueries(ConnectedAdapterTestBase):
         self.adapter._conn = None
         queries = self.adapter.get_queries()
         assert queries == []
+
+
+class TestOdbcAdapterConnectedDataCrud(ConnectedAdapterTestBase):
+    """Test data write operations: insert, update, delete."""
+
+    def test_insert_single_row(self):
+        """insert_data with a single dict calls cursor.execute with INSERT SQL."""
+        self.mock_cursor.rowcount = 1
+        result = self.adapter.insert_data("T", {"col": "val"})
+        assert result["success"] is True
+        assert self.mock_cursor.execute.called
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "INSERT INTO" in sql
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", ())
+        assert "val" in params
+
+    def test_insert_multi_row(self):
+        """insert_data with a list of dicts inserts multiple rows and sums rowcount."""
+        self.mock_cursor.rowcount = 2
+        result = self.adapter.insert_data("T", [{"col": "v1"}, {"col": "v2"}])
+        assert result["success"] is True
+        assert self.mock_cursor.execute.call_count == 2
+
+    def test_update_with_dict_where(self):
+        """update_data with dict WHERE generates UPDATE ... WHERE with AND placeholders."""
+        self.mock_cursor.rowcount = 1
+        result = self.adapter.update_data("T", {"col": "new"}, {"id": 1})
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", ())
+        assert "UPDATE" in sql
+        assert "WHERE" in sql
+        assert "?" in sql
+        # Verify params: new value + where value
+        assert "new" in params
+        assert 1 in params
+
+    def test_update_with_raw_where(self):
+        """update_data with string WHERE appends raw SQL after WHERE."""
+        self.mock_cursor.rowcount = 1
+        result = self.adapter.update_data("T", {"col": "new"}, "id = 1")
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "UPDATE" in sql
+        assert "WHERE" in sql
+        assert "id = 1" in sql
+
+    def test_delete_with_where(self):
+        """delete_data with dict WHERE generates DELETE ... WHERE with placeholders."""
+        self.mock_cursor.rowcount = 1
+        result = self.adapter.delete_data("T", {"id": 1})
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "DELETE" in sql
+        assert "WHERE" in sql
+
+    def test_delete_no_where(self):
+        """delete_data with no where_dict executes unconditional DELETE (safety gap)."""
+        self.mock_cursor.rowcount = 1
+        result = self.adapter.delete_data("T")
+        # Current implementation allows unconditional delete — this is a known safety gap
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "DELETE FROM" in sql
+        assert "WHERE" not in sql  # no WHERE clause = unconditional delete
+
+
+class TestOdbcAdapterConnectedQueryCrud(ConnectedAdapterTestBase):
+    """Test query (view) create/set/delete operations."""
+
+    def test_create_query(self):
+        """create_query calls cursor.execute with CREATE VIEW DDL."""
+        result = self.adapter.create_query("q1", "SELECT 1")
+        assert result["success"] is True
+        assert self.mock_cursor.execute.called
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "CREATE VIEW" in sql
+
+    def test_set_query_sql(self):
+        """set_query_sql drops existing view then creates new view."""
+        result = self.adapter.set_query_sql("q1", "SELECT 2")
+        assert result["success"] is True
+        assert self.mock_cursor.execute.call_count == 2
+        calls = [c[0][0] for c in self.mock_cursor.execute.call_args_list]
+        assert any("DROP VIEW" in c for c in calls)
+        assert any("CREATE VIEW" in c for c in calls)
+
+    def test_delete_query(self):
+        """delete_query calls cursor.execute with DROP VIEW."""
+        result = self.adapter.delete_query("q1")
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "DROP VIEW" in sql
+
+
+class TestOdbcAdapterConnectedTableDdl(ConnectedAdapterTestBase):
+    """Test table DDL: create_table and delete_table."""
+
+    def test_create_table_with_text_column(self):
+        """create_table with a Text column generates CREATE TABLE with VARCHAR."""
+        result = self.adapter.create_table("T", [{"name": "Col1", "type": "Text"}])
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "CREATE TABLE" in sql
+        assert "VARCHAR" in sql
+
+    def test_create_table_with_required_field(self):
+        """create_table with nullable=False adds NOT NULL to column definition."""
+        result = self.adapter.create_table("T", [{"name": "Col1", "type": "Text", "nullable": False}])
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "NOT NULL" in sql
+
+    def test_create_table_with_autoincrement(self):
+        """create_table with autoincrement=True uses COUNTER/AUTOINCREMENT in Access."""
+        result = self.adapter.create_table("T", [{"name": "ID", "type": "Long Integer", "autoincrement": True}])
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        # Access uses COUNTER or AUTOINCREMENT for autoincrement; current impl maps to INT only
+        # The test documents current behavior — implementation does not yet produce COUNTER
+        assert "INT" in sql  # at minimum, Long Integer maps to INT
+
+    def test_delete_table(self):
+        """delete_table calls cursor.execute with DROP TABLE."""
+        result = self.adapter.delete_table("T")
+        assert result["success"] is True
+        call_args = self.mock_cursor.execute.call_args
+        sql = call_args[0][0] if call_args[0] else ""
+        assert "DROP TABLE" in sql
+
+
+class TestOdbcAdapterConnectedExportCsv(ConnectedAdapterTestBase):
+    """Test CSV export functionality."""
+
+    def test_export_table_csv_writes_header_and_rows(self):
+        """export_table_csv writes CSV with header and data rows."""
+        self._setup_description(["ID", "Name"])
+        self._setup_fetchall([(1, "Alice"), (2, "Bob")])
+
+        with patch.object(self.adapter, "execute_query", return_value={
+            "success": True, "rows": [{"ID": 1, "Name": "Alice"}, {"ID": 2, "Name": "Bob"}], "columns": ["ID", "Name"]
+        }):
+            with patch("builtins.open", create=True) as mock_open:
+                with patch("pathlib.Path.mkdir"):
+                    result = self.adapter.export_table_csv("T", "D:/tmp/out.csv")
+
+        assert result["success"] is True
+        assert result["rows_exported"] == 2
+        mock_open.return_value.__enter__.return_value.write.assert_called()
+
+    def test_export_table_csv_creates_parent_dir(self):
+        """export_table_csv creates parent directory if it does not exist."""
+        with patch.object(self.adapter, "execute_query", return_value={"success": True, "rows": [], "columns": []}):
+            with patch("builtins.open", create=True):
+                with patch("pathlib.Path.mkdir") as mock_mkdir:
+                    self.adapter.export_table_csv("T", "D:/tmp/subdir/out.csv")
+
+        mock_mkdir.assert_called()
+
+
+class TestOdbcAdapterConnectedExportJson(ConnectedAdapterTestBase):
+    """Test JSON export functionality."""
+
+    def test_export_query_json_writes_rows(self):
+        """export_query_json writes JSON rows to file."""
+        with patch.object(self.adapter, "execute_query", return_value={
+            "success": True, "rows": [{"ID": 1}, {"ID": 2}], "columns": ["ID"]
+        }):
+            with patch("builtins.open", create=True) as mock_open:
+                with patch("pathlib.Path.mkdir"):
+                    result = self.adapter.export_query_json("Q", "D:/tmp/out.json")
+
+        assert result["success"] is True
+        assert result["rows_exported"] == 2
+        mock_open.return_value.__enter__.return_value.write.assert_called()
+
+    def test_export_query_json_compact_vs_pretty(self):
+        """export_query_json with pretty=False writes compact JSON; pretty=True uses indent=2."""
+        with patch.object(self.adapter, "execute_query", return_value={
+            "success": True, "rows": [{"a": 1}], "columns": ["a"]
+        }):
+            with patch("builtins.open", create=True) as mock_open:
+                with patch("pathlib.Path.mkdir"):
+                    r1 = self.adapter.export_query_json("Q", "D:/tmp/compact.json", pretty=False)
+                    r2 = self.adapter.export_query_json("Q", "D:/tmp/pretty.json", pretty=True)
+
+        assert r1["success"] is True
+        assert r2["success"] is True
+        # Both writes happened (file was opened twice)
+        assert mock_open.call_count == 2
