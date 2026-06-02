@@ -455,6 +455,21 @@ class WinComAdapter(AccessAdapter):
                 except Exception:
                     pass
 
+    @staticmethod
+    def _normalize_dao_value(value: Any) -> Any:
+        """Convert DAO-specific types to JSON/sqlite3-compatible Python types.
+
+        DAO returns datetime objects, COM variant types, etc. that cannot be
+        serialized by most connectors. Normalise them here so all downstream
+        consumers (insert_rows, JSON serialization) receive clean values.
+        """
+        if value is None:
+            return None
+        # pywintypes.datetime → ISO string (sqlite3 cannot handle datetime objects)
+        if hasattr(value, "isoformat") and callable(value.isoformat):
+            return value.isoformat()
+        return value
+
     def execute_query(self, sql: str, params: Optional[list] = None) -> dict:
         """Execute a SQL query and return results.
 
@@ -469,7 +484,7 @@ class WinComAdapter(AccessAdapter):
             columns: list[str] = []
             try:
                 rs = self._dispatcher._current_db.OpenRecordset(sql)
-                if rs.RecordCount > 0 and not rs.EOF:
+                if not rs.EOF:
                     rs.MoveFirst()
                     # Collect column names first
                     for i in range(rs.Fields.Count):
@@ -480,7 +495,7 @@ class WinComAdapter(AccessAdapter):
                         row = {}
                         for i in range(rs.Fields.Count):
                             field = rs.Fields(i)
-                            row[field.Name] = field.Value
+                            row[field.Name] = self._normalize_dao_value(field.Value)
                         results.append(row)
                         rs.MoveNext()
                 rs.Close()
