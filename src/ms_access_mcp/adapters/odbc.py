@@ -81,32 +81,12 @@ class OdbcAdapter(AccessAdapter):
         """Check if connected to a database."""
         return self._conn is not None
 
-    def _tables_query(self) -> str:
-        """SQL to get user tables (excludes system tables)."""
-        return """
-            SELECT name
-            FROM MSysObjects
-            WHERE type = 1 AND flags = 0 AND name NOT LIKE '~*'
-            ORDER BY name
-        """
-
-    def _columns_query(self, table_name: str) -> str:
-        """SQL to get column metadata for a table."""
-        # Escape brackets in table name for SQL safety
-        safe_name = table_name.replace("]", "]]")
-        return f"""
-            SELECT
-                column_name AS name,
-                data_type AS type,
-                character_maximum_length AS size,
-                is_nullable AS nullable
-            FROM information_schema.columns
-            WHERE table_name = '[{safe_name}]'
-            ORDER BY ordinal_position
-        """
-
     def get_tables(self) -> list[TableInfo]:
-        """Get all user tables from the connected database."""
+        """Get all user tables from the connected database.
+
+        Uses ODBC SQLTables (cursor.tables) instead of MSysObjects
+        or information_schema, which are unreliable via the Access ODBC driver.
+        """
         if not self.is_connected():
             return []
 
@@ -114,26 +94,24 @@ class OdbcAdapter(AccessAdapter):
         try:
             cursor = self._conn.cursor()
 
-            # Get table names using Access system tables
-            cursor.execute(self._tables_query())
-            table_names = [row[0] for row in cursor.fetchall()]
+            # Enumerate user tables via ODBC SQLTables
+            table_names: list[str] = []
+            for row in cursor.tables():
+                if row.table_type == 'TABLE' and not row.table_name.startswith('MSys'):
+                    table_names.append(row.table_name)
 
             for name in table_names:
-                if name.startswith("MSys"):
-                    continue
-
                 fields = []
                 record_count = 0
 
                 try:
-                    # Get column info
-                    cursor.execute(self._columns_query(name))
-                    for row in cursor.fetchall():
+                    # Get column metadata via ODBC SQLColumns
+                    for col in cursor.columns(name):
                         fields.append({
-                            "name": row.name,
-                            "type": self._pyodbc_type_name(row.type),
-                            "size": row.size or 0,
-                            "required": row.nullable == "NO",
+                            "name": col.column_name,
+                            "type": self._pyodbc_type_name(col.type_name),
+                            "size": col.column_size or 0,
+                            "required": col.nullable == 0,  # SQL_NO_NULLS
                             "allow_zero_length": True,
                         })
 
