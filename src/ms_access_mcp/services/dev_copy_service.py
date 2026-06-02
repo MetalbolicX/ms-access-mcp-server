@@ -456,6 +456,138 @@ class DevCopyService:
         return self.import_form_from_text(adapter, form_name, backup_path)
 
     # ========================================================================
+    # Text Export/Import Pipeline — Reports
+    # ========================================================================
+
+    def _report_file_path(self, report_name: str, backup_dir: str | None = None) -> str:
+        """Build the backup file path for a report.
+
+        Args:
+            report_name: Name of the report
+            backup_dir: Optional custom backup directory
+
+        Returns:
+            Path ending in .txt
+        """
+        target_dir = backup_dir if backup_dir else self.get_backup_dir()
+        safe_name = report_name.replace(" ", "_")
+        return os.path.join(target_dir, f"{safe_name}.txt")
+
+    def export_report_backup(
+        self, adapter: AccessAdapter, report_name: str, backup_dir: str | None = None
+    ) -> dict:
+        """Export a report (including VBA code-behind) to a .txt file.
+
+        Args:
+            adapter: Access adapter (WinComAdapter)
+            report_name: Name of the report to export
+            backup_dir: Optional custom backup directory
+
+        Returns:
+            dict with success, backup_path, report_name, file_size_bytes
+        """
+        report_data = adapter.export_report_to_text(report_name)
+        if not report_data:
+            return {
+                "success": False,
+                "error": f"Report '{report_name}' not found or empty",
+                "report_name": report_name,
+            }
+
+        backup_path = self._report_file_path(report_name, backup_dir)
+
+        if backup_dir:
+            os.makedirs(backup_dir, exist_ok=True)
+
+        try:
+            with open(backup_path, "w", encoding="utf-8") as f:
+                f.write(report_data)
+            file_size = os.path.getsize(backup_path)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to write backup file: {e}",
+                "report_name": report_name,
+            }
+
+        return {
+            "success": True,
+            "backup_path": backup_path,
+            "report_name": report_name,
+            "file_size_bytes": file_size,
+        }
+
+    def import_report_from_file(
+        self, adapter: AccessAdapter, report_name: str, file_path: str
+    ) -> dict:
+        """Import a report from a .txt text file.
+
+        Validates file exists BEFORE deleting the original report.
+
+        Args:
+            adapter: Access adapter (WinComAdapter)
+            report_name: Name of the report to import
+            file_path: Path to the .txt file
+
+        Returns:
+            dict with success, report_name, and error if failed
+        """
+        if not os.path.exists(file_path):
+            return {
+                "success": False,
+                "error": f"File not found: {file_path}",
+                "report_name": report_name,
+            }
+
+        report_existed = adapter.report_exists(report_name)
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                report_data = f.read()
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to read file: {e}",
+                "report_name": report_name,
+            }
+
+        # Delete existing report if it exists
+        if report_existed:
+            deleted = adapter.delete_report(report_name)
+            if not deleted:
+                return {
+                    "success": False,
+                    "error": f"Failed to delete existing report '{report_name}'",
+                    "report_name": report_name,
+                }
+
+        # Import the report from text data
+        imported = adapter.import_report_from_text(report_name, report_data)
+        if not imported:
+            return {
+                "success": False,
+                "error": f"Failed to import report '{report_name}'",
+                "report_name": report_name,
+            }
+
+        return {"success": True, "report_name": report_name}
+
+    def restore_report_backup(
+        self, adapter: AccessAdapter, report_name: str, backup_path: str
+    ) -> dict:
+        """Restore a report from a .txt backup file.
+
+        Args:
+            adapter: Access adapter (WinComAdapter)
+            report_name: Name of the report to restore
+            backup_path: Path to the .txt backup file
+
+        Returns:
+            dict with success, report_name
+        """
+        return self.import_report_from_file(adapter, report_name, backup_path)
+
+    # ========================================================================
     # Full DB Copy Pipeline
     # ========================================================================
 

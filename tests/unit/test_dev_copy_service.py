@@ -477,6 +477,85 @@ class TestFormBackup:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Report Backup / Restore
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestReportBackup:
+    def test_export_report_backup_not_found(self, tmp_path):
+        adapter = MagicMock()
+        adapter.export_report_to_text.return_value = ""
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.export_report_backup(adapter, "NonExistentReport")
+        assert result["success"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_export_report_backup_success(self, tmp_path):
+        adapter = MagicMock()
+        adapter.export_report_to_text.return_value = "REPORT DESIGN TEXT"
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.export_report_backup(adapter, "TestReport", str(tmp_path))
+        assert result["success"] is True
+        assert os.path.exists(result["backup_path"])
+        assert result["file_size_bytes"] > 0
+
+    def test_import_report_file_not_found(self, tmp_path):
+        adapter = MagicMock()
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.import_report_from_file(adapter, "TestReport", "/nonexistent/report.txt")
+        assert result["success"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_import_report_deletes_existing_and_imports(self, tmp_path):
+        report_file = tmp_path / "TestReport.txt"
+        report_file.write_text("REPORT DESIGN CONTENT")
+
+        adapter = MagicMock()
+        adapter.report_exists.return_value = True
+        adapter.delete_report.return_value = True
+        adapter.import_report_from_text.return_value = True
+
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.import_report_from_file(adapter, "TestReport", str(report_file))
+        assert result["success"] is True
+        adapter.delete_report.assert_called_once_with("TestReport")
+        adapter.import_report_from_text.assert_called_once()
+
+    def test_import_report_creates_new_if_not_exists(self, tmp_path):
+        report_file = tmp_path / "NewReport.txt"
+        report_file.write_text("NEW REPORT DESIGN")
+
+        adapter = MagicMock()
+        adapter.report_exists.return_value = False
+        adapter.import_report_from_text.return_value = True
+
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+        result = svc.import_report_from_file(adapter, "NewReport", str(report_file))
+        assert result["success"] is True
+        adapter.delete_report.assert_not_called()
+
+    def test_restore_report_backup_delegates_to_import(self, tmp_path):
+        report_file = tmp_path / "ReportBackup.txt"
+        report_file.write_text("REPORT BACKUP CONTENT")
+
+        adapter = MagicMock()
+        adapter.report_exists.return_value = False
+        adapter.import_report_from_text.return_value = True
+
+        svc = DevCopyService()
+        svc._backup_base = str(tmp_path)
+
+        with patch.object(svc, "import_report_from_file", return_value={"success": True, "report_name": "TestReport"}) as mock_restore:
+            result = svc.restore_report_backup(adapter, "TestReport", str(report_file))
+            mock_restore.assert_called_once_with(adapter, "TestReport", str(report_file))
+            assert result["success"] is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Backup Directory
 # ═══════════════════════════════════════════════════════════════════════
 

@@ -56,8 +56,13 @@ Desktop.ini
 *~
 .#*
 
-# Access lock files (created when .accdb is open)
+# Access binary files
+*.accdb
+*.mdb
 *.laccdb
+
+# Access lock files (created when .accdb is open)
+*$*
 ~$*
 
 # MCP server

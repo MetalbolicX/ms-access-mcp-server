@@ -6,6 +6,7 @@ import queue
 import tempfile
 import threading
 import concurrent.futures
+import hashlib
 from datetime import datetime
 from typing import Optional, Callable, Any
 from ..config import ServerConfig
@@ -1408,6 +1409,23 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
+    def report_exists(self, report_name: str) -> bool:
+        """Check if a report exists."""
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            try:
+                all_reports = self._dispatcher._access_app.CurrentProject.AllReports
+                for i in range(all_reports.Count):
+                    if all_reports(i).Name == report_name:
+                        return True
+            except Exception:
+                pass
+            return False
+
+        return self._dispatcher.call(_do)
+
     def delete_report(self, report_name: str) -> bool:
         """Delete a report from the database."""
         if not self.is_connected():
@@ -2577,8 +2595,20 @@ class WinComAdapter(AccessAdapter):
 
         return self._dispatcher.call(_do)
 
-    def export_all_versioning(self, output_dir: str) -> dict:
-        """Export all forms, reports, modules, and macros to a directory structure."""
+    def export_all_versioning(
+        self,
+        output_dir: str,
+        *,
+        dedup: bool = True,
+        module_ext: str = ".bas",
+    ) -> dict:
+        """Export all forms, reports, modules, macros, and queries to a directory structure.
+
+        Args:
+            output_dir: Root directory for export
+            dedup: If True, skip export when SHA256 of content matches existing file (default True)
+            module_ext: Extension for module files, '.bas' (default) or '.txt'
+        """
         if not self.is_connected():
             return {"success": False, "error": "Not connected to database", "exported": {}}
 
@@ -2592,9 +2622,47 @@ class WinComAdapter(AccessAdapter):
                 name = name.replace(ch, '_')
             return name
 
-        exported = {"forms": [], "reports": [], "modules": [], "macros": []}
+        exported = {"forms": [], "reports": [], "modules": [], "macros": [], "queries": []}
 
-        # Export forms
+        # Helper: SHA256 file hash
+        def _file_hash(path: str) -> str:
+            h = hashlib.sha256()
+            with open(path, "rb") as f:
+                h.update(f.read())
+            return h.hexdigest()
+
+        # Helper: compute content hash for an object
+        def _export_and_hash(object_type: int, name: str, out_path: str) -> tuple[bool, str]:
+            """Export via COM SaveAsText, return (success, sha256_of_new_content)."""
+            temp_path = None
+            try:
+                fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_exp_")
+                os.close(fd)
+                self._dispatcher._access_app.SaveAsText(object_type, name, temp_path)
+                with open(temp_path, "rb") as f:
+                    raw = f.read()
+                content = raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
+                h = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                # Check if we should skip (dedup enabled and content unchanged)
+                skip = False
+                if dedup and os.path.exists(out_path):
+                    existing_hash = _file_hash(out_path)
+                    if existing_hash == h:
+                        skip = True
+                if not skip:
+                    with open(out_path, "w", encoding="utf-8") as f:
+                        f.write(content)
+                return True, h, skip
+            except Exception:
+                return False, "", False
+            finally:
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except Exception:
+                        pass
+
+        # ── Export forms ──────────────────────────────────────────────────────
         try:
             forms = self.get_forms()
             forms_dir = os.path.join(output_dir, "forms")
@@ -2603,14 +2671,15 @@ class WinComAdapter(AccessAdapter):
                 try:
                     safe_name = safe_filename(form.name)
                     out_path = os.path.join(forms_dir, f"forms_{safe_name}.txt")
-                    self._dispatcher.call(lambda p=out_path, n=form.name: self._dispatcher._access_app.SaveAsText(2, n, p))
-                    exported["forms"].append(form.name)
+                    success, new_hash, skipped = _export_and_hash(2, form.name, out_path)
+                    if success and not skipped:
+                        exported["forms"].append(form.name)
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Export reports
+        # ── Export reports ───────────────────────────────────────────────────
         try:
             reports = self.get_reports()
             reports_dir = os.path.join(output_dir, "reports")
@@ -2619,14 +2688,15 @@ class WinComAdapter(AccessAdapter):
                 try:
                     safe_name = safe_filename(report.name)
                     out_path = os.path.join(reports_dir, f"reports_{safe_name}.txt")
-                    self._dispatcher.call(lambda p=out_path, n=report.name: self._dispatcher._access_app.SaveAsText(4, n, p))
-                    exported["reports"].append(report.name)
+                    success, new_hash, skipped = _export_and_hash(4, report.name, out_path)
+                    if success and not skipped:
+                        exported["reports"].append(report.name)
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Export VBA modules (no COM needed — data is already in mod.code)
+        # ── Export VBA modules (in-memory, use _hash_content) ───────────────
         try:
             modules = self.get_modules()
             modules_dir = os.path.join(output_dir, "modules")
@@ -2634,16 +2704,30 @@ class WinComAdapter(AccessAdapter):
             for mod in modules:
                 try:
                     safe_name = safe_filename(mod.name)
-                    out_path = os.path.join(modules_dir, f"modules_{safe_name}.txt")
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        f.write(mod.code or "")
-                    exported["modules"].append(mod.name)
+                    out_path = os.path.join(modules_dir, f"modules_{safe_name}{module_ext}")
+                    content = mod.code or ""
+
+                    if dedup and os.path.exists(out_path):
+                        # SHA256 existing file vs in-memory content
+                        existing_hash = _file_hash(out_path)
+                        new_hash = self._hash_content(content)
+                        if existing_hash == new_hash:
+                            # Skip — content unchanged
+                            pass
+                        else:
+                            with open(out_path, "w", encoding="utf-8") as f:
+                                f.write(content)
+                            exported["modules"].append(mod.name)
+                    else:
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        exported["modules"].append(mod.name)
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Export macros (no COM needed — static text)
+        # ── Export macros (static text, use _hash_content) ──────────────────
         try:
             macros = self.get_macros()
             macros_dir = os.path.join(output_dir, "macros")
@@ -2652,22 +2736,400 @@ class WinComAdapter(AccessAdapter):
                 try:
                     safe_name = safe_filename(macro.name)
                     out_path = os.path.join(macros_dir, f"macros_{safe_name}.txt")
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        f.write(f"Macro: {macro.name}\nType: Access Macro\n")
-                    exported["macros"].append(macro.name)
+                    content = f"Macro: {macro.name}\nType: Access Macro\n"
+
+                    if dedup and os.path.exists(out_path):
+                        existing_hash = _file_hash(out_path)
+                        new_hash = self._hash_content(content)
+                        if existing_hash == new_hash:
+                            pass
+                        else:
+                            with open(out_path, "w", encoding="utf-8") as f:
+                                f.write(content)
+                            exported["macros"].append(macro.name)
+                    else:
+                        with open(out_path, "w", encoding="utf-8") as f:
+                            f.write(content)
+                        exported["macros"].append(macro.name)
                 except Exception:
                     pass
         except Exception:
             pass
 
-        total = (len(exported["forms"]) + len(exported["reports"]) +
-                 len(exported["modules"]) + len(exported["macros"]))
+        # ── Export queries (SaveAsText acQuery=5) ──────────────────────────────
+        try:
+            queries = self.get_queries()
+            queries_dir = os.path.join(output_dir, "queries")
+            os.makedirs(queries_dir, exist_ok=True)
+            for query in queries:
+                try:
+                    safe_name = safe_filename(query.name)
+                    out_path = os.path.join(queries_dir, f"queries_{safe_name}.txt")
+                    success, new_hash, skipped = _export_and_hash(5, query.name, out_path)
+                    if success and not skipped:
+                        exported["queries"].append(query.name)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        total = sum(len(v) for v in exported.values())
 
         return {
             "success": True,
             "exported": exported,
             "output_dir": output_dir,
             "file_count": total,
+        }
+
+    # ========================================================================
+    # QUERY EXPORT / IMPORT (SaveAsText / LoadFromText with acQuery=5)
+    # ========================================================================
+
+    def export_query_to_text(self, query_name: str) -> str:
+        """Export a query to text using SaveAsText(acQuery=5, query_name, temp_path).
+
+        Returns the text content or empty string on failure.
+        """
+        if not self.is_connected():
+            return ""
+
+        def _do() -> str:
+            return self._save_object_to_text(5, query_name)
+
+        return self._dispatcher.call(_do)
+
+    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
+        """Import a query from text data using LoadFromText(acQuery=5, ...).
+
+        Returns True on success, False on failure.
+        """
+        if not self.is_connected():
+            return False
+
+        def _do() -> bool:
+            return self._load_object_from_text(5, query_name, query_data)
+
+        return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # VERSIONING COMPARE (git diff support)
+    # ========================================================================
+
+    @staticmethod
+    def _hash_file(file_path: str) -> str:
+        """Compute SHA256 hexdigest of a file's content."""
+        if not os.path.exists(file_path):
+            return ""
+        h = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            h.update(f.read())
+        return h.hexdigest()
+
+    @staticmethod
+    def _hash_content(content: str) -> str:
+        """Compute SHA256 hexdigest of a string (in-memory VBA code, etc.)."""
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def compare_versioning(self, export_dir: str) -> dict:
+        """Compare objects in the DB against exported files in export_dir.
+
+        Returns dict with:
+          - new: objects in DB but not in export_dir
+          - missing: objects in export_dir but not in DB
+          - changed: objects in both but content differs
+          - unchanged: objects in both with identical content
+        Each entry: {"type": "form"|"report"|"module"|"macro"|"query", "name": str}
+        """
+        if not self.is_connected():
+            return {"new": [], "missing": [], "changed": [], "unchanged": []}
+
+        def safe_name(name: str) -> str:
+            for ch in '\\/:*?"<>|':
+                name = name.replace(ch, '_')
+            return name
+
+        result = {"new": [], "missing": [], "changed": [], "unchanged": []}
+
+        subdirs = {
+            "forms": (2, "forms", self.get_forms),
+            "reports": (4, "reports", self.get_reports),
+            "modules": (5, "modules", self.get_modules),
+            "macros": (8, "macros", self.get_macros),
+            "queries": (5, "queries", self.get_queries),
+        }
+
+        for obj_type, (_, dir_name, getter) in subdirs.items():
+            dir_path = os.path.join(export_dir, dir_name)
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path, exist_ok=True)
+                continue
+
+            # Collect exported file names
+            exported_files = {}
+            if os.path.isdir(dir_path):
+                for fname in os.listdir(dir_path):
+                    if fname.endswith(".txt") or fname.endswith(".bas"):
+                        # e.g. forms_frmMain.txt → frmMain
+                        parts = fname.split("_", 1)
+                        if len(parts) == 2:
+                            exported_files[parts[1]] = os.path.join(dir_path, fname)
+
+            # Scan DB objects
+            try:
+                db_objects = getter()
+            except Exception:
+                db_objects = []
+
+            for obj in db_objects:
+                obj_name = safe_name(obj.name)
+                file_pattern = f"{dir_name}_{obj_name}"
+                matching_files = [
+                    f for f in os.listdir(dir_path)
+                    if f.startswith(file_pattern)
+                ]
+
+                if not matching_files:
+                    # In DB, not in export
+                    result["new"].append({"type": obj_type.rstrip("s"), "name": obj.name})
+                else:
+                    # Check content
+                    file_path = os.path.join(dir_path, matching_files[0])
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            file_content = f.read()
+                    except Exception:
+                        file_content = ""
+
+                    # Get DB content for comparison
+                    db_content = ""
+                    if obj_type in ("modules",):
+                        db_content = getattr(obj, "code", "") or ""
+                    else:
+                        # For forms/reports/macros/queries, read via export
+                        if obj_type == "forms":
+                            db_content = self.export_form_to_text(obj.name)
+                        elif obj_type == "reports":
+                            db_content = self.export_report_to_text(obj.name)
+                        elif obj_type == "macros":
+                            db_content = self.export_macro_to_text(obj.name)
+                        elif obj_type == "queries":
+                            db_content = self.export_query_to_text(obj.name)
+
+                    if db_content == file_content:
+                        result["unchanged"].append({"type": obj_type.rstrip("s"), "name": obj.name})
+                    else:
+                        result["changed"].append({"type": obj_type.rstrip("s"), "name": obj.name})
+
+            # Find missing (in export but not in DB)
+            for fname in os.listdir(dir_path):
+                if fname.startswith(f"{dir_name}_"):
+                    parts = fname.split("_", 1)
+                    if len(parts) == 2:
+                        obj_name = parts[1]
+                        # Check if it's in DB
+                        in_db = any(
+                            safe_name(obj.name) == safe_name(obj_name)
+                            for obj in db_objects
+                        )
+                        if not in_db:
+                            result["missing"].append({
+                                "type": obj_type.rstrip("s"),
+                                "name": obj_name.rsplit(".", 1)[0],  # strip extension
+                            })
+
+        return result
+
+    # ========================================================================
+    # IMPORT ALL VERSIONING
+    # ========================================================================
+
+    def import_all_versioning(self, input_dir: str) -> dict:
+        """Import all objects from an exported versioning directory.
+
+        Ordering: modules → forms/reports → macros → queries.
+        Returns dict with per-type results and overall success.
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected to database", "imported": {}}
+
+        if not os.path.isdir(input_dir):
+            return {"success": False, "error": f"Directory not found: {input_dir}", "imported": {}}
+
+        def safe_read_file(path: str) -> str:
+            """Read file, handling UTF-16-LE BOM from Access SaveAsText."""
+            try:
+                with open(path, "rb") as f:
+                    raw = f.read()
+                return raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
+            except Exception:
+                return ""
+
+        imported = {"modules": [], "forms": [], "reports": [], "macros": [], "queries": []}
+        errors = []
+
+        subdirs = [
+            ("modules", "modules", ".bas", ".txt"),
+            ("forms", "forms", ".txt", ".txt"),
+            ("reports", "reports", ".txt", ".txt"),
+            ("macros", "macros", ".txt", ".txt"),
+            ("queries", "queries", ".txt", ".txt"),
+        ]
+
+        for type_key, dir_name, ext, _ in subdirs:
+            dir_path = os.path.join(input_dir, dir_name)
+            if not os.path.isdir(dir_path):
+                continue
+
+            # Collect files in this subdir, validate all exist first
+            files_to_import = []
+            for fname in os.listdir(dir_path):
+                if fname.startswith(f"{dir_name}_") and (fname.endswith(ext) or fname.endswith(".bas")):
+                    file_path = os.path.join(dir_path, fname)
+                    if os.path.isfile(file_path):
+                        files_to_import.append((fname, file_path))
+
+            # Sort by name for deterministic order
+            files_to_import.sort(key=lambda x: x[0])
+
+            for fname, file_path in files_to_import:
+                # Extract object name from filename
+                # e.g. modules_modTest.bas → modTest
+                name = fname[len(dir_name) + 1:]
+                if name.endswith(".txt") or name.endswith(".bas"):
+                    name = name[:name.rfind(".")]
+                name = name.replace("_", " ")
+
+                try:
+                    data = safe_read_file(file_path)
+
+                    if type_key == "modules":
+                        # For modules: create empty → set code → compile
+                        # First try to get existing module
+                        existing = None
+                        for m in self.get_modules():
+                            if m.name == name:
+                                existing = m
+                                break
+
+                        if existing:
+                            # Update code
+                            self.set_vba_code(name, data)
+                        else:
+                            # Create via VBE
+                            def _do():
+                                comp = self._dispatcher._access_app.VBE.VBProjects(1).VBComponents.Add(1)
+                                comp.Name = name
+                                comp.CodeModule.AddFromString(data)
+                                return True
+                            try:
+                                self._dispatcher.call(_do)
+                                imported["modules"].append(name)
+                            except Exception as e:
+                                errors.append(f"module {name}: {e}")
+                                continue
+
+                        # Compile to verify
+                        compile_result = self.compile_vba()
+                        if not compile_result.get("success"):
+                            errors.append(f"module {name}: compile error")
+                        else:
+                            if name not in imported["modules"]:
+                                imported["modules"].append(name)
+
+                    elif type_key == "forms":
+                        success = self.import_form_from_text(name, data)
+                        if success:
+                            imported["forms"].append(name)
+                        else:
+                            errors.append(f"form {name}: import failed")
+
+                    elif type_key == "reports":
+                        success = self.import_report_from_text(name, data)
+                        if success:
+                            imported["reports"].append(name)
+                        else:
+                            errors.append(f"report {name}: import failed")
+
+                    elif type_key == "macros":
+                        success = self.import_macro_from_text(name, data) if hasattr(self, "import_macro_from_text") else False
+                        if success:
+                            imported["macros"].append(name)
+                        else:
+                            errors.append(f"macro {name}: import failed")
+
+                    elif type_key == "queries":
+                        success = self.import_query_from_text(name, data)
+                        if success:
+                            imported["queries"].append(name)
+                        else:
+                            errors.append(f"query {name}: import failed")
+
+                except Exception as e:
+                    errors.append(f"{type_key.rstrip('s')} {name}: {e}")
+
+        return {
+            "success": len(errors) == 0,
+            "imported": imported,
+            "errors": errors if errors else None,
+        }
+
+    def export_schema_ddl(self, output_dir: str) -> dict:
+        """Export table schemas as DDL SQL files via COM introspection.
+
+        Uses get_tables() and get_relationships() (both available via COM's DAO model).
+        Generates CREATE TABLE and ALTER TABLE statements.
+
+        Args:
+            output_dir: Root directory for schema output
+
+        Returns:
+            dict with success, ddl_tables path, ddl_relationships path
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        from pathlib import Path
+
+        tables = self.get_tables()
+        relationships = self.get_relationships()
+
+        schema_dir = Path(output_dir) / "schema"
+        schema_dir.mkdir(parents=True, exist_ok=True)
+
+        ddl_tables_path = schema_dir / "ddl_tables.sql"
+        ddl_rels_path = schema_dir / "ddl_relationships.sql"
+
+        with open(ddl_tables_path, "w", encoding="utf-8") as f:
+            f.write("-- Access Table DDL\n-- Generated by ms-access-mcp-server\n\n")
+            for table in tables:
+                f.write(f"CREATE TABLE [{table.name}] (\n")
+                col_defs = []
+                for field in table.fields:
+                    col_def = f"  [{field.name}] {field.type}"
+                    if field.required:
+                        col_def += " NOT NULL"
+                    else:
+                        col_def += " NULL"
+                    col_defs.append(col_def)
+                f.write(",\n".join(col_defs))
+                f.write("\n);\n\n")
+
+        with open(ddl_rels_path, "w", encoding="utf-8") as f:
+            f.write("-- Access Relationship DDL\n-- Generated by ms-access-mcp-server\n\n")
+            for rel in relationships:
+                f.write(f"-- Relationship: {rel.name}\n")
+                f.write(f"-- Table: {rel.table}, Foreign Table: {rel.foreign_table}\n")
+                f.write(f"-- Attributes: {rel.attributes}\n")
+                f.write(f"ALTER TABLE [{rel.table}] ADD CONSTRAINT [{rel.name}] ")
+                f.write(f"FOREIGN KEY REFERENCES [{rel.foreign_table}];\n")
+
+        return {
+            "success": True,
+            "ddl_tables": str(ddl_tables_path),
+            "ddl_relationships": str(ddl_rels_path),
+            "tables_exported": len(tables),
+            "relationships_exported": len(relationships),
         }
 
     # ========================================================================

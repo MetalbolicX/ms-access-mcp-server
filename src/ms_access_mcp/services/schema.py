@@ -183,3 +183,33 @@ class SchemaService:
         if self._adapter is None:
             return {"success": False, "error": "No adapter connected", "exported": {}}
         return self._adapter.export_all_versioning(output_dir)
+
+    def export_query_to_text(self, query_name: str) -> str:
+        """Export query definition as text."""
+        if self._adapter is None:
+            return ""
+        return self._adapter.export_query_to_text(query_name)
+
+    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
+        """Import query from text representation."""
+        if self._adapter is None:
+            return False
+        return self._adapter.import_query_from_text(query_name, query_data)
+
+    def import_all_versioning(self, input_dir: str) -> dict:
+        """Import all versioned objects from a directory structure."""
+        if self._adapter is None:
+            return {"success": False, "error": "No adapter connected", "imported": {}}
+        return self._adapter.import_all_versioning(input_dir)
+
+    def compare_versioning(self, export_dir: str) -> dict:
+        """Compare database state against an export directory."""
+        if self._adapter is None:
+            return {"success": False, "error": "No adapter connected"}
+        return self._adapter.compare_versioning(export_dir)
+
+    def export_schema_ddl(self, output_dir: str) -> dict:
+        """Export table schemas as DDL SQL files."""
+        if self._adapter is None:
+            return {"success": False, "error": "No adapter connected"}
+        return self._adapter.export_schema_ddl(output_dir)

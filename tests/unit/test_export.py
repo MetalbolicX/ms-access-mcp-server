@@ -22,6 +22,30 @@ class TestExportToolsConnectionGuards:
             assert "Not connected" in result["error"]
 
 
+class TestCompareVersioningTool:
+    """Tests for compare_versioning tool."""
+
+    def test_compare_versioning_delegates_to_schema_service(self):
+        """compare_versioning should delegate to schema_service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_schema = MagicMock()
+        mock_schema.compare_versioning.return_value = {"success": True, "new": [], "missing": [], "changed": [], "unchanged": []}
+        with patch.dict(server.compare_versioning.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+            result = server.compare_versioning("/tmp/compare")
+            mock_schema.compare_versioning.assert_called_once_with("/tmp/compare")
+            assert result["success"] is True
+
+    def test_compare_versioning_returns_error_when_not_connected(self):
+        """compare_versioning should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.dict(server.compare_versioning.__globals__, connection_service=mock_conn):
+            result = server.compare_versioning("/tmp/compare")
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
 class TestExportTableCsv:
     """Tests for export_table_csv tool."""
 

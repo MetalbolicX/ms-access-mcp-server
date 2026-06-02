@@ -72,6 +72,8 @@ from .system import (  # noqa: E402
     export_report_to_text, import_report_from_text, delete_report,
     export_module_to_text, export_macro_to_text,
     export_all_versioning, execute_sql_script,
+    export_query_to_text, import_query_from_text,
+    export_schema_ddl, compare_versioning, import_all_versioning,
     recover_access, diagnose_environment,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
@@ -80,6 +82,7 @@ from .dev_copy import (  # noqa: E402
     compact_repair, copy_database,
     export_module_backup, import_module_from_text, restore_module_backup,
     export_form_backup, import_form_from_file, restore_form_backup,
+    export_report_backup, import_report_from_file, restore_report_backup,
     create_dev_copy, deploy_dev_copy, discard_dev_copy, get_dev_copy_status,
 )
 

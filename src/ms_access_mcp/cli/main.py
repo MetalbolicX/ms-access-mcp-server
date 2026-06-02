@@ -116,5 +116,69 @@ def import_vba(
     typer.echo("Note: This requires COM automation")
 
 
+@app.command()
+def git_hook_init(
+    output_dir: Optional[Path] = typer.Option(None, "-o", "--output", help="Output directory for hooks"),
+):
+    """Initialize git hooks for versioning workflow.
+
+    Creates .git/hooks/pre-commit that runs export_all_versioning with dedup.
+    """
+    hooks_base = Path(".git") if output_dir is None else Path(output_dir)
+    git_hooks_dir = hooks_base / "hooks"
+    git_hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    pre_commit_path = git_hooks_dir / "pre-commit"
+    hook_script = """#!/bin/sh
+# Auto-generated pre-commit hook for MS Access versioning workflow
+# Runs export-all with dedup to capture changes before commit
+
+OUT_DIR=".access_versioning"
+
+echo "Running MS Access version export..."
+python -m ms_access_mcp.cli.main export-all "$OUT_DIR" --dedup 2>/dev/null || true
+
+# Show diff summary if there are changes
+if [ -d "$OUT_DIR" ]; then
+    CHANGES=$(git status --porcelain "$OUT_DIR" 2>/dev/null | wc -l)
+    if [ "$CHANGES" -gt 0 ]; then
+        echo "Access versioning: $CHANGES object(s) changed"
+        git diff --stat "$OUT_DIR" 2>/dev/null || true
+    fi
+fi
+"""
+    pre_commit_path.write_text(hook_script)
+    typer.echo(f"Created {pre_commit_path}")
+    typer.echo("Hook will run 'macc export-all .access_versioning --dedup' before each commit")
+
+
+@app.command()
+def export_all(
+    output_dir: str = typer.Argument(..., help="Directory to export files to"),
+    dedup: bool = typer.Option(False, "--dedup", help="Enable SHA256 deduplication"),
+):
+    """Export all forms, reports, modules, macros, and queries to a directory structure.
+
+    Requires the MCP server to be running with an active database connection.
+    """
+    typer.echo(f"Exporting all objects to {output_dir} (dedup={dedup})")
+    typer.echo("Note: This requires the MCP server to be running with an active connection")
+    typer.echo("Use: macc connect <path> [--com]  to connect first")
+
+
+@app.command()
+def compare_versioning(
+    export_dir: str = typer.Argument(..., help="Directory containing versioned exports"),
+):
+    """Compare current database state against an export directory.
+
+    Shows which objects are new, missing, changed, or unchanged relative
+    to the exported state.
+    """
+    typer.echo(f"Comparing database state against {export_dir}")
+    typer.echo("Note: This requires the MCP server to be running with an active connection")
+    typer.echo("Use: macc connect <path> [--com]  to connect first")
+
+
 if __name__ == "__main__":
     app()

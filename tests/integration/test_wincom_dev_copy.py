@@ -17,7 +17,7 @@ import pytest
 
 from ms_access_mcp.adapters.wincom import WinComAdapter
 from ms_access_mcp.services.dev_copy_service import DevCopyService
-from helpers import skip_unless_windows, skip_unless_pywin32, skip_unless_db
+from helpers import skip_unless_windows, skip_unless_pywin32, skip_unless_db, call_mcp_tool
 
 pytestmark = [
     pytest.mark.com_integration,
@@ -272,3 +272,175 @@ class TestDevCopyFormBackup:
             self.adapter, "NonExistentForm", "/path/does/not/exist.txt"
         )
         assert result["success"] is False
+
+
+# =============================================================================
+# Report Backup / Restore (via DevCopyService and MCP tools)
+# =============================================================================
+
+class TestDevCopyReportBackup:
+    """Report backup/restore via DevCopyService on cloned DB.
+
+    Tests for export_report_backup, import_report_from_file, restore_report_backup
+    MCP tools (report backup pipeline from PR 3).
+    """
+
+    def setup_method(self):
+        self.adapter: WinComAdapter = WinComAdapter()
+        self.service = DevCopyService()
+
+    def teardown_method(self):
+        _cleanup_adapter(self.adapter)
+
+    def test_export_report_backup_via_service(self, temp_db_copy: str):
+        """export_report_backup writes a .txt file for a report via DevCopyService."""
+        assert self.adapter.connect(temp_db_copy)
+
+        result = self.service.export_report_backup(self.adapter, "rptCustomers")
+        # rptCustomers may or may not exist — result should have correct structure
+        if result.get("success"):
+            assert "backup_path" in result
+            assert os.path.exists(result["backup_path"])
+            os.unlink(result["backup_path"])
+
+    def test_export_report_backup_via_mcp_tool(self, temp_db_copy: str):
+        """export_report_backup MCP tool delegates to DevCopyService."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_rpt_backup", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "export_report_backup",
+                "rptCustomers",
+                connection_name="test_rpt_backup",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict)
+            assert "success" in result
+            # May fail if rptCustomers doesn't exist, but structure should be correct
+            if result["success"]:
+                assert "backup_path" in result
+
+            pool.disconnect("test_rpt_backup")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_import_report_from_file_via_service(self, temp_db_copy: str):
+        """import_report_from_file returns error for missing file."""
+        assert self.adapter.connect(temp_db_copy)
+
+        result = self.service.import_report_from_file(
+            self.adapter, "NonExistentReport", "/path/does/not/exist.txt"
+        )
+        assert result["success"] is False
+
+    def test_import_report_from_file_via_mcp_tool(self, temp_db_copy: str):
+        """import_report_from_file MCP tool delegates to DevCopyService."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_rpt_imp", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "import_report_from_file",
+                "MCP_TestReport",
+                "/path/does/not/exist.txt",
+                connection_name="test_rpt_imp",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict)
+            assert "success" in result
+            assert result["success"] is False  # File not found
+
+            pool.disconnect("test_rpt_imp")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_restore_report_backup_via_mcp_tool(self, temp_db_copy: str):
+        """restore_report_backup MCP tool handles missing backup gracefully."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_rpt_rest", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "restore_report_backup",
+                "NonExistentReport",
+                "/path/does/not/exist.txt",
+                connection_name="test_rpt_rest",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict)
+            assert "success" in result
+            # Should fail gracefully for missing backup file
+            assert result["success"] is False
+
+            pool.disconnect("test_rpt_rest")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+
+# =============================================================================
+# Hook-visible export outputs (git-hook-init and export-all CLI integration)
+# =============================================================================
+
+class TestGitHookVisibleExports:
+    """Verify export outputs are visible and hook-friendly.
+
+    The git_hook_init command creates .git/hooks/pre-commit that runs
+    'macc export-all .access_versioning --dedup'. Export must produce
+    visible, human-readable file structure in the export directory.
+    """
+
+    def test_export_all_versioning_creates_readable_structure(self, temp_db_copy: str):
+        """export_all_versioning creates forms/, reports/, modules/, macros/, queries/."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+
+        adapter = WinComAdapter()
+        assert adapter.connect(temp_db_copy)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = adapter.export_all_versioning(tmpdir)
+            assert result.get("success") is True
+
+            # Verify subdirectories exist
+            for subdir in ["forms", "reports", "modules", "macros", "queries"]:
+                subdir_path = os.path.join(tmpdir, subdir)
+                assert os.path.isdir(subdir_path), f"Expected {subdir}/ subdirectory"
+
+            # Verify exported dict has correct keys
+            assert "exported" in result
+            exported = result["exported"]
+            for key in ["forms", "reports", "modules", "macros", "queries"]:
+                assert key in exported, f"Expected '{key}' in exported dict"
+                assert isinstance(exported[key], list), f"exported['{key}'] should be a list"
+
+        adapter.disconnect()

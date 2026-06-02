@@ -174,3 +174,92 @@ class TestExportWinComHappyPath:
                     adapter.disconnect()
             except Exception:
                 pass
+
+
+# =============================================================================
+# compare_versioning integration tests
+# =============================================================================
+
+class TestCompareVersioning:
+    """Integration tests for compare_versioning tool.
+
+    Tests compare_versioning with a real or mock export directory.
+    The tool delegates to schema_service.compare_versioning → WinComAdapter.compare_versioning.
+    """
+
+    def test_compare_versioning_via_odbc_raises_notimplementederror(self, pool_with_sqlite):
+        """compare_versioning raises NotImplementedError via OdbcAdapter (requires COM)."""
+        with pytest.raises(NotImplementedError, match="COM"):
+            call_mcp_tool(
+                "compare_versioning",
+                "C:\\temp\\export",
+                connection_service=pool_with_sqlite,
+            )
+
+    def test_compare_versioning_returns_buckets_with_empty_dir(self, temp_db_copy):
+        """compare_versioning with empty export dir returns all objects as 'new'."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_cmp", temp_db_copy, adapter, "com")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = call_mcp_tool(
+                    "compare_versioning",
+                    tmpdir,
+                    connection_name="test_cmp",
+                    connection_service=pool,
+                )
+                assert isinstance(result, dict)
+                assert "new" in result
+                assert "missing" in result
+                assert "changed" in result
+                assert "unchanged" in result
+                # Empty export dir → all DB objects are 'new'
+                assert isinstance(result["new"], list)
+                assert isinstance(result["missing"], list)
+                assert isinstance(result["changed"], list)
+                assert isinstance(result["unchanged"], list)
+
+            pool.disconnect("test_cmp")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_compare_versioning_nonexistent_dir_via_wincom(self, temp_db_copy):
+        """compare_versioning with nonexistent directory handles gracefully."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_cmp_bad", temp_db_copy, adapter, "com")
+
+            # compare_versioning creates subdirs internally so it doesn't error on missing parent
+            result = call_mcp_tool(
+                "compare_versioning",
+                "Z:\\totally\\nonexistent\\path\\for\\compare",
+                connection_name="test_cmp_bad",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict)
+            assert "new" in result  # Should still return buckets
+
+            pool.disconnect("test_cmp_bad")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass

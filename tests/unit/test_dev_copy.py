@@ -18,6 +18,9 @@ class TestDevopyConnectionGuards:
         (server.export_form_backup, ("frmTest", None)),
         (server.import_form_from_file, ("frmTest", "/tmp/bak/frmTest.txt")),
         (server.restore_form_backup, ("frmTest", "/tmp/bak/frmTest.txt")),
+        (server.export_report_backup, ("rptTest", None)),
+        (server.import_report_from_file, ("rptTest", "/tmp/bak/rptTest.txt")),
+        (server.restore_report_backup, ("rptTest", "/tmp/bak/rptTest.txt")),
         (server.create_dev_copy, (None,)),
         (server.deploy_dev_copy, (None,)),
         (server.discard_dev_copy, (None,)),
@@ -160,6 +163,49 @@ class TestFormBackupRestore:
             result = server.restore_form_backup("frmTest", "/tmp/bak/frmTest.txt")
             assert result["success"] is True
             mock_dev.restore_form_backup.assert_called_once()
+
+
+class TestReportBackupRestore:
+    """Tests for report backup/restore tools."""
+
+    def test_export_report_backup_delegates_to_service(self):
+        """export_report_backup should delegate to dev_copy_service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        mock_dev = MagicMock()
+        mock_dev.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/bak/rptTest.txt"}
+        with patch.dict(server.export_report_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+            result = server.export_report_backup("rptTest", None)
+            assert result["success"] is True
+            mock_dev.export_report_backup.assert_called_once()
+
+    def test_import_report_from_file_delegates_to_service(self):
+        """import_report_from_file should delegate to dev_copy_service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        mock_dev = MagicMock()
+        mock_dev.import_report_from_file.return_value = {"success": True}
+        with patch.dict(server.import_report_from_file.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+            result = server.import_report_from_file("rptTest", "/tmp/bak/rptTest.txt")
+            assert result["success"] is True
+            mock_dev.import_report_from_file.assert_called_once()
+
+    def test_restore_report_backup_delegates_to_service(self):
+        """restore_report_backup should delegate to dev_copy_service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        mock_dev = MagicMock()
+        mock_dev.restore_report_backup.return_value = {"success": True}
+        with patch.dict(server.restore_report_backup.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+            result = server.restore_report_backup("rptTest", "/tmp/bak/rptTest.txt")
+            assert result["success"] is True
+            mock_dev.restore_report_backup.assert_called_once()
 
 
 class TestDevCopyLifecycle:

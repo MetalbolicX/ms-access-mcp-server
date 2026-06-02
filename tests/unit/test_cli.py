@@ -264,6 +264,68 @@ class TestCliImportVbaCommand:
         assert os.path.join(os.sep, "tmp", "Module1.bas") in result.stdout
 
 
+class TestCliGitHookInitCommand:
+    def test_git_hook_init_creates_pre_commit_file(self, tmp_path, monkeypatch):
+        """macc git-hook-init creates .git/hooks/pre-commit file."""
+        # Change to temp directory
+        monkeypatch.chdir(tmp_path)
+
+        # Create .git/hooks directory structure
+        (tmp_path / ".git" / "hooks").mkdir(parents=True)
+
+        result = runner.invoke(app, ["git-hook-init"])
+        assert result.exit_code == 0, result.stdout
+
+        pre_commit_path = tmp_path / ".git" / "hooks" / "pre-commit"
+        assert pre_commit_path.exists(), "pre-commit file should be created"
+        content = pre_commit_path.read_text()
+        assert "export-all" in content or "python" in content.lower()
+
+    def test_git_hook_init_creates_directory_if_missing(self, tmp_path, monkeypatch):
+        """git-hook-init creates .git/hooks if directory doesn't exist."""
+        monkeypatch.chdir(tmp_path)
+        # Create only .git (no hooks subdir)
+        (tmp_path / ".git").mkdir()
+
+        result = runner.invoke(app, ["git-hook-init"])
+        assert result.exit_code == 0, result.stdout
+
+        pre_commit_path = tmp_path / ".git" / "hooks" / "pre-commit"
+        assert pre_commit_path.exists(), "pre-commit file should be created"
+
+
+class TestCliExportAllCommand:
+    def test_export_all_command_exists(self):
+        """macc export-all command should be recognized."""
+        result = runner.invoke(app, ["export-all", "--help"])
+        # Should not fail with "no such command"
+        assert "No such command" not in result.stdout, result.stdout
+
+    def test_export_all_with_dedup_flag(self):
+        """macc export-all --dedup invokes versioning with dedup."""
+        result = runner.invoke(app, ["export-all", "/tmp/export", "--dedup"])
+        assert result.exit_code == 0, result.stdout
+        assert "/tmp/export" in result.stdout
+
+    def test_export_all_default_no_dedup(self):
+        """macc export-all without --dedup should still work."""
+        result = runner.invoke(app, ["export-all", "/tmp/export"])
+        assert result.exit_code == 0, result.stdout
+
+
+class TestCliCompareVersioningCommand:
+    def test_compare_versioning_command_exists(self):
+        """macc compare-versioning command should be recognized."""
+        result = runner.invoke(app, ["compare-versioning", "--help"])
+        assert "No such command" not in result.stdout, result.stdout
+
+    def test_compare_versioning_invokes_correctly(self):
+        """macc compare-versioning <dir> invokes versioning compare."""
+        result = runner.invoke(app, ["compare-versioning", "/tmp/compare"])
+        assert result.exit_code == 0, result.stdout
+        assert "/tmp/compare" in result.stdout
+
+
 class TestCliHelp:
     def test_help_prints_usage(self):
         result = runner.invoke(app, ["--help"])

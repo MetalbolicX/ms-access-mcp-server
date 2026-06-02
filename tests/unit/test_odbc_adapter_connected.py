@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 
 from ms_access_mcp.adapters.odbc import OdbcAdapter
-from ms_access_mcp.models.database import TableInfo, QueryInfo
+from ms_access_mcp.models.database import TableInfo, QueryInfo, RelationshipInfo
 from ms_access_mcp.models.migration import TableSchema, ColumnSchema, UnknownMetadata
 
 
@@ -467,3 +467,63 @@ class TestOdbcAdapterConnectedExportJson(ConnectedAdapterTestBase):
         assert r2["success"] is True
         # Both writes happened (file was opened twice)
         assert mock_open.call_count == 2
+
+
+class TestOdbcAdapterConnectedExportSchemaDdl(ConnectedAdapterTestBase):
+    """Test export_schema_ddl for DDL file generation."""
+
+    def test_export_schema_ddl_returns_success_dict(self):
+        """export_schema_ddl returns dict with success and file paths."""
+        table_row = MagicMock()
+        table_row.__getitem__ = lambda self, i: "Table1" if i == 0 else None
+        table_row[0] = "Table1"
+
+        col_row = MagicMock()
+        col_row.name = "ID"
+        col_row.type = "Long Integer"
+        col_row.size = 0
+        col_row.nullable = "NO"
+
+        count_row = (5,)
+
+        rel_row = MagicMock()
+        rel_row.__getitem__ = lambda self, i: "FK1" if i == 0 else None
+        rel_row[0] = "FK1"
+        rel_row.name = "FK1"
+        rel_row.table = "Table1"
+        rel_row.field = "RelatedID"
+        rel_row.foreign_table = "Table2"
+        rel_row.foreign_field = "ID"
+
+        self.mock_cursor.fetchall.side_effect = [
+            [table_row],      # get_tables
+            [col_row],        # columns for Table1
+            [count_row],      # count
+            [rel_row],        # relationships
+        ]
+        self.mock_cursor.fetchone.return_value = count_row
+
+        with patch.object(self.adapter, "get_tables", return_value=[
+            TableInfo(name="Table1", fields=[
+                {"name": "ID", "type": "Long Integer", "size": 0, "required": True}
+            ], record_count=5)
+        ]):
+            with patch.object(self.adapter, "get_relationships", return_value=[
+                RelationshipInfo(name="FK1", table="Table1", foreign_table="Table2", field="RelatedID", foreign_field="ID")
+            ]):
+                with patch("builtins.open", create=True) as mock_open:
+                    with patch("pathlib.Path.mkdir"):
+                        result = self.adapter.export_schema_ddl("D:/tmp/export")
+
+        assert result["success"] is True
+        assert "ddl_tables" in result
+        assert "ddl_relationships" in result
+        assert result["tables_exported"] == 1
+        assert result["relationships_exported"] == 1
+
+    def test_export_schema_ddl_not_connected_returns_error(self):
+        """export_schema_ddl when not connected returns error."""
+        self.adapter._conn = None
+        result = self.adapter.export_schema_ddl("D:/tmp/export")
+        assert result["success"] is False
+        assert "error" in result

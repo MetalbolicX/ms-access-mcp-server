@@ -45,6 +45,11 @@ def make_mock_adapter():
     a.export_module_to_text.return_value = "Sub Test()\nEnd Sub"
     a.export_macro_to_text.return_value = "MACRO DATA"
     a.export_all_versioning.return_value = {"success": True, "exported": {}}
+    a.export_query_to_text.return_value = "SELECT * FROM Table1"
+    a.import_query_from_text.return_value = True
+    a.import_all_versioning.return_value = {"success": True, "imported": {}}
+    a.compare_versioning.return_value = {"success": True, "new": [], "missing": [], "changed": []}
+    a.export_schema_ddl.return_value = {"success": True, "ddl_tables": "schema/ddl_tables.sql", "ddl_relationships": "schema/ddl_relationships.sql"}
     return a
 
 
@@ -168,6 +173,29 @@ class TestSchemaServiceDelegation:
         assert result["success"] is True
         self.mock_adapter.export_all_versioning.assert_called_once_with("/tmp/out")
 
+    def test_export_query_to_text_delegates(self):
+        assert self.service.export_query_to_text("q1") == "SELECT * FROM Table1"
+        self.mock_adapter.export_query_to_text.assert_called_once_with("q1")
+
+    def test_import_query_from_text_delegates(self):
+        assert self.service.import_query_from_text("q1", "SELECT 1") is True
+        self.mock_adapter.import_query_from_text.assert_called_once_with("q1", "SELECT 1")
+
+    def test_import_all_versioning_delegates(self):
+        result = self.service.import_all_versioning("/tmp/in")
+        assert result["success"] is True
+        self.mock_adapter.import_all_versioning.assert_called_once_with("/tmp/in")
+
+    def test_compare_versioning_delegates(self):
+        result = self.service.compare_versioning("/tmp/compare")
+        assert result["success"] is True
+        self.mock_adapter.compare_versioning.assert_called_once_with("/tmp/compare")
+
+    def test_export_schema_ddl_delegates(self):
+        result = self.service.export_schema_ddl("/tmp/ddl")
+        assert result["success"] is True
+        self.mock_adapter.export_schema_ddl.assert_called_once_with("/tmp/ddl")
+
 
 # =============================================================================
 # No-adapter defaults — every method must return a safe default when adapter is None
@@ -259,6 +287,27 @@ class TestSchemaServiceNoAdapterDefaults:
         assert result["success"] is False
         assert "No adapter connected" in result["error"]
         assert result["exported"] == {}
+
+    def test_export_query_to_text_returns_empty_string(self):
+        assert self.service.export_query_to_text("q1") == ""
+
+    def test_import_query_from_text_returns_false(self):
+        assert self.service.import_query_from_text("q1", "SELECT 1") is False
+
+    def test_import_all_versioning_returns_error_dict(self):
+        result = self.service.import_all_versioning("/tmp/in")
+        assert result["success"] is False
+        assert "No adapter connected" in result["error"]
+
+    def test_compare_versioning_returns_error_dict(self):
+        result = self.service.compare_versioning("/tmp/compare")
+        assert result["success"] is False
+        assert "No adapter connected" in result["error"]
+
+    def test_export_schema_ddl_returns_error_dict(self):
+        result = self.service.export_schema_ddl("/tmp/ddl")
+        assert result["success"] is False
+        assert "No adapter connected" in result["error"]
 
 
 # =============================================================================

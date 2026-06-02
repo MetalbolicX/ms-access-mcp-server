@@ -253,6 +253,109 @@ def export_all_versioning(output_dir: str, connection_name: str = "default") -> 
 
 
 @mcp.tool()
+def export_query_to_text(query_name: str, connection_name: str = "default") -> dict:
+    """
+    Export a query definition as text.
+
+    Args:
+        query_name: Name of the query to export
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
+    result = schema_service.export_query_to_text(query_name)
+    if not result:
+        return {"success": False, "error": f"Query '{query_name}' not found or empty"}
+    return {"success": True, "query": query_name, "data": result}
+
+
+@mcp.tool()
+def import_query_from_text(query_name: str, query_data: str, connection_name: str = "default") -> dict:
+    """
+    Import a query from text representation.
+
+    Args:
+        query_name: Name of the query to create/replace
+        query_data: Text representation of the query (SQL or Access query definition)
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
+    result = schema_service.import_query_from_text(query_name, query_data)
+    return {"success": result, "query": query_name, "message": "Query imported" if result else "Import failed"}
+
+
+@mcp.tool()
+def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict:
+    """
+    Export table schemas as DDL SQL files.
+
+    Writes schema/ddl_tables.sql with CREATE TABLE statements
+    and schema/ddl_relationships.sql with ALTER TABLE constraints.
+
+    Args:
+        output_dir: Directory to write DDL files to
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
+    result = schema_service.export_schema_ddl(output_dir)
+    return result
+
+
+@mcp.tool()
+def compare_versioning(export_dir: str, connection_name: str = "default") -> dict:
+    """
+    Compare database state against an export directory.
+
+    Returns lists of new, missing, changed, and unchanged objects.
+
+    Args:
+        export_dir: Directory containing previous exports
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
+    result = schema_service.compare_versioning(export_dir)
+    return result
+
+
+@mcp.tool()
+def import_all_versioning(input_dir: str, connection_name: str = "default") -> dict:
+    """
+    Import all versioned objects from a directory structure.
+
+    Args:
+        input_dir: Directory containing versioned objects
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    schema_service.set_adapter(adapter)
+    result = schema_service.import_all_versioning(input_dir)
+    return result
+
+
+@mcp.tool()
 def execute_sql_script(script_path: str, connection_name: str = "default") -> dict:
     """
     Execute a Jet SQL script file against the connected Access database.

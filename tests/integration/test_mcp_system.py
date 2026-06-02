@@ -149,6 +149,44 @@ class TestSystemComOnlyToolsOdbcErrorPath:
 
 
 # ============================================================================
+# Tier 1: Query versioning tools via ODBC (error paths)
+# ============================================================================
+
+class TestSystemQueryVersioningOdbcErrorPath:
+    """Tier 1: Verify query versioning tools fail gracefully via OdbcAdapter.
+
+    export_query_to_text raises NotImplementedError via ODBC → tool propagates it.
+    import_query_from_text raises NotImplementedError via ODBC → tool propagates it.
+    compare_versioning raises NotImplementedError via ODBC → tool propagates it.
+    import_all_versioning raises NotImplementedError via ODBC → tool propagates it.
+    """
+
+    @pytest.mark.parametrize(
+        "tool_name,args",
+        [
+            ("export_query_to_text", ["qryTest"]),
+            ("import_query_from_text", ["qryNew", "SELECT 1"]),
+        ],
+    )
+    def test_query_versioning_tools_raise_notimplementederror_via_sqlite(
+        self, pool_with_sqlite, tool_name, args
+    ):
+        """Query versioning tools raise NotImplementedError via OdbcAdapter (requires COM)."""
+        with pytest.raises(NotImplementedError, match="COM"):
+            call_mcp_tool(tool_name, *args, connection_service=pool_with_sqlite)
+
+    def test_compare_versioning_raises_notimplementederror_via_sqlite(self, pool_with_sqlite):
+        """compare_versioning raises NotImplementedError via OdbcAdapter (requires COM)."""
+        with pytest.raises(NotImplementedError, match="COM"):
+            call_mcp_tool("compare_versioning", "C:\\temp\\export", connection_service=pool_with_sqlite)
+
+    def test_import_all_versioning_raises_notimplementederror_via_sqlite(self, pool_with_sqlite):
+        """import_all_versioning raises NotImplementedError via OdbcAdapter (requires COM)."""
+        with pytest.raises(NotImplementedError, match="COM"):
+            call_mcp_tool("import_all_versioning", "C:\\temp\\import", connection_service=pool_with_sqlite)
+
+
+# ============================================================================
 # Tier 3: WinCom happy-path tests (SKIPPED - pre-existing pool.connect bug)
 # ============================================================================
 
@@ -390,6 +428,166 @@ class TestSystemWinComHappyPath:
                 assert "success" in result
 
             pool.disconnect("test_sys")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    # ========================================================================
+    # Query versioning via WinCom — real export/import
+    # ========================================================================
+
+    def test_export_query_to_text_via_wincom(self, temp_db_copy):
+        """export_query_to_text exports a query definition via WinComAdapter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_qry", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "export_query_to_text",
+                "NonExistentQuery_XYZ",
+                connection_name="test_qry",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict)
+            assert "success" in result
+            # Non-existent query → success=False
+            if not result["success"]:
+                assert "error" in result
+
+            pool.disconnect("test_qry")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_import_query_from_text_via_wincom(self, temp_db_copy):
+        """import_query_from_text imports a query definition via WinComAdapter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_qry_imp", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "import_query_from_text",
+                "MCP_TestQuery",
+                "SELECT 1 AS TestCol",
+                connection_name="test_qry_imp",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict)
+            assert "success" in result
+
+            pool.disconnect("test_qry_imp")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_compare_versioning_via_wincom(self, temp_db_copy):
+        """compare_versioning compares DB state against export directory via WinComAdapter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_cmp", temp_db_copy, adapter, "com")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = call_mcp_tool(
+                    "compare_versioning",
+                    tmpdir,
+                    connection_name="test_cmp",
+                    connection_service=pool,
+                )
+                assert isinstance(result, dict)
+                assert "new" in result
+                assert "missing" in result
+                assert "changed" in result
+                assert "unchanged" in result
+
+            pool.disconnect("test_cmp")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_import_all_versioning_via_wincom(self, temp_db_copy):
+        """import_all_versioning imports all objects from a directory via WinComAdapter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_imp_all", temp_db_copy, adapter, "com")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = call_mcp_tool(
+                    "import_all_versioning",
+                    tmpdir,
+                    connection_name="test_imp_all",
+                    connection_service=pool,
+                )
+                assert isinstance(result, dict)
+                # Empty dir → success=True with empty imported dict
+                assert "success" in result
+
+            pool.disconnect("test_imp_all")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_export_schema_ddl_via_wincom(self, temp_db_copy):
+        """export_schema_ddl exports table schemas as DDL files via WinComAdapter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_ddl", temp_db_copy, adapter, "com")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = call_mcp_tool(
+                    "export_schema_ddl",
+                    tmpdir,
+                    connection_name="test_ddl",
+                    connection_service=pool,
+                )
+                assert isinstance(result, dict)
+                assert "success" in result
+
+            pool.disconnect("test_ddl")
         finally:
             try:
                 if adapter.is_connected():

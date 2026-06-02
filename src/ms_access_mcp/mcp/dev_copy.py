@@ -226,6 +226,72 @@ def restore_form_backup(form_name: str, backup_path: str, connection_name: str =
         return {"success": False, "error": str(e)}
 
 
+@mcp.tool()
+def export_report_backup(report_name: str, backup_dir: str | None = None, connection_name: str = "default") -> dict:
+    """
+    Export a report (including VBA code-behind) to a .txt file.
+
+    Args:
+        report_name: Name of the report to export
+        backup_dir: Optional custom backup directory
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.export_report_backup(adapter, report_name, backup_dir)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def import_report_from_file(report_name: str, file_path: str, connection_name: str = "default") -> dict:
+    """
+    Import a report from a .txt text file.
+
+    Args:
+        report_name: Name of the report to import
+        file_path: Path to the .txt file
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.import_report_from_file(adapter, report_name, file_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def restore_report_backup(report_name: str, backup_path: str, connection_name: str = "default") -> dict:
+    """
+    Restore a report from a .txt backup file.
+
+    Args:
+        report_name: Name of the report to restore
+        backup_path: Path to the .txt backup file
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = dev_copy_service.restore_report_backup(adapter, report_name, backup_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ============================================================================
 # FULL DB COPY PIPELINE TOOLS (Dev Copy Lifecycle)
 # ============================================================================
