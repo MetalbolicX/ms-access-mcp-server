@@ -16,11 +16,14 @@ class ApiKeyMiddleware(Middleware):
     async def on_call_tool(self, context: MiddlewareContext, call_next):
         """Validate Bearer token before executing any tool call."""
         if not self._validate_bearer(context):
+            from mcp.types import ErrorData
             from fastmcp.exceptions import McpError
 
             raise McpError(
-                message="Unauthorized: Bearer token is missing or invalid.",
-                code=-32001,
+                ErrorData(
+                    code=-32001,
+                    message="Unauthorized: Bearer token is missing or invalid.",
+                )
             )
         return await call_next(context)
 
@@ -30,10 +33,8 @@ class ApiKeyMiddleware(Middleware):
 
     def _validate_bearer(self, context: MiddlewareContext) -> bool:
         """Extract Authorization header and validate Bearer token."""
-        # FastMCP HTTP transport stores headers in context
-        # The Authorization header is passed as a request header
-        auth_header = self._get_header(context, "authorization") or self._get_header(
-            context, "Authorization"
+        auth_header = self._get_header("authorization") or self._get_header(
+            "Authorization"
         )
         if not auth_header:
             return False
@@ -44,14 +45,13 @@ class ApiKeyMiddleware(Middleware):
         token = auth_header[7:]  # Strip "Bearer " prefix
         return token == self._api_key
 
-    def _get_header(self, context: MiddlewareContext, name: str) -> str | None:
-        """Safely extract a header from middleware context."""
+    @staticmethod
+    def _get_header(name: str) -> str | None:
+        """Safely extract a header from the current HTTP request."""
         try:
-            # Access headers via context attributes
-            if hasattr(context, "request") and hasattr(context.request, "headers"):
-                return context.request.headers.get(name)
-            if hasattr(context, "headers"):
-                return context.headers.get(name)
+            from fastmcp.server.dependencies import get_http_request
+
+            request = get_http_request()
+            return request.headers.get(name)
         except Exception:
-            pass
-        return None
+            return None
