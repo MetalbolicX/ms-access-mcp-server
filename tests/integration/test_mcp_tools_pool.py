@@ -5,147 +5,16 @@ Validates that MCP tool functions correctly use connection_name to route
 to the right adapter in the pool, without requiring Windows or MS Access.
 """
 
-import os
-import sqlite3
 import sys
-import tempfile
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 from ms_access_mcp.services.connection import ConnectionPool, ConnectionState
 from ms_access_mcp.adapters.odbc import OdbcAdapter
 from ms_access_mcp.mcp import server as server_module
 
-
-# ---- SQLite-backed pyodbc mock (same pattern as test_odbc_adapter_sqlite.py) ---
-
-class _SqliteCursor:
-    """Wraps sqlite3 cursor to respond like pyodbc cursor."""
-
-    def __init__(self, db: sqlite3.Connection):
-        self.db = db
-        self._cursor = db.cursor()
-        self.description = None
-
-    def execute(self, sql: str, params: tuple | None = None) -> None:
-        try:
-            if params:
-                self._cursor.execute(sql, params)
-            else:
-                self._cursor.execute(sql)
-            self.description = self._cursor.description
-        except Exception as e:
-            self._cursor = self.db.cursor()
-            raise e
-
-    def fetchall(self):
-        return self._cursor.fetchall()
-
-    def fetchone(self):
-        return self._cursor.fetchone()
-
-    @property
-    def rowcount(self):
-        return self._cursor.rowcount
-
-    def close(self):
-        pass
-
-
-class _SqliteConnection:
-    """Wraps sqlite3 connection to mimic pyodbc.Connection."""
-
-    def __init__(self, db_path: str):
-        self.db = sqlite3.connect(db_path)
-        self.db.execute("PRAGMA journal_mode=WAL")
-
-    def cursor(self):
-        return _SqliteCursor(self.db)
-
-    def close(self):
-        self.db.close()
-
-
-def _sqlite_pyodbc_connect(conn_str: str, autocommit: bool = False) -> _SqliteConnection:
-    """Replace pyodbc.connect with sqlite3-backed connection."""
-    for part in conn_str.split(";"):
-        if part.upper().startswith("DBQ="):
-            db_path = part.split("=", 1)[1].strip()
-            return _SqliteConnection(db_path)
-    for part in conn_str.split(";"):
-        if part.upper().startswith("DATA SOURCE="):
-            db_path = part.split("=", 1)[1].strip()
-            return _SqliteConnection(db_path)
-    raise ValueError(f"Cannot extract DB path from: {conn_str}")
-
-
-# ---- Fixtures ------------------------------------------------------------------
-
-@pytest.fixture
-def sqlite_db():
-    """Create a temp SQLite database, clean up after."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
-    conn = sqlite3.connect(db_path)
-    conn.execute("CREATE TABLE __meta (name TEXT)")
-    conn.execute("INSERT INTO __meta VALUES ('prod_db')")
-    conn.commit()
-    conn.close()
-    yield db_path
-    if os.path.exists(db_path):
-        os.unlink(db_path)
-
-
-@pytest.fixture
-def pool_with_sqlite(sqlite_db):
-    """ConnectionPool with one SQLite-backed OdbcAdapter connected as 'default'."""
-    with patch("pyodbc.connect", _sqlite_pyodbc_connect):
-        pool = ConnectionPool()
-        state = pool.connect("default", sqlite_db, "odbc")
-        assert state is not None
-        yield pool
-        pool.disconnect("default")
-
-
-@pytest.fixture
-def pool_with_two_adapters(sqlite_db):
-    """ConnectionPool with two named SQLite-backed connections ("prod", "dev")."""
-    with patch("pyodbc.connect", _sqlite_pyodbc_connect):
-        pool = ConnectionPool()
-
-        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-            dev_db_path = f.name
-
-        conn = sqlite3.connect(dev_db_path)
-        conn.execute("CREATE TABLE __meta (name TEXT)")
-        conn.execute("INSERT INTO __meta VALUES ('dev_db')")
-        conn.commit()
-        conn.close()
-
-        pool.connect("prod", sqlite_db, "odbc")
-        pool.connect("dev", dev_db_path, "odbc")
-
-        yield pool
-
-        pool.disconnect("prod")
-        pool.disconnect("dev")
-        if os.path.exists(dev_db_path):
-            os.unlink(dev_db_path)
-
-
-# ============================================================================
-# Test helper: access a tool function from server_module by name.
-# The tool functions are top-level exports in server.py, and connection_service
-# is a global in each tool's __globals__ dict.
-# ============================================================================
-
-
-def _call_tool(server, tool_name, *args, **kwargs):
-    """Call a tool function by name from server_module, patching its connection_service."""
-    connection_service = kwargs.pop("connection_service", None)
-    tool_func = getattr(server, tool_name)
-    with patch.dict(tool_func.__globals__, connection_service=connection_service):
-        return tool_func(*args, **kwargs)
+from conftest import pool_with_sqlite, pool_with_two_adapters, sqlite_db
+from helpers import call_mcp_tool
 
 
 # ---- Tests ---------------------------------------------------------------------
@@ -160,8 +29,8 @@ class TestSaveQueryTool:
         adapter.get_queries = MagicMock(return_value=[])
         adapter.create_query = MagicMock(return_value={"success": True})
 
-        result = _call_tool(
-            server_module, "save_query",
+        result = call_mcp_tool(
+            "save_query",
             "TestQuery", "SELECT 1 AS test",
             overwrite=False,
             connection_service=pool_with_sqlite,
@@ -177,8 +46,8 @@ class TestSaveQueryTool:
         mock_query.name = "DupQuery"
         adapter.get_queries = MagicMock(return_value=[mock_query])
 
-        result = _call_tool(
-            server_module, "save_query",
+        result = call_mcp_tool(
+            "save_query",
             "DupQuery", "SELECT 2",
             overwrite=False,
             connection_service=pool_with_sqlite,
@@ -194,8 +63,8 @@ class TestSaveQueryTool:
         adapter.get_queries = MagicMock(return_value=[mock_query])
         adapter.set_query_sql = MagicMock(return_value={"success": True})
 
-        result = _call_tool(
-            server_module, "save_query",
+        result = call_mcp_tool(
+            "save_query",
             "UpdQuery", "SELECT 2 AS num",
             overwrite=True,
             connection_service=pool_with_sqlite,
@@ -209,8 +78,8 @@ class TestSaveQueryTool:
         prod_adapter.get_queries = MagicMock(return_value=[])
         prod_adapter.create_query = MagicMock(return_value={"success": True})
 
-        result = _call_tool(
-            server_module, "save_query",
+        result = call_mcp_tool(
+            "save_query",
             "ProdQuery", "SELECT name FROM __meta",
             overwrite=False, connection_name="prod",
             connection_service=pool_with_two_adapters,
@@ -227,8 +96,8 @@ class TestVbaListProceduresTool:
 
     def test_vba_list_procedures_returns_proper_structure(self, pool_with_sqlite):
         """vba_list_procedures via OdbcAdapter returns None -> tool returns success=True with procedures list."""
-        result = _call_tool(
-            server_module, "vba_list_procedures",
+        result = call_mcp_tool(
+            "vba_list_procedures",
             "Module1",
             connection_service=pool_with_sqlite,
         )
@@ -243,8 +112,8 @@ class TestVbaGetProcedureTool:
 
     def test_vba_get_procedure_returns_not_found(self, pool_with_sqlite):
         """vba_get_procedure returns error via OdbcAdapter when procedure not found."""
-        result = _call_tool(
-            server_module, "vba_get_procedure",
+        result = call_mcp_tool(
+            "vba_get_procedure",
             "Module1", "NonExistent",
             connection_service=pool_with_sqlite,
         )
@@ -257,8 +126,8 @@ class TestVbaReplaceProcedureTool:
 
     def test_vba_replace_procedure_returns_failure(self, pool_with_sqlite):
         """vba_replace_procedure returns error via OdbcAdapter when not WinCom."""
-        result = _call_tool(
-            server_module, "vba_replace_procedure",
+        result = call_mcp_tool(
+            "vba_replace_procedure",
             "Module1", "Proc1", "Sub Proc1()\nEnd Sub",
             connection_service=pool_with_sqlite,
         )
@@ -270,8 +139,8 @@ class TestListConnectionsTool:
 
     def test_list_connections_returns_correct_structure(self, pool_with_sqlite, sqlite_db):
         """list_connections returns database/adapter_type for each connection."""
-        result = _call_tool(
-            server_module, "list_connections",
+        result = call_mcp_tool(
+            "list_connections",
             connection_service=pool_with_sqlite,
         )
         assert result["success"] is True
@@ -284,8 +153,8 @@ class TestListConnectionsTool:
 
     def test_list_connections_with_multiple(self, pool_with_two_adapters):
         """list_connections returns all named connections."""
-        result = _call_tool(
-            server_module, "list_connections",
+        result = call_mcp_tool(
+            "list_connections",
             connection_service=pool_with_two_adapters,
         )
         assert result["success"] is True
@@ -298,8 +167,8 @@ class TestGetSystemTablesTool:
 
     def test_get_system_tables_returns_list(self, pool_with_sqlite):
         """get_system_tables via OdbcAdapter returns a list result."""
-        result = _call_tool(
-            server_module, "get_system_tables",
+        result = call_mcp_tool(
+            "get_system_tables",
             connection_name="default",
             connection_service=pool_with_sqlite,
         )
@@ -314,8 +183,8 @@ class TestDiagnoseEnvironmentTool:
 
     def test_diagnose_environment_returns_info(self, pool_with_sqlite):
         """diagnose_environment returns diagnostic info dict."""
-        result = _call_tool(
-            server_module, "diagnose_environment",
+        result = call_mcp_tool(
+            "diagnose_environment",
             connection_service=pool_with_sqlite,
         )
         assert isinstance(result, dict)
@@ -330,8 +199,8 @@ class TestRecoverAccessTool:
     @pytest.mark.skipif(sys.platform == "win32", reason="Linux-only test")
     def test_recover_access_not_supported_on_linux(self, pool_with_sqlite):
         """recover_access returns success=False on non-Windows."""
-        result = _call_tool(
-            server_module, "recover_access",
+        result = call_mcp_tool(
+            "recover_access",
             connection_service=pool_with_sqlite,
         )
         assert result["success"] is False

@@ -5,10 +5,10 @@ These tests verify that MCP tools (from server_module) correctly delegate
 to WinComAdapter when called through the MCP tool interface. They use
 real COM-based adapters against temporary database clones.
 
-Pattern from test_mcp_tools_pool.py (_call_tool helper) is reused here
+Pattern from test_mcp_tools_pool.py (call_mcp_tool helper) is reused here
 with real WinComAdapter instead of mock SQLite adapters.
 
-Markers: com_integration
+Mark: com_integration
 Execution: pytest tests/integration/test_wincom_mcp_tools.py -m com_integration -v
 """
 
@@ -17,12 +17,10 @@ import tempfile
 
 import pytest
 
-from unittest.mock import patch
-
 from ms_access_mcp.adapters.wincom import WinComAdapter
 from ms_access_mcp.services.connection import ConnectionPool
 from ms_access_mcp import mcp as server_module
-from helpers import skip_unless_windows, skip_unless_pywin32, skip_unless_db
+from helpers import call_mcp_tool, skip_unless_windows, skip_unless_pywin32, skip_unless_db
 
 pytestmark = [
     pytest.mark.com_integration,
@@ -39,20 +37,6 @@ def _cleanup_adapter(adapter: WinComAdapter) -> None:
             adapter.disconnect()
     except Exception:
         pass
-
-
-# ============================================================================
-# Test helper: call an MCP tool function by name, patching connection_service
-# ============================================================================
-
-def _call_tool(tool_name: str, *args, connection_service=None, **kwargs):
-    """Call a tool function by name from server_module, patching its connection_service.
-
-    Mirrors the pattern from test_mcp_tools_pool.py for consistency.
-    """
-    tool_func = getattr(server_module, tool_name)
-    with patch.object(server_module, "connection_service", connection_service):
-        return tool_func(*args, **kwargs)
 
 
 # ============================================================================
@@ -76,7 +60,7 @@ class TestMcpCrudTools:
         # Register adapter in pool
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "create_query",
             "TestQuery_MCP", "SELECT 1 AS col",
             connection_name="test_db",
@@ -97,7 +81,7 @@ class TestMcpCrudTools:
         assert self.adapter.connect(temp_db_copy)
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "insert_data",
             "customers", {"ID": 998, "Name": "MCP_Insert"},
             connection_name="test_db",
@@ -106,7 +90,7 @@ class TestMcpCrudTools:
         assert result["success"] is True
 
         # Verify row exists via query_data tool
-        rows_result = _call_tool(
+        rows_result = call_mcp_tool(
             "query_data",
             "SELECT * FROM customers WHERE ID = 998",
             connection_name="test_db",
@@ -127,7 +111,7 @@ class TestMcpCrudTools:
         rows = self.adapter.execute_query("SELECT Name FROM customers WHERE ID = 1")
         assert rows["count"] >= 1
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "update_data",
             "customers", {"Name": "Updated_via_MCP"}, {"ID": 1},
             connection_name="test_db",
@@ -154,7 +138,7 @@ class TestMcpCrudTools:
         assert "QueryToDelete_MCP" in [q.name for q in queries]
 
         # Delete via MCP tool
-        result = _call_tool(
+        result = call_mcp_tool(
             "delete_query",
             "QueryToDelete_MCP",
             connection_name="test_db",
@@ -189,7 +173,7 @@ class TestMcpVbaTools:
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
         code = "Function TestVBA()\n    Debug.Print 42\nEnd Function"
-        result = _call_tool(
+        result = call_mcp_tool(
             "set_vba_code",
             "modUtilities", code,
             connection_name="test_db",
@@ -206,7 +190,7 @@ class TestMcpVbaTools:
         assert self.adapter.connect(temp_db_copy)
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "compile_vba",
             connection_name="test_db",
             connection_service=self.pool,
@@ -230,7 +214,7 @@ class TestMcpVbaTools:
         assert "TestModule_ToDelete" in [m.name for m in modules]
 
         # Delete via tool
-        result = _call_tool(
+        result = call_mcp_tool(
             "delete_module",
             "TestModule_ToDelete",
             connection_name="test_db",
@@ -264,7 +248,7 @@ class TestMcpFormTools:
         assert self.adapter.connect(temp_db_copy)
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "get_forms",
             connection_name="test_db",
             connection_service=self.pool,
@@ -281,7 +265,7 @@ class TestMcpFormTools:
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
         # frmMain should exist in the fixture
-        result = _call_tool(
+        result = call_mcp_tool(
             "form_exists",
             "frmMain",
             connection_name="test_db",
@@ -300,7 +284,7 @@ class TestMcpFormTools:
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
         # frmMain should exist in the fixture
-        result = _call_tool(
+        result = call_mcp_tool(
             "get_form_controls",
             "frmMain",
             connection_name="test_db",
@@ -331,7 +315,7 @@ class TestMcpSystemTools:
         assert self.adapter.connect(temp_db_copy)
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "get_modules",
             connection_name="test_db",
             connection_service=self.pool,
@@ -348,7 +332,7 @@ class TestMcpSystemTools:
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
         # modUtilities should exist in the fixture
-        result = _call_tool(
+        result = call_mcp_tool(
             "get_vba_code",
             "modUtilities",
             connection_name="test_db",
@@ -367,7 +351,7 @@ class TestMcpSystemTools:
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
         # frmMain should exist in the fixture
-        result = _call_tool(
+        result = call_mcp_tool(
             "export_form_to_text",
             "frmMain",
             connection_name="test_db",
@@ -415,7 +399,7 @@ class TestMcpDevCopyTools:
 
         request.addfinalizer(cleanup)
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "copy_database",
             temp_db_copy, dest_path,
             connection_name="test_db",
@@ -432,7 +416,7 @@ class TestMcpDevCopyTools:
         assert self.adapter.connect(temp_db_copy)
         self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
 
-        result = _call_tool(
+        result = call_mcp_tool(
             "get_dev_copy_status",
             db_path=temp_db_copy,
             connection_name="test_db",

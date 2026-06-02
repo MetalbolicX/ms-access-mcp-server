@@ -2,8 +2,11 @@
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
+
+from ms_access_mcp.mcp import server as server_module
 
 # ---- Database path resolution ------------------------------------------------
 
@@ -72,3 +75,17 @@ skip_unless_odbc_driver = pytest.mark.skipif(
         "Install: mdbtools + unixodbc (Linux) or Microsoft Access Database Engine (Windows)"
     ),
 )
+
+
+# ---- Shared test helper --------------------------------------------------------
+
+def call_mcp_tool(tool_name: str, *args, connection_service=None, **kwargs):
+    """Call an MCP tool function by name, patching its connection_service.
+
+    Uses patch.dict on the tool's __globals__ to ensure the connection_service
+    binding in each tool module (created at import time via 'from .server import
+    connection_service') is correctly replaced for the duration of the call.
+    """
+    tool_func = getattr(server_module, tool_name)
+    with patch.dict(tool_func.__globals__, connection_service=connection_service):
+        return tool_func(*args, **kwargs)
