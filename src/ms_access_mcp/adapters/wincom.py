@@ -2544,24 +2544,35 @@ class WinComAdapter(AccessAdapter):
     # SQL SCRIPT EXECUTION
     # ========================================================================
 
+    # ------------------------------------------------------------------- #
+    #  SQL Script Execution
+    # ------------------------------------------------------------------- #
+
     def execute_sql_script(self, script_path: str) -> dict:
         """Execute a SQL script from a file path.
 
         Reads the file, strips SQL comments, splits by semicolons,
-        and executes each statement via DAO.
+        and executes each statement via DAO. On error, returns structured
+        info matching the access-sql-script-executor spec.
 
         Args:
             script_path: Absolute path to the .sql file
 
         Returns:
-            dict with success=True, statements_executed=N
-            or success=False, error="...", statements_executed=N
+            dict with:
+              success, statements_executed, error (always present)
+              failing_statement, failing_line, access_error_code,
+              access_error_message (on execution failure)
         """
         if not os.path.exists(script_path):
             return {
                 "success": False,
                 "statements_executed": 0,
                 "error": f"File not found: {script_path}",
+                "failing_statement": None,
+                "failing_line": None,
+                "access_error_code": None,
+                "access_error_message": None,
             }
 
         if not self.is_connected():
@@ -2569,6 +2580,10 @@ class WinComAdapter(AccessAdapter):
                 "success": False,
                 "statements_executed": 0,
                 "error": "Not connected",
+                "failing_statement": None,
+                "failing_line": None,
+                "access_error_code": None,
+                "access_error_message": None,
             }
 
         def _do() -> dict:
@@ -2576,33 +2591,147 @@ class WinComAdapter(AccessAdapter):
                 with open(script_path, "r", encoding="utf-8") as f:
                     raw_sql = f.read()
             except Exception as e:
-                return {"success": False, "statements_executed": 0, "error": str(e)}
+                err = self._extract_com_error(e)
+                return {
+                    "success": False,
+                    "statements_executed": 0,
+                    "error": err["error"],
+                    "failing_statement": None,
+                    "failing_line": None,
+                    "access_error_code": err["code"],
+                    "access_error_message": err["message"],
+                }
 
-            sql = self._strip_sql_comments(raw_sql).strip()
-            if not sql:
-                return {"success": True, "statements_executed": 0}
+            # Parse statements with original line number tracking
+            parse = self._parse_script_lines(raw_sql)
+            if not parse["statements"]:
+                return {
+                    "success": True,
+                    "statements_executed": 0,
+                    "failing_statement": None,
+                    "failing_line": None,
+                    "access_error_code": None,
+                    "access_error_message": None,
+                }
 
-            # Split by semicolons and filter empty statements
-            statements = [s.strip() for s in sql.split(";") if s.strip()]
             db = self._dispatcher._current_db
             executed = 0
-            for stmt in statements:
+            for entry in parse["statements"]:
                 try:
-                    db.Execute(stmt, DAO_DB_FAIL_ON_ERROR)
+                    db.Execute(entry["text"], DAO_DB_FAIL_ON_ERROR)
                     executed += 1
                 except Exception as e:
+                    err = self._extract_com_error(e)
                     return {
                         "success": False,
                         "statements_executed": executed,
-                        "error": f"Error at statement {executed + 1}: {e}",
+                        "error": err["error"],
+                        "failing_statement": entry["text"],
+                        "failing_line": entry["line"],
+                        "access_error_code": err["code"],
+                        "access_error_message": err["message"],
                     }
 
-            return {"success": True, "statements_executed": executed}
+            return {
+                "success": True,
+                "statements_executed": executed,
+                "failing_statement": None,
+                "failing_line": None,
+                "access_error_code": None,
+                "access_error_message": None,
+            }
 
         try:
             return self._dispatcher.call(_do)
         except Exception as e:
-            return {"success": False, "statements_executed": 0, "error": str(e)}
+            err = self._extract_com_error(e)
+            return {
+                "success": False,
+                "statements_executed": 0,
+                "error": err["error"],
+                "failing_statement": None,
+                "failing_line": None,
+                "access_error_code": err["code"],
+                "access_error_message": err["message"],
+            }
+
+    def _parse_script_lines(self, raw_sql: str) -> dict:
+        """Parse raw SQL into executable statements with original line numbers.
+
+        Returns dict with 'statements' list of {text, line} or empty list.
+        Comments are stripped per-statement for safe execution.
+        Line numbers are 1-based and refer to the original file.
+        """
+        if not raw_sql.strip():
+            return {"statements": []}
+
+        statements: list[dict] = []
+        pos = 0
+        remaining = raw_sql
+
+        while remaining:
+            semi_idx = remaining.find(";")
+            if semi_idx >= 0:
+                raw_chunk = remaining[:semi_idx]
+                remaining = remaining[semi_idx + 1:]
+            else:
+                raw_chunk = remaining
+                remaining = ""
+
+            raw_stripped = raw_chunk.strip()
+            if not raw_stripped:
+                pos += len(raw_chunk) + (1 if semi_idx >= 0 else 0)
+                continue
+
+            # Strip comments from the chunk — this is safe per-statement
+            clean = self._strip_sql_comments(raw_stripped).strip()
+            if not clean:
+                pos += len(raw_chunk) + (1 if semi_idx >= 0 else 0)
+                continue
+
+            # Original line number: count newlines before current pos + 1
+            line = raw_sql[:pos].count("\n") + 1
+
+            statements.append({"text": clean, "line": line})
+            pos += len(raw_chunk) + (1 if semi_idx >= 0 else 0)
+
+        return {"statements": statements}
+
+
+    # ========================================================================
+    #  COM Error Extractor (static helper)
+    # ========================================================================
+
+    @staticmethod
+    def _extract_com_error(e: Exception) -> dict:
+        """Extract structured error info from a COM or non-COM exception.
+
+        Returns dict with 'error' (clean message), 'code', 'message'.
+        For pywin32 COM errors, extracts the DAO error code and description.
+        For standard Python exceptions, falls back to str(e).
+        """
+        error_str = str(e)
+        code = None
+        message = None
+
+        # pywin32 com_error: args = (hresult, msg, excepinfo, arg)
+        excepinfo = getattr(e, "args", None)
+        if isinstance(excepinfo, tuple) and len(excepinfo) >= 3:
+            info = excepinfo[2]
+            if isinstance(info, tuple) and len(info) >= 6:
+                description = info[2]  # Clean DAO error message
+                scode = info[5]       # DAO error code (negative)
+                if description:
+                    error_str = description
+                    message = description
+                    code = scode
+                if scode:
+                    code = scode
+
+        if code is None and hasattr(e, "winerror"):
+            code = e.winerror  # type: ignore[union-attr]
+
+        return {"error": error_str, "code": code, "message": message}
 
     # ========================================================================
     # DATABASE FILE COPY

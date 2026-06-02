@@ -309,12 +309,16 @@ class TestWinComAdapterExecuteSqlScript:
             os.unlink(temp_path)
 
     def test_error_dict_contains_required_keys(self):
-        """Error dict has required keys when adapter returns error."""
+        """Error dict has all spec-required keys when adapter returns error."""
         result = self.adapter.execute_sql_script("C:\\nonexistent\\path\\file.sql")
-        # Early return: file not found error dict
         assert "success" in result
         assert "statements_executed" in result
         assert "error" in result
+        # Spec-required fields (access-sql-script-executor)
+        assert "failing_statement" in result
+        assert "failing_line" in result
+        assert "access_error_code" in result
+        assert "access_error_message" in result
 
     def test_statements_executed_is_zero_on_file_not_found(self):
         """statements_executed is 0 when file doesn't exist."""
