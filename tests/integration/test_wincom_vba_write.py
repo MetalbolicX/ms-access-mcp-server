@@ -14,6 +14,7 @@ is never modified.  A fresh WinComAdapter is instantiated per test class to
 minimise COM threading issues.
 """
 
+import pathlib
 import pytest
 
 from ms_access_mcp.adapters.wincom import WinComAdapter
@@ -135,6 +136,134 @@ class TestWinComVbaSetCode:
         modules = self.adapter.get_modules()
         names = [m.name for m in modules]
         assert "modDoesNotExist_xyz" in names, f"Module not found in {names}"
+
+    def test_set_vba_code_creates_via_loadfromtext_and_verifies_content(self, temp_db_copy: str):
+        """set_vba_code on a new module uses LoadFromText and content reads back exactly."""
+        assert self.adapter.connect(temp_db_copy)
+
+        module_name = _unique_name("modContentCheck")
+        code = "Public Sub Foo()\n    Dim x As Long\n    x = 1\nEnd Sub\n"
+
+        ok = self.adapter.set_vba_code(module_name, code)
+        assert ok, "set_vba_code returned False on new module"
+
+        read_back = self.adapter.get_vba_code(module_name)
+        assert read_back == code, f"Expected exact code match.\nExpected:\n{code}\nGot:\n{read_back}"
+
+    def test_set_vba_code_roundtrip_loadfromtext_addfromstring_compile(self, temp_db_copy: str):
+        """Create via LoadFromText, modify via AddFromString, then compile — verifies both paths."""
+        assert self.adapter.connect(temp_db_copy)
+
+        module_name = _unique_name("modRoundTrip")
+        code_v1 = "Public Sub A()\nEnd Sub\n"
+        code_v2 = "Public Sub B()\n    Dim y As Long\nEnd Sub\n"
+
+        # First call: LoadFromText (new module)
+        ok1 = self.adapter.set_vba_code(module_name, code_v1)
+        assert ok1, "First set_vba_code (LoadFromText) should succeed"
+
+        # Second call: AddFromString (existing module path)
+        ok2 = self.adapter.set_vba_code(module_name, code_v2)
+        assert ok2, "Second set_vba_code (AddFromString) should succeed"
+
+        # Compile should succeed
+        compile_result = self.adapter.compile_vba()
+        assert compile_result.get("success") is True, f"compile_vba failed: {compile_result}"
+
+        # Read back — should have Sub B
+        read_back = self.adapter.get_vba_code(module_name)
+        assert "Sub B()" in read_back, f"Expected 'Sub B()' in module, got: {read_back}"
+
+    def test_set_vba_code_unicode_cp1252_characters(self, temp_db_copy: str):
+        """cp1252-encodable Unicode characters (Cafe, n-tilde, u-umlaut) survive round-trip."""
+        assert self.adapter.connect(temp_db_copy)
+
+        module_name = _unique_name("modUnicode")
+        code = "Public Sub Café()\n    ' acento: ñ, ü\n    Dim msg As String\n    msg = \"Café\"\nEnd Sub\n"
+
+        ok = self.adapter.set_vba_code(module_name, code)
+        assert ok, "set_vba_code returned False"
+
+        read_back = self.adapter.get_vba_code(module_name)
+        assert "Café" in read_back, f"Expected 'Café' in module, got: {read_back}"
+        assert "ñ" in read_back, f"Expected 'ñ' in module, got: {read_back}"
+        assert "ü" in read_back, f"Expected 'ü' in module, got: {read_back}"
+
+    def test_set_vba_code_empty_string_new_module(self, temp_db_copy: str):
+        """set_vba_code with empty string on new module does not crash — returns bool."""
+        assert self.adapter.connect(temp_db_copy)
+
+        module_name = _unique_name("modEmpty")
+        ok = self.adapter.set_vba_code(module_name, "")
+        # Both True (empty module created) and False (rejected) are acceptable
+        assert isinstance(ok, bool), f"set_vba_code should return bool, got {type(ok)}"
+
+
+# =============================================================================
+# VBA Compile
+# =============================================================================
+
+class TestWinComVbaCompile:
+    """Tests for WinComAdapter.compile_vba()."""
+
+    def setup_method(self):
+        self.adapter: WinComAdapter = WinComAdapter()
+
+    def teardown_method(self):
+        _cleanup_adapter(self.adapter)
+
+    def test_compile_vba_direct_call(self, temp_db_copy: str):
+        """compile_vba() on a module with valid code returns success=True."""
+        assert self.adapter.connect(temp_db_copy)
+
+        # Add valid code to existing module
+        module_name = "modUtilities"
+        code = (
+            "Public Function DirectCompileTest(ByVal n As Long) As Long\n"
+            "    DirectCompileTest = n * 2\n"
+            "End Function\n"
+        )
+
+        ok = self.adapter.set_vba_code(module_name, code)
+        assert ok, "set_vba_code should succeed"
+
+        compile_result = self.adapter.compile_vba()
+        assert compile_result.get("success") is True, f"compile_vba returned failure: {compile_result}"
+
+
+# =============================================================================
+# VBA Import All Versioning
+# =============================================================================
+
+class TestWinComVbaImportAllVersioning:
+    """Tests for WinComAdapter.import_all_versioning()."""
+
+    def setup_method(self):
+        self.adapter: WinComAdapter = WinComAdapter()
+
+    def teardown_method(self):
+        _cleanup_adapter(self.adapter)
+
+    def test_import_all_versioning_module_roundtrip(self, temp_db_copy: str, tmp_path: pathlib.Path):
+        """Write .bas file to modules/ dir, call import_all_versioning, verify module imported."""
+        assert self.adapter.connect(temp_db_copy)
+
+        # Create modules subdirectory
+        modules_dir = tmp_path / "modules"
+        modules_dir.mkdir(exist_ok=True)
+
+        # Write a .bas file: modules_modVersioning.bas → object name "modVersioning"
+        bas_file = modules_dir / "modules_modVersioning.bas"
+        bas_content = "Public Sub X()\n    Dim x As Long\n    x = 42\nEnd Sub\n"
+        bas_file.write_text(bas_content, encoding="utf-8")
+
+        # Call import_all_versioning
+        result = self.adapter.import_all_versioning(str(tmp_path))
+        assert result.get("success") is not False, f"import_all_versioning failed: {result}"
+
+        # Verify module was imported and code reads back
+        read_back = self.adapter.get_vba_code("modVersioning")
+        assert "Public Sub X()" in read_back, f"Expected 'Public Sub X()' in imported module, got: {read_back}"
 
 
 # =============================================================================
