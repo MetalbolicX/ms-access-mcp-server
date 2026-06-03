@@ -12,7 +12,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Protocol, Optional
+from typing import Callable, Protocol, Optional
 
 from ..adapters.base import AccessAdapter
 from .connection import ConnectionService
@@ -117,22 +117,121 @@ class DevCopyService:
         return backup_dir
 
     # ========================================================================
-    # Text Export/Import Pipeline — VBA Modules
+    # Text Export/Import Pipeline — shared templates
     # ========================================================================
 
-    def _module_file_path(self, module_name: str, backup_dir: str | None = None) -> str:
-        """Build the backup file path for a VBA module.
+    def _object_file_path(self, obj_name: str, backup_dir: str | None, ext: str) -> str:
+        """Build backup file path for any object type."""
+        target_dir = backup_dir if backup_dir else self.get_backup_dir()
+        safe_name = obj_name.replace(" ", "_")
+        return os.path.join(target_dir, f"{safe_name}{ext}")
+
+    def _export_object(
+        self,
+        adapter_func: Callable[[str], str],
+        obj_name: str,
+        backup_dir: str | None,
+        name_key: str,
+        ext: str,
+    ) -> dict:
+        """Template for exporting any Access object to a text file.
 
         Args:
-            module_name: Name of the module
+            adapter_func: adapter.export_xxx_to_text callable
+            obj_name: Name of the database object
             backup_dir: Optional custom backup directory
-
-        Returns:
-            Path ending in .bas (standard module)
+            name_key: Key for the object name in result dict (e.g. "form_name", "module_name")
+            ext: File extension (".bas", ".txt")
         """
-        target_dir = backup_dir if backup_dir else self.get_backup_dir()
-        safe_name = module_name.replace(" ", "_")
-        return os.path.join(target_dir, f"{safe_name}.bas")
+        content = adapter_func(obj_name)
+        if not content:
+            return {
+                "success": False,
+                "error": f"Object '{obj_name}' not found or empty",
+                name_key: obj_name,
+            }
+
+        backup_path = self._object_file_path(obj_name, backup_dir, ext)
+
+        if backup_dir:
+            os.makedirs(backup_dir, exist_ok=True)
+
+        try:
+            with open(backup_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            file_size = os.path.getsize(backup_path)
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to write backup file: {e}",
+                name_key: obj_name,
+            }
+
+        return {
+            "success": True,
+            "backup_path": backup_path,
+            name_key: obj_name,
+            "file_size_bytes": file_size,
+        }
+
+    def _import_object(
+        self,
+        adapter_func: Callable[[str, str], bool],
+        exists_check: Callable[[str], bool],
+        delete_func: Callable[[str], bool],
+        obj_name: str,
+        file_path: str,
+        name_key: str,
+    ) -> dict:
+        """Template for importing any Access object from a text file.
+
+        Args:
+            adapter_func: adapter.import_xxx_from_text callable
+            exists_check: adapter.xxx_exists callable
+            delete_func: adapter.delete_xxx callable
+            obj_name: Name of the database object
+            file_path: Path to the text file
+            name_key: Key for the object name in result dict
+        """
+        if not os.path.exists(file_path):
+            return {
+                "success": False,
+                "error": f"File not found: {file_path}",
+                name_key: obj_name,
+            }
+
+        existed = exists_check(obj_name)
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = f.read()
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Failed to read file: {e}",
+                name_key: obj_name,
+            }
+
+        if existed:
+            if not delete_func(obj_name):
+                return {
+                    "success": False,
+                    "error": f"Failed to delete existing object '{obj_name}'",
+                    name_key: obj_name,
+                }
+
+        if not adapter_func(obj_name, data):
+            return {
+                "success": False,
+                "error": f"Failed to import '{obj_name}'",
+                name_key: obj_name,
+            }
+
+        return {"success": True, name_key: obj_name}
+
+    # ========================================================================
+    # Text Export/Import Pipeline — VBA Modules
+    # ========================================================================
 
     def export_module_backup(
         self, adapter: AccessAdapter, module_name: str, backup_dir: str | None = None
@@ -147,36 +246,13 @@ class DevCopyService:
         Returns:
             dict with success, backup_path, module_name, file_size_bytes
         """
-        code = adapter.export_module_to_text(module_name)
-        if not code:
-            return {
-                "success": False,
-                "error": f"Module '{module_name}' not found or empty",
-                "module_name": module_name,
-            }
-
-        backup_path = self._module_file_path(module_name, backup_dir)
-
-        if backup_dir:
-            os.makedirs(backup_dir, exist_ok=True)
-
-        try:
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(code)
-            file_size = os.path.getsize(backup_path)
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to write backup file: {e}",
-                "module_name": module_name,
-            }
-
-        return {
-            "success": True,
-            "backup_path": backup_path,
-            "module_name": module_name,
-            "file_size_bytes": file_size,
-        }
+        return self._export_object(
+            adapter.export_module_to_text,
+            module_name,
+            backup_dir,
+            "module_name",
+            ".bas",
+        )
 
     def import_module_from_text(
         self, adapter: AccessAdapter, module_name: str, file_path: str
@@ -324,20 +400,6 @@ class DevCopyService:
     # Text Export/Import Pipeline — Forms
     # ========================================================================
 
-    def _form_file_path(self, form_name: str, backup_dir: str | None = None) -> str:
-        """Build the backup file path for a form.
-
-        Args:
-            form_name: Name of the form
-            backup_dir: Optional custom backup directory
-
-        Returns:
-            Path ending in .txt
-        """
-        target_dir = backup_dir if backup_dir else self.get_backup_dir()
-        safe_name = form_name.replace(" ", "_")
-        return os.path.join(target_dir, f"{safe_name}.txt")
-
     def export_form_backup(
         self, adapter: AccessAdapter, form_name: str, backup_dir: str | None = None
     ) -> dict:
@@ -351,36 +413,13 @@ class DevCopyService:
         Returns:
             dict with success, backup_path, form_name, file_size_bytes
         """
-        form_data = adapter.export_form_to_text(form_name)
-        if not form_data:
-            return {
-                "success": False,
-                "error": f"Form '{form_name}' not found or empty",
-                "form_name": form_name,
-            }
-
-        backup_path = self._form_file_path(form_name, backup_dir)
-
-        if backup_dir:
-            os.makedirs(backup_dir, exist_ok=True)
-
-        try:
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(form_data)
-            file_size = os.path.getsize(backup_path)
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to write backup file: {e}",
-                "form_name": form_name,
-            }
-
-        return {
-            "success": True,
-            "backup_path": backup_path,
-            "form_name": form_name,
-            "file_size_bytes": file_size,
-        }
+        return self._export_object(
+            adapter.export_form_to_text,
+            form_name,
+            backup_dir,
+            "form_name",
+            ".txt",
+        )
 
     def import_form_from_text(
         self, adapter: AccessAdapter, form_name: str, file_path: str
@@ -397,48 +436,14 @@ class DevCopyService:
         Returns:
             dict with success, form_name, and error if failed
         """
-        if not os.path.exists(file_path):
-            return {
-                "success": False,
-                "error": f"File not found: {file_path}",
-                "form_name": form_name,
-            }
-
-        form_existed = adapter.form_exists(form_name)
-
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                form_data = f.read()
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to read file: {e}",
-                "form_name": form_name,
-            }
-
-        # Delete existing form if it exists
-        if form_existed:
-            deleted = adapter.delete_form(form_name)
-            if not deleted:
-                return {
-                    "success": False,
-                    "error": f"Failed to delete existing form '{form_name}'",
-                    "form_name": form_name,
-                }
-
-        # Import the form from text data
-        imported = adapter.import_form_from_text(form_name, form_data)
-        if not imported:
-            return {
-                "success": False,
-                "error": f"Failed to import form '{form_name}'",
-                "form_name": form_name,
-            }
-
-        return {
-            "success": True,
-            "form_name": form_name,
-        }
+        return self._import_object(
+            adapter.import_form_from_text,
+            adapter.form_exists,
+            adapter.delete_form,
+            form_name,
+            file_path,
+            "form_name",
+        )
 
     def restore_form_backup(
         self, adapter: AccessAdapter, form_name: str, backup_path: str
@@ -459,20 +464,6 @@ class DevCopyService:
     # Text Export/Import Pipeline — Reports
     # ========================================================================
 
-    def _report_file_path(self, report_name: str, backup_dir: str | None = None) -> str:
-        """Build the backup file path for a report.
-
-        Args:
-            report_name: Name of the report
-            backup_dir: Optional custom backup directory
-
-        Returns:
-            Path ending in .txt
-        """
-        target_dir = backup_dir if backup_dir else self.get_backup_dir()
-        safe_name = report_name.replace(" ", "_")
-        return os.path.join(target_dir, f"{safe_name}.txt")
-
     def export_report_backup(
         self, adapter: AccessAdapter, report_name: str, backup_dir: str | None = None
     ) -> dict:
@@ -486,36 +477,13 @@ class DevCopyService:
         Returns:
             dict with success, backup_path, report_name, file_size_bytes
         """
-        report_data = adapter.export_report_to_text(report_name)
-        if not report_data:
-            return {
-                "success": False,
-                "error": f"Report '{report_name}' not found or empty",
-                "report_name": report_name,
-            }
-
-        backup_path = self._report_file_path(report_name, backup_dir)
-
-        if backup_dir:
-            os.makedirs(backup_dir, exist_ok=True)
-
-        try:
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(report_data)
-            file_size = os.path.getsize(backup_path)
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to write backup file: {e}",
-                "report_name": report_name,
-            }
-
-        return {
-            "success": True,
-            "backup_path": backup_path,
-            "report_name": report_name,
-            "file_size_bytes": file_size,
-        }
+        return self._export_object(
+            adapter.export_report_to_text,
+            report_name,
+            backup_dir,
+            "report_name",
+            ".txt",
+        )
 
     def import_report_from_file(
         self, adapter: AccessAdapter, report_name: str, file_path: str
@@ -532,45 +500,14 @@ class DevCopyService:
         Returns:
             dict with success, report_name, and error if failed
         """
-        if not os.path.exists(file_path):
-            return {
-                "success": False,
-                "error": f"File not found: {file_path}",
-                "report_name": report_name,
-            }
-
-        report_existed = adapter.report_exists(report_name)
-
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                report_data = f.read()
-        except Exception as e:
-            return {
-                "success": False,
-                "error": f"Failed to read file: {e}",
-                "report_name": report_name,
-            }
-
-        # Delete existing report if it exists
-        if report_existed:
-            deleted = adapter.delete_report(report_name)
-            if not deleted:
-                return {
-                    "success": False,
-                    "error": f"Failed to delete existing report '{report_name}'",
-                    "report_name": report_name,
-                }
-
-        # Import the report from text data
-        imported = adapter.import_report_from_text(report_name, report_data)
-        if not imported:
-            return {
-                "success": False,
-                "error": f"Failed to import report '{report_name}'",
-                "report_name": report_name,
-            }
-
-        return {"success": True, "report_name": report_name}
+        return self._import_object(
+            adapter.import_report_from_text,
+            adapter.report_exists,
+            adapter.delete_report,
+            report_name,
+            file_path,
+            "report_name",
+        )
 
     def restore_report_backup(
         self, adapter: AccessAdapter, report_name: str, backup_path: str
