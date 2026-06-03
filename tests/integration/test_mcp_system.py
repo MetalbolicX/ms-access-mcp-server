@@ -594,3 +594,202 @@ class TestSystemWinComHappyPath:
                     adapter.disconnect()
             except Exception:
                 pass
+
+    # ── VBA tools ────────────────────────────────────────────────────────────────
+
+    def test_set_vba_code_via_wincom(self, temp_db_copy):
+        """set_vba_code creates a module via the MCP tool chain."""
+        import uuid
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        module_name = f"mcpMod{uuid.uuid4().hex[:8]}"
+        code = "Public Sub TestMCP()\n    Dim x As Long\n    x = 42\nEnd Sub\n"
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_vba_set", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "set_vba_code",
+                module_name,
+                code,
+                connection_name="test_vba_set",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict), f"Expected dict, got: {result}"
+            assert result.get("success") is True, f"set_vba_code failed: {result}"
+
+            pool.disconnect("test_vba_set")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_get_vba_code_via_wincom(self, temp_db_copy):
+        """get_vba_code returns module code via the MCP tool chain."""
+        import uuid
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        module_name = f"mcpMod{uuid.uuid4().hex[:8]}"
+        code = "Public Sub TestGet()\n    Dim y As Long\nEnd Sub\n"
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_vba_get", temp_db_copy, adapter, "com")
+
+            # First create the module via the adapter directly
+            assert adapter.set_vba_code(module_name, code), "set_vba_code failed"
+
+            # Then read it back via the MCP tool
+            result = call_mcp_tool(
+                "get_vba_code",
+                module_name,
+                connection_name="test_vba_get",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict), f"Expected dict, got: {result}"
+            assert result.get("success") is True, f"get_vba_code failed: {result}"
+            assert "code" in result, f"Missing 'code' key in: {result}"
+            assert "TestGet" in result["code"], (
+                f"Expected 'TestGet' in code, got: {result['code'][:200]}"
+            )
+
+            pool.disconnect("test_vba_get")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_compile_vba_via_wincom(self, temp_db_copy):
+        """compile_vba compiles all modules via the MCP tool chain."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_vba_comp", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "compile_vba",
+                connection_name="test_vba_comp",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict), f"Expected dict, got: {result}"
+            assert result.get("success") is True, f"compile_vba failed: {result}"
+
+            pool.disconnect("test_vba_comp")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_add_vba_procedure_via_wincom(self, temp_db_copy):
+        """add_vba_procedure adds a procedure to a module via the MCP tool chain."""
+        import uuid
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        module_name = f"mcpMod{uuid.uuid4().hex[:8]}"
+        proc_name = "MultiplyByTwo"
+        proc_code = (
+            "Public Function MultiplyByTwo(ByVal n As Long) As Long\n"
+            "    MultiplyByTwo = n * 2\n"
+            "End Function\n"
+        )
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_vba_add", temp_db_copy, adapter, "com")
+
+            # Create module first via adapter
+            assert adapter.set_vba_code(module_name, "Public Sub Init()\nEnd Sub\n")
+
+            # Add procedure via MCP tool
+            result = call_mcp_tool(
+                "add_vba_procedure",
+                module_name,
+                proc_name,
+                proc_code,
+                connection_name="test_vba_add",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict), f"Expected dict, got: {result}"
+            assert result.get("success") is True, f"add_vba_procedure failed: {result}"
+
+            # Verify via adapter
+            code = adapter.get_vba_code(module_name)
+            assert "MultiplyByTwo" in code, f"Expected 'MultiplyByTwo' in module, got: {code[:200]}"
+
+            pool.disconnect("test_vba_add")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_delete_module_via_wincom(self, temp_db_copy):
+        """delete_module removes a module via the MCP tool chain."""
+        import uuid
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        module_name = f"mcpMod{uuid.uuid4().hex[:8]}"
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_vba_del", temp_db_copy, adapter, "com")
+
+            # Create module first via adapter
+            assert adapter.set_vba_code(module_name, "Public Sub ToDelete()\nEnd Sub\n")
+
+            # Verify it exists
+            names = [m.name for m in adapter.get_modules()]
+            assert module_name in names, f"Module should exist before delete: {names}"
+
+            # Delete via MCP tool
+            result = call_mcp_tool(
+                "delete_module",
+                module_name,
+                connection_name="test_vba_del",
+                connection_service=pool,
+            )
+            assert isinstance(result, dict), f"Expected dict, got: {result}"
+            assert result.get("success") is True, f"delete_module failed: {result}"
+
+            # Verify it's gone
+            names_after = [m.name for m in adapter.get_modules()]
+            assert module_name not in names_after, (
+                f"Module should be deleted, still found: {names_after}"
+            )
+
+            pool.disconnect("test_vba_del")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
