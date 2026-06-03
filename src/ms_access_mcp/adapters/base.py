@@ -1,21 +1,25 @@
+"""Abstract adapter interfaces for MS Access operations.
+
+The old God Protocol (AccessAdapter) has been split into focused interfaces:
+- IConnectionManager: minimal lifecycle (connect/disconnect/is_connected)
+- IDataAdapter: data CRUD and query execution
+- ISchemaAdapter: schema introspection and DDL
+- IUiAdapter: COM automation (Access UI operations — WinComAdapter only)
+
+WinComAdapter implements all four interfaces.
+OdbcAdapter implements IDataAdapter + ISchemaAdapter only.
+
+Backward compatibility: AccessAdapter remains a Protocol that defines
+the full surface area of WinComAdapter (the original god interface).
+"""
+
 from typing import Protocol, runtime_checkable, Any
-from ..models.database import (
-    TableInfo,
-    FormInfo,
-    ReportInfo,
-    MacroInfo,
-    ModuleInfo,
-    ControlInfo,
-    RelationshipInfo,
-    QueryInfo,
-    LinkedTableInfo,
-)
-from ..models.migration import TableSchema, UnknownMetadata
+from .interfaces import IDataAdapter, ISchemaAdapter, IUiAdapter
 
 
 @runtime_checkable
 class AccessAdapter(Protocol):
-    """Abstract interface for MS Access operations."""
+    """Abstract interface for MS Access operations — full surface area."""
 
     def connect(self, db_path: str) -> bool: ...
 
@@ -23,7 +27,7 @@ class AccessAdapter(Protocol):
 
     def is_connected(self) -> bool: ...
 
-    def get_tables(self) -> list[TableInfo]: ...
+    def get_tables(self) -> list: ...
 
     def execute_query(self, sql: str, params: list | None = None) -> dict: ...
 
@@ -37,7 +41,7 @@ class AccessAdapter(Protocol):
 
     def export_query_json(self, query_name: str, file_path: str, pretty: bool = False) -> dict: ...
 
-    def get_queries(self) -> list[QueryInfo]: ...
+    def get_queries(self) -> list: ...
 
     def create_query(self, name: str, sql: str) -> dict: ...
 
@@ -55,23 +59,23 @@ class AccessAdapter(Protocol):
 
     def set_vba_code(self, module_name: str, code: str) -> bool: ...
 
-    def get_forms(self) -> list[FormInfo]: ...
+    def get_forms(self) -> list: ...
 
-    def get_reports(self) -> list[ReportInfo]: ...
+    def get_reports(self) -> list: ...
 
-    def get_macros(self) -> list[MacroInfo]: ...
+    def get_macros(self) -> list: ...
 
-    def get_modules(self) -> list[ModuleInfo]: ...
+    def get_modules(self) -> list: ...
 
     def get_vba_code(self, module_name: str) -> str: ...
 
-    def get_system_tables(self) -> list[TableInfo]: ...
+    def get_system_tables(self) -> list: ...
 
     def form_exists(self, form_name: str) -> bool: ...
 
     def report_exists(self, report_name: str) -> bool: ...
 
-    def get_form_controls(self, form_name: str) -> list[ControlInfo]: ...
+    def get_form_controls(self, form_name: str) -> list: ...
 
     def export_form_to_text(self, form_name: str) -> str: ...
 
@@ -99,15 +103,13 @@ class AccessAdapter(Protocol):
 
     def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool: ...
 
-    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
-        """Set multiple properties at once. Returns dict of {property_name: success}."""
+    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]: ...
 
-    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
-        """List event procedures for a specific control in a form."""
+    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]: ...
 
     def get_object_metadata(self, object_name: str) -> dict: ...
 
-    def get_relationships(self) -> list[RelationshipInfo]: ...
+    def get_relationships(self) -> list: ...
 
     def generate_sql(self, output_path: str) -> dict: ...
 
@@ -143,26 +145,19 @@ class AccessAdapter(Protocol):
 
     def copy_database(self, source: str, dest: str) -> bool: ...
 
-    def vba_list_procedures(self, module_name: str) -> list[dict]:
-        """List all procedures in a module with name, type, line info.
+    def vba_list_procedures(self, module_name: str) -> list[dict]: ...
 
-        Returns:
-            List of dicts with keys: name, type ("Sub"|"Function"|"Property"),
-            start_line, line_count
-        """
+    def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict: ...
 
-    def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict:
-        """Get full source code of a specific procedure.
+    def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool: ...
 
-        Returns:
-            dict with keys: name, type, code, signature
-        """
+    def get_table_schema_plan(self) -> tuple: ...
 
-    def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
-        """Replace a procedure's body with new code (preserves signature).
 
-        Returns:
-            True on success, False on failure
-        """
-
-    def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]: ...
+# Re-export the new segregated interfaces for consumers who want ISP compliance
+__all__ = [
+    "AccessAdapter",
+    "IDataAdapter",
+    "ISchemaAdapter",
+    "IUiAdapter",
+]

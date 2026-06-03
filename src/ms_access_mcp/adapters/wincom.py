@@ -58,6 +58,22 @@ class ComDispatcher:
         self._ado_conn: Optional[Any] = None
         self._db_path: Optional[str] = None
 
+    @property
+    def access_app(self) -> Any:
+        return self._access_app
+
+    @property
+    def current_db(self) -> Any:
+        return self._current_db
+
+    @property
+    def ado_conn(self) -> Any:
+        return self._ado_conn
+
+    @property
+    def db_path(self) -> str | None:
+        return self._db_path
+
     def start(self) -> None:
         """Start the STA dispatcher thread (idempotent, reentrant after shutdown)."""
         if self._started:
@@ -340,28 +356,28 @@ class WinComAdapter(AccessAdapter):
         def _do_connect() -> bool:
             import win32com.client
             try:
-                self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
+                self._dispatcher.access_app = win32com.client.Dispatch("Access.Application")
 
-                self._dispatcher._access_app.Visible = False
+                self._dispatcher.access_app.Visible = False
 
                 # Open via DAO FIRST with readwrite so _current_db is writable.
                 # Using Exclusive=False so external file copy (shutil, etc.) can
                 # still access the database without triggering exclusive lock errors.
                 # OpenCurrentDatabase on its own opens in read-only mode for COM automation.
-                dbe = self._dispatcher._access_app.DBEngine
-                self._dispatcher._current_db = dbe.OpenDatabase(db_path, False, False)
+                dbe = self._dispatcher.access_app.DBEngine
+                self._dispatcher.current_db = dbe.OpenDatabase(db_path, False, False)
 
                 # Now OpenCurrentDatabase — the underlying DAO handle is already writable,
                 # so CurrentDb inherits the writable state.
-                self._dispatcher._access_app.OpenCurrentDatabase(db_path, False)
+                self._dispatcher.access_app.OpenCurrentDatabase(db_path, False)
 
                 # Suppress Access dialogs after DB is open (VBA module naming, etc.)
                 try:
-                    self._dispatcher._access_app.DoCmd.SetWarnings(False)
+                    self._dispatcher.access_app.DoCmd.SetWarnings(False)
                 except Exception:
                     pass
 
-                self._dispatcher._ado_conn = self._dispatcher._access_app.CurrentProject.Connection
+                self._dispatcher.ado_conn = self._dispatcher.access_app.CurrentProject.Connection
 
                 # Dismiss any Access dialog that appeared after OpenCurrentDatabase
                 # (VBA module naming prompts, compile errors, etc.) — must be called
@@ -407,7 +423,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[TableInfo]:
             tables: list[TableInfo] = []
             try:
-                db = self._dispatcher._access_app.DBEngine.OpenDatabase(self._dispatcher._db_path)
+                db = self._dispatcher.access_app.DBEngine.OpenDatabase(self._dispatcher.db_path)
                 for i in range(db.TableDefs.Count):
                     tdef = db.TableDefs(i)
                     if tdef.Name.startswith("MSys") or tdef.Name.startswith("~"):
@@ -529,7 +545,7 @@ class WinComAdapter(AccessAdapter):
         on which project is active/focused and may return None.
         """
         try:
-            vbe = self._dispatcher._access_app.VBE
+            vbe = self._dispatcher.access_app.VBE
             # VBProjects is 1-based COM collection
             for i in range(1, vbe.VBProjects.Count + 1):
                 return vbe.VBProjects(i)
@@ -547,7 +563,7 @@ class WinComAdapter(AccessAdapter):
         try:
             fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_exp_")
             os.close(fd)
-            self._dispatcher._access_app.SaveAsText(object_type, object_name, temp_path)
+            self._dispatcher.access_app.SaveAsText(object_type, object_name, temp_path)
             with open(temp_path, "rb") as f:
                 raw = f.read()
             # SaveAsText outputs UTF-16-LE with BOM; decode accordingly
@@ -588,7 +604,7 @@ class WinComAdapter(AccessAdapter):
                 with open(temp_path, "wb") as f:
                     f.write(b"\xff\xfe")
                     f.write(text_data.encode("utf-16-le"))
-            self._dispatcher._access_app.LoadFromText(object_type, object_name, temp_path)
+            self._dispatcher.access_app.LoadFromText(object_type, object_name, temp_path)
             return True
         except Exception:
             return False
@@ -627,7 +643,7 @@ class WinComAdapter(AccessAdapter):
             results: list[dict] = []
             columns: list[str] = []
             try:
-                rs = self._dispatcher._current_db.OpenRecordset(sql)
+                rs = self._dispatcher.current_db.OpenRecordset(sql)
                 if not rs.EOF:
                     rs.MoveFirst()
                     # Collect column names first
@@ -667,7 +683,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 for row in data:
                     cols = ", ".join(f"[{c}]" for c in row.keys())
                     vals = ", ".join(self._format_dao_value(v) for v in row.values())
@@ -695,7 +711,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
 
                 # Build SET clause with inline-formatted values (DAO doesn't support ? params)
                 set_parts = []
@@ -736,7 +752,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 sql = f"DELETE FROM [{table_name}]"
 
                 if where_dict is not None:
@@ -768,7 +784,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[QueryInfo]:
             queries: list[QueryInfo] = []
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 for i in range(db.QueryDefs.Count):
                     qdef = db.QueryDefs(i)
                     if qdef.Name.startswith("~"):
@@ -807,7 +823,7 @@ class WinComAdapter(AccessAdapter):
             try:
                 # CreateQueryDef with a non-empty name auto-appends to QueryDefs collection.
                 # Explicit Append is not needed and causes "Invalid operation" on writeable DAO.
-                self._dispatcher._current_db.CreateQueryDef(name, sql)
+                self._dispatcher.current_db.CreateQueryDef(name, sql)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -821,7 +837,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                qdef = self._dispatcher._current_db.QueryDefs(name)
+                qdef = self._dispatcher.current_db.QueryDefs(name)
                 qdef.sql = sql
                 return {"success": True}
             except Exception as e:
@@ -836,7 +852,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                self._dispatcher._current_db.QueryDefs.Delete(name)
+                self._dispatcher.current_db.QueryDefs.Delete(name)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -874,7 +890,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 tdef = db.CreateTableDef(table_name)
 
                 for col in columns:
@@ -906,7 +922,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                self._dispatcher._current_db.TableDefs.Delete(table_name)
+                self._dispatcher.current_db.TableDefs.Delete(table_name)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -919,10 +935,10 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> None:
             import win32com.client
-            if self._dispatcher._access_app is None:
-                self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
+            if self._dispatcher.access_app is None:
+                self._dispatcher.access_app = win32com.client.Dispatch("Access.Application")
             try:
-                self._dispatcher._access_app.Visible = visible
+                self._dispatcher.access_app.Visible = visible
             except AttributeError:
                 # Some Access versions/configs don't allow setting Visible
                 # via COM dispatch. Not critical — Access opens regardless.
@@ -938,8 +954,8 @@ class WinComAdapter(AccessAdapter):
         Saves VBA modules before quitting to prevent loss of in-memory changes.
         """
         def _do() -> None:
-            if self._dispatcher._access_app is not None:
-                app = self._dispatcher._access_app
+            if self._dispatcher.access_app is not None:
+                app = self._dispatcher.access_app
                 # Modules created via LoadFromText are auto-saved by Access.
                 # Named standard modules don't need pre-save here; changes are
                 # persisted on quit or remain in-memory as designed.
@@ -1007,7 +1023,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[FormInfo]:
             forms: list[FormInfo] = []
             try:
-                all_forms = self._dispatcher._access_app.CurrentProject.AllForms
+                all_forms = self._dispatcher.access_app.CurrentProject.AllForms
                 for i in range(all_forms.Count):
                     form_obj = all_forms(i)
                     try:
@@ -1032,7 +1048,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> bool:
             try:
-                all_forms = self._dispatcher._access_app.CurrentProject.AllForms
+                all_forms = self._dispatcher.access_app.CurrentProject.AllForms
                 for i in range(all_forms.Count):
                     if all_forms(i).Name == form_name:
                         return True
@@ -1052,15 +1068,15 @@ class WinComAdapter(AccessAdapter):
             opened = False
             try:
                 # Open in design view (acDesign). Numeric value 1 avoids triggering events.
-                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
                 opened = True
 
                 # Get the form via Screen.ActiveForm (most reliable after OpenForm).
                 # Fallback: try the Forms collection.
                 try:
-                    form = self._dispatcher._access_app.Screen.ActiveForm
+                    form = self._dispatcher.access_app.Screen.ActiveForm
                 except Exception:
-                    form = self._dispatcher._access_app.Forms(form_name)
+                    form = self._dispatcher.access_app.Forms(form_name)
 
                 if form is not None:
                     for i in range(form.Controls.Count):
@@ -1094,7 +1110,7 @@ class WinComAdapter(AccessAdapter):
                 if opened:
                     try:
                         # Close form without saving (acForm=2, acSaveNo=2)
-                        self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)
                     except Exception:
                         pass
             return controls
@@ -1128,7 +1144,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> bool:
             try:
-                self._dispatcher._access_app.DoCmd.OpenForm(form_name)
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name)
                 return True
             except Exception:
                 return False
@@ -1142,7 +1158,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> bool:
             try:
-                self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)  # acForm=2, acSaveNo=2
+                self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acForm=2, acSaveNo=2
                 return True
             except Exception:
                 return False
@@ -1157,13 +1173,13 @@ class WinComAdapter(AccessAdapter):
         def _do() -> dict:
             opened = False
             try:
-                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
                 opened = True
 
                 try:
-                    form = self._dispatcher._access_app.Screen.ActiveForm
+                    form = self._dispatcher.access_app.Screen.ActiveForm
                 except Exception:
-                    form = self._dispatcher._access_app.Forms(form_name)
+                    form = self._dispatcher.access_app.Forms(form_name)
 
                 if form is not None:
                     for i in range(form.Controls.Count):
@@ -1185,7 +1201,7 @@ class WinComAdapter(AccessAdapter):
             finally:
                 if opened:
                     try:
-                        self._dispatcher._access_app.DoCmd.Close(2, form_name, 2)
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)
                     except Exception:
                         pass
 
@@ -1206,13 +1222,13 @@ class WinComAdapter(AccessAdapter):
                 try:
                     opened = False
                     try:
-                        self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                        self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
                         opened = True
 
                         try:
-                            form = self._dispatcher._access_app.Screen.ActiveForm
+                            form = self._dispatcher.access_app.Screen.ActiveForm
                         except Exception:
-                            form = self._dispatcher._access_app.Forms(form_name)
+                            form = self._dispatcher.access_app.Forms(form_name)
 
                         success = False
                         if form is not None:
@@ -1230,7 +1246,7 @@ class WinComAdapter(AccessAdapter):
                     finally:
                         if opened:
                             try:
-                                self._dispatcher._access_app.DoCmd.Close(2, form_name, 1)
+                                self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)
                             except Exception:
                                 pass
                     results[prop_name] = success
@@ -1348,13 +1364,13 @@ class WinComAdapter(AccessAdapter):
         def _do() -> bool:
             opened = False
             try:
-                self._dispatcher._access_app.DoCmd.OpenForm(form_name, 1)
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
                 opened = True
 
                 try:
-                    form = self._dispatcher._access_app.Screen.ActiveForm
+                    form = self._dispatcher.access_app.Screen.ActiveForm
                 except Exception:
-                    form = self._dispatcher._access_app.Forms(form_name)
+                    form = self._dispatcher.access_app.Forms(form_name)
 
                 if form is not None:
                     for i in range(form.Controls.Count):
@@ -1371,7 +1387,7 @@ class WinComAdapter(AccessAdapter):
             finally:
                 if opened:
                     try:
-                        self._dispatcher._access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes
                     except Exception:
                         pass
 
@@ -1384,7 +1400,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> bool:
             try:
-                self._dispatcher._access_app.DoCmd.DeleteObject(2, form_name)
+                self._dispatcher.access_app.DoCmd.DeleteObject(2, form_name)
                 return True
             except Exception:
                 return False
@@ -1403,7 +1419,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[ReportInfo]:
             reports: list[ReportInfo] = []
             try:
-                all_reports = self._dispatcher._access_app.CurrentProject.AllReports
+                all_reports = self._dispatcher.access_app.CurrentProject.AllReports
                 for i in range(all_reports.Count):
                     report_obj = all_reports(i)
                     try:
@@ -1448,7 +1464,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> bool:
             try:
-                all_reports = self._dispatcher._access_app.CurrentProject.AllReports
+                all_reports = self._dispatcher.access_app.CurrentProject.AllReports
                 for i in range(all_reports.Count):
                     if all_reports(i).Name == report_name:
                         return True
@@ -1465,7 +1481,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> bool:
             try:
-                self._dispatcher._access_app.DoCmd.DeleteObject(4, report_name)
+                self._dispatcher.access_app.DoCmd.DeleteObject(4, report_name)
                 return True
             except Exception:
                 return False
@@ -1484,7 +1500,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[MacroInfo]:
             macros: list[MacroInfo] = []
             try:
-                all_macros = self._dispatcher._access_app.CurrentProject.AllMacros
+                all_macros = self._dispatcher.access_app.CurrentProject.AllMacros
                 for i in range(all_macros.Count):
                     macro_obj = all_macros(i)
                     try:
@@ -1640,7 +1656,7 @@ class WinComAdapter(AccessAdapter):
             vb_project = self._get_vb_project()
             if vb_project is None:
                 return {"success": False, "error": "No VBA project"}
-            app = self._dispatcher._access_app
+            app = self._dispatcher.access_app
             saved = 0
             errors = []
             try:
@@ -1685,7 +1701,7 @@ class WinComAdapter(AccessAdapter):
             vb_project = self._get_vb_project()
             if vb_project is None:
                 return {"success": False, "error": "No VBA project"}
-            app = self._dispatcher._access_app
+            app = self._dispatcher.access_app
 
             # Save all modules first so compilation doesn't trigger "Save As" dialog
             for comp in vb_project.VBComponents:
@@ -1923,7 +1939,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[TableInfo]:
             tables: list[TableInfo] = []
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 for i in range(db.TableDefs.Count):
                     tdef = db.TableDefs(i)
                     if tdef.Name.startswith("MSys"):
@@ -1956,7 +1972,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> dict[str, list[str]]:
             indexes: dict[str, list[str]] = {}
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 tdef = db.TableDefs(table_name)
                 for idx in tdef.Indexes:
                     if idx.Primary:
@@ -1975,7 +1991,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[dict]:
             fields: list[dict] = []
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 tdef = db.TableDefs(table_name)
                 for fld in tdef.Fields:
                     default = None
@@ -2005,7 +2021,7 @@ class WinComAdapter(AccessAdapter):
             from ..models.database import ForeignKeyInfo
             fks: list[ForeignKeyInfo] = []
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 for rel in db.Relations:
                     if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
                         continue
@@ -2035,7 +2051,7 @@ class WinComAdapter(AccessAdapter):
             unknown = UnknownMetadata()
 
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
 
                 relationships_by_table: dict[str, list[ForeignKeySchema]] = {}
                 try:
@@ -2148,7 +2164,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> list[RelationshipInfo]:
             relationships: list[RelationshipInfo] = []
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 for i in range(db.Relations.Count):
                     rel = db.Relations(i)
                     if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
@@ -2181,8 +2197,8 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                db = self._dispatcher._current_db
-                access_app = self._dispatcher._access_app
+                db = self._dispatcher.current_db
+                access_app = self._dispatcher.access_app
 
                 # 1. Read tables directly from DAO (avoid nested dispatch deadlock).
                 #    get_tables() internally dispatches, so we replicate the logic
@@ -2368,7 +2384,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> dict:
             for collection_name in ["AllForms", "AllReports", "AllMacros"]:
                 try:
-                    collection = getattr(self._dispatcher._access_app.CurrentProject, collection_name)
+                    collection = getattr(self._dispatcher.access_app.CurrentProject, collection_name)
                     for i in range(collection.Count):
                         obj = collection(i)
                         if obj.Name == object_name:
@@ -2403,7 +2419,7 @@ class WinComAdapter(AccessAdapter):
         def _do() -> dict:
             linked_tables: list[dict] = []
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 for i in range(db.TableDefs.Count):
                     tdef = db.TableDefs(i)
                     if tdef.Attributes & 0x80000000:
@@ -2444,7 +2460,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                db = self._dispatcher._current_db
+                db = self._dispatcher.current_db
                 tdef = db.CreateTableDef(name)
                 tdef.SourceTableName = source_table
                 tdef.Connect = connect_string
@@ -2470,7 +2486,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                tdef = self._dispatcher._current_db.TableDefs(name)
+                tdef = self._dispatcher.current_db.TableDefs(name)
                 tdef.RefreshLink()
                 return {"success": True}
             except Exception as e:
@@ -2492,7 +2508,7 @@ class WinComAdapter(AccessAdapter):
 
         def _do() -> dict:
             try:
-                self._dispatcher._current_db.TableDefs.Delete(name)
+                self._dispatcher.current_db.TableDefs.Delete(name)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -2534,7 +2550,7 @@ class WinComAdapter(AccessAdapter):
                             os.unlink(backup_path)
                         shutil.copy2(source_path, backup_path)
 
-                    dbe = self._dispatcher._access_app.DBEngine
+                    dbe = self._dispatcher.access_app.DBEngine
                     dbe.CompactDatabase(source_path, dest_path)
                     compacted_size = os.path.getsize(dest_path)
 
@@ -2556,7 +2572,7 @@ class WinComAdapter(AccessAdapter):
                                 os.unlink(backup_path)
                             shutil.copy2(source_path, backup_path)
 
-                        dbe = self._dispatcher._access_app.DBEngine
+                        dbe = self._dispatcher.access_app.DBEngine
                         dbe.CompactDatabase(source_path, temp_path)
                         os.replace(temp_path, source_path)
                         repaired_size = os.path.getsize(source_path)
@@ -2780,7 +2796,7 @@ class WinComAdapter(AccessAdapter):
             try:
                 fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_exp_")
                 os.close(fd)
-                self._dispatcher._access_app.SaveAsText(object_type, name, temp_path)
+                self._dispatcher.access_app.SaveAsText(object_type, name, temp_path)
                 with open(temp_path, "rb") as f:
                     raw = f.read()
                 content = raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
@@ -3334,7 +3350,7 @@ class WinComAdapter(AccessAdapter):
                     "access_error_message": None,
                 }
 
-            db = self._dispatcher._current_db
+            db = self._dispatcher.current_db
             executed = 0
             for entry in parse["statements"]:
                 try:
