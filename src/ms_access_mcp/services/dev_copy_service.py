@@ -6,7 +6,6 @@ Handles:
 - DB copy operations (create/discard/deploy dev copies)
 """
 import hashlib
-import json
 import os
 import shutil
 import tempfile
@@ -16,6 +15,7 @@ from typing import Callable, Protocol, Optional
 
 from ..adapters.base import AccessAdapter
 from .connection import ConnectionService
+from .manifest_repository import ManifestRepository
 
 
 class DevCopyService:
@@ -30,11 +30,12 @@ class DevCopyService:
 
     def __init__(self) -> None:
         self._backup_base = self.DEFAULT_BACKUP_BASE
+        self._manifest = ManifestRepository()
         # Ensure base directory exists
         os.makedirs(self._backup_base, exist_ok=True)
 
     # ========================================================================
-    # Manifest CRUD
+    # Manifest CRUD — delegated to ManifestRepository
     # ========================================================================
 
     def _manifest_path(self, db_path: str) -> str:
@@ -42,8 +43,7 @@ class DevCopyService:
 
         Uses short md5 hash for readability.
         """
-        short_hash = hashlib.md5(db_path.encode()).hexdigest()[:8]
-        return os.path.join(self._backup_base, "ms_access_dev", f"{short_hash}.json")
+        return self._manifest._manifest_path(db_path)
 
     def save_manifest(self, db_path: str, manifest: dict) -> bool:
         """Write manifest JSON to {backup_base}/ms_access_dev/{hash}.json.
@@ -56,15 +56,7 @@ class DevCopyService:
         Returns:
             True on success, False on failure
         """
-        try:
-            manifest_dir = os.path.join(self._backup_base, "ms_access_dev")
-            os.makedirs(manifest_dir, exist_ok=True)
-            path = self._manifest_path(db_path)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(manifest, f, indent=2)
-            return True
-        except Exception:
-            return False
+        return self._manifest.save_manifest(db_path, manifest)
 
     def load_manifest(self, db_path: str) -> Optional[dict]:
         """Load manifest from {backup_base}/ms_access_dev/{hash}.json.
@@ -75,14 +67,7 @@ class DevCopyService:
         Returns:
             Manifest dict or None if not found
         """
-        try:
-            path = self._manifest_path(db_path)
-            if not os.path.exists(path):
-                return None
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return None
+        return self._manifest.load_manifest(db_path)
 
     def delete_manifest(self, db_path: str) -> bool:
         """Delete manifest file.
@@ -93,14 +78,7 @@ class DevCopyService:
         Returns:
             True if deleted, False if not found or error
         """
-        try:
-            path = self._manifest_path(db_path)
-            if os.path.exists(path):
-                os.unlink(path)
-                return True
-            return False
-        except Exception:
-            return False
+        return self._manifest.delete_manifest(db_path)
 
     # ========================================================================
     # Backup Directory

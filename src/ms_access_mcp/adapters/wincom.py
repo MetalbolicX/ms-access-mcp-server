@@ -1,19 +1,14 @@
 import os
 import shutil
-import subprocess
 import sys
-import queue
-import tempfile
-import threading
-import concurrent.futures
-import hashlib
 from datetime import datetime
 from typing import Optional, Callable, Any
 from ..config import ServerConfig
 from .base import AccessAdapter
-
-# DAO DBEngine.Execute option flags
-DAO_DB_FAIL_ON_ERROR = 128  # dbFailOnError — raises exception if record operation fails
+from .com_dispatcher import ComDispatcher, DAO_DB_FAIL_ON_ERROR
+from .vba_operations import VbaOperations
+from .ui_operations import UiOperations
+from .versioning_io import VersioningIo
 from ..models.database import (
     TableInfo,
     FormInfo,
@@ -36,294 +31,6 @@ from ..models.migration import (
 )
 
 
-class ComDispatcher:
-    """Owns a dedicated STA thread for all COM operations.
-
-    WinCOM objects have apartment affinity — they must be created and used on the same thread.
-    This dispatcher serializes all COM calls through a single STA thread so that
-    any async worker can drive the adapter without thread-affinity errors.
-    """
-
-    DISPATCH_TIMEOUT = 120.0  # seconds (cold Access start + large DB open can take 60s+)
-
-    def __init__(self) -> None:
-        self._call_queue: queue.Queue[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any], concurrent.futures.Future[Any]]] = queue.Queue()
-        self._thread: Optional[threading.Thread] = None
-        self._started = False
-        self._stopping = False
-
-        # COM objects — owned by the STA thread only
-        self._access_app: Optional[Any] = None
-        self._current_db: Optional[Any] = None
-        self._ado_conn: Optional[Any] = None
-        self._db_path: Optional[str] = None
-
-    @property
-    def access_app(self) -> Any:
-        return self._access_app
-
-    @property
-    def current_db(self) -> Any:
-        return self._current_db
-
-    @property
-    def ado_conn(self) -> Any:
-        return self._ado_conn
-
-    @property
-    def db_path(self) -> str | None:
-        return self._db_path
-
-    def start(self) -> None:
-        """Start the STA dispatcher thread (idempotent, reentrant after shutdown)."""
-        if self._started:
-            return
-        self._stopping = False  # Reset in case start() is called after shutdown()
-        self._thread = threading.Thread(target=self._run, name="ComDispatcher-STA", daemon=True)
-        self._thread.start()
-        self._started = True
-
-    def call(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
-        """Execute fn(*args, **kwargs) on the STA thread. Returns the result.
-
-        Raises TimeoutError if the call takes longer than DISPATCH_TIMEOUT seconds.
-        Raises whatever exception fn raises.
-        """
-        if not self._started or self._thread is None:
-            raise RuntimeError("ComDispatcher has not been started")
-
-        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
-        self._call_queue.put((fn, args, kwargs, future))
-        return future.result(timeout=self.DISPATCH_TIMEOUT)
-
-    def is_connected(self) -> bool:
-        """Check if the dispatcher has an active Access.Application connection."""
-        return self._access_app is not None and self._current_db is not None
-
-    def set_db_path(self, db_path: str) -> None:
-        """Set the database path (called by adapter.connect before opening)."""
-        self._db_path = db_path
-
-    def shutdown(self) -> None:
-        """Signal the dispatcher thread to stop and clean up COM objects."""
-        self._stopping = True
-        # Put a sentinel to wake the thread
-        self._call_queue.put((lambda: None, (), {}, concurrent.futures.Future()))
-        if self._thread is not None:
-            self._thread.join(timeout=15.0)
-        # Ensure release even if thread already dead
-        self._access_app = None
-        self._current_db = None
-        self._ado_conn = None
-        self._db_path = None
-        self._started = False
-
-    # -------------------------------------------------------------------------
-    # Internal: runs on the STA thread
-    # -------------------------------------------------------------------------
-
-    def _run(self) -> None:
-        """STA thread main loop. Initializes COM and processes call queue."""
-        # Import here so non-Windows platforms never hit this code path
-        import pythoncom
-        import win32com.client
-
-        pythoncom.CoInitialize()
-
-        try:
-            while not self._stopping:
-                try:
-                    fn, args, kwargs, future = self._call_queue.get(timeout=1.0)
-                except queue.Empty:
-                    continue
-
-                if self._stopping:
-                    break
-
-                try:
-                    result = fn(*args, **kwargs)
-                    future.set_result(result)
-                except Exception as e:
-                    future.set_exception(e)
-        finally:
-            # Clean up COM on the same thread
-            self._release_com_safe()
-            pythoncom.CoUninitialize()
-
-    def _release_com_safe(self) -> None:
-        """Release all COM objects in order: ADO -> DAO -> Access Application.
-
-        Uses a watchdog thread to avoid hanging on Access.Quit().
-        Falls back to taskkill /F if graceful shutdown fails on Windows.
-        """
-        errors: list[str] = []
-
-        # 1. Close ADO connection explicitly
-        if self._ado_conn is not None:
-            try:
-                self._ado_conn.Close()
-            except Exception as e:
-                errors.append(f"ADO Close: {e}")
-            self._ado_conn = None
-
-        # 2. Close DAO database explicitly
-        if self._current_db is not None:
-            try:
-                self._current_db.Close()
-            except Exception as e:
-                errors.append(f"DAO Close: {e}")
-            self._current_db = None
-
-        # 3. Close and quit Access Application via COM
-        if self._access_app is not None:
-            try:
-                self._access_app.CloseCurrentDatabase()
-            except Exception as e:
-                errors.append(f"CloseCurrentDatabase: {e}")
-
-            # 4. Quit() with 5s watchdog
-            app = self._access_app
-            quit_ok = False
-            try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    fut = pool.submit(lambda: app.Quit())
-                    fut.result(timeout=5.0)
-                    quit_ok = True
-            except concurrent.futures.TimeoutError:
-                errors.append("Access.Quit() timed out after 5s")
-            except Exception as e:
-                errors.append(f"Access.Quit(): {e}")
-
-            self._access_app = None
-
-            # 5. Force-kill fallback (Windows only)
-            if not quit_ok and sys.platform == 'win32':
-                try:
-                    subprocess.run(
-                        ["taskkill", "/F", "/IM", "MSACCESS.EXE"],
-                        capture_output=True, text=True, timeout=10
-                    )
-                except Exception as e:
-                    errors.append(f"taskkill: {e}")
-
-        if errors:
-            print(f"[ComDispatcher] Cleanup completed with {len(errors)} warning(s): {'; '.join(errors)}")
-
-    @staticmethod
-    def _dismiss_access_dialogs() -> None:
-        """Dismiss modal dialogs shown by Microsoft Access.
-
-        Uses Win32 API to find and close dialog windows (#32770 class) that
-        belong to the MSACCESS.EXE process(es). Called after OpenCurrentDatabase
-        to silence VBA module naming prompts and similar modal dialogs.
-
-        Runs inline on the STA thread via _do_connect; the STA thread has a
-        message pump so SendMessage/PostMessage calls are dispatched correctly.
-        """
-        try:
-            import win32con
-            import win32gui
-            import win32process
-
-            # Collect Access process PIDs by scanning all windows for OMain.
-            # When Visible=False the main Access window may be invisible/minimized
-            # so IsWindowVisible can't be used as a reliable filter.
-            access_pids: set[int] = set()
-
-            def collect_access_pids(hwnd: int, _: object) -> None:
-                cls = win32gui.GetClassName(hwnd)
-                title = win32gui.GetWindowText(hwnd)
-                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                # OMain = main Access window class (present for every Access instance)
-                if cls == "OMain" and title and "Access" in title:
-                    access_pids.add(pid)
-
-            win32gui.EnumWindows(collect_access_pids, None)
-
-            # If we found Access PIDs, scope the dialog close to those.
-            # If not (e.g. Visible=False makes OMain unfindable), close ALL #32770
-            # dialogs — this is safe in a test context where no human is using Access.
-            close_all_dialogs = not access_pids
-
-            def dismiss_dialogs(hwnd: int, _: object) -> None:
-                from ctypes import windll
-                import ctypes
-                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                cls = win32gui.GetClassName(hwnd)
-                if cls != "#32770":
-                    return
-                # Close #32770 dialogs.  When Visible=False the OMain window may
-                # be invisible so we use the close_all_dialogs fallback to ensure
-                # any Access-related dialog (module naming, Save As, etc.) is
-                # closed regardless of which Access PID it belongs to.
-                # In a test context no human is using Access so closing other apps'
-                # dialogs is safe (close_all_dialogs=False would only close dialogs
-                # from the current Access instance — but the module naming dialog
-                # comes from a different PID if the VBA project has unsaved changes).
-                #
-                # Try multiple approaches:
-                # 1. WM_COMMAND(IDOK=1) — closes Access module naming dialogs
-                # 2. WM_COMMAND(IDCANCEL=2) — closes other modal dialogs
-                # 3. WM_CLOSE via SendMessageTimeoutW
-                # 4. WM_SYSCOMMAND SC_CLOSE
-                try:
-                    windll.user32.SendMessageTimeoutW(
-                        hwnd,
-                        win32con.WM_COMMAND,
-                        1, 0,  # IDOK
-                        win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
-                        500,
-                        ctypes.byref(ctypes.c_ulong())
-                    )
-                except Exception:
-                    pass
-                try:
-                    windll.user32.SendMessageTimeoutW(
-                        hwnd,
-                        win32con.WM_COMMAND,
-                        2, 0,  # IDCANCEL
-                        win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
-                        500,
-                        ctypes.byref(ctypes.c_ulong())
-                    )
-                except Exception:
-                    pass
-                try:
-                    windll.user32.SendMessageTimeoutW(
-                        hwnd,
-                        win32con.WM_CLOSE,
-                        0, 0,
-                        win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
-                        500,
-                        ctypes.byref(ctypes.c_ulong())
-                    )
-                except Exception:
-                    pass
-                try:
-                    win32gui.PostMessage(
-                        hwnd, win32con.WM_SYSCOMMAND,
-                        win32con.SC_CLOSE, 0
-                    )
-                except Exception:
-                    pass
-
-            # Run four times with short delays — Access might re-show the dialog
-            # after the first close during ongoing VBA compilation.
-            for _ in range(4):
-                win32gui.EnumWindows(dismiss_dialogs, None)
-                import time
-                time.sleep(0.25)
-
-        except ImportError:
-            pass  # Not on Windows or win32gui not available
-        except Exception:
-            pass  # Best-effort only
-
-    def _cleanup_com(self) -> None:
-        """Legacy wrapper — delegates to _release_com_safe()."""
-        self._release_com_safe()
-
-
 class WinComAdapter(AccessAdapter):
     """COM-based adapter using pywin32 for full Access automation.
 
@@ -334,6 +41,18 @@ class WinComAdapter(AccessAdapter):
 
     def __init__(self) -> None:
         self._dispatcher = ComDispatcher()
+        self._vba = VbaOperations(self._dispatcher)
+        self._ui = UiOperations(self._dispatcher)
+        self._versioning = VersioningIo(
+            dispatcher=self._dispatcher,
+            save_text=self._ui._save_object_to_text,
+            load_text=self._ui._load_object_from_text,
+            get_tables_fn=self.get_tables,
+            get_relationships_fn=self.get_relationships,
+            get_system_tables_fn=self.get_system_tables,
+        )
+        # Wire VbaOperations to UiOperations for shared _load_object_from_text (acModule=5 path)
+        self._vba.set_load_text(self._ui._load_object_from_text)
         # State mirrors what dispatcher holds for query purposes
         self._db_path: Optional[str] = None
         self._ado_conn: Optional[Any] = None
@@ -538,82 +257,164 @@ class WinComAdapter(AccessAdapter):
         return type_map.get(ctrl_type, f"Control({ctrl_type})")
 
     def _get_vb_project(self):
-        """Get the first VBA project via VBProjects enumeration.
+        return self._vba._get_vb_project()
 
-        COM VBProjects collection uses 1-based indexing.
-        More reliable than ActiveVBProject in COM automation, which depends
-        on which project is active/focused and may return None.
-        """
-        try:
-            vbe = self._dispatcher.access_app.VBE
-            # VBProjects is 1-based COM collection
-            for i in range(1, vbe.VBProjects.Count + 1):
-                return vbe.VBProjects(i)
-        except Exception:
-            pass
-        return None
+    # Delegated to VersioningIo
+    def export_module_to_text(self, module_name: str) -> str:
+        return self._versioning.export_module_to_text(module_name)
 
-    def _save_object_to_text(self, object_type: int, object_name: str) -> str:
-        """Export an Access object to text using SaveAsText.
+    def export_macro_to_text(self, macro_name: str) -> str:
+        return self._versioning.export_macro_to_text(macro_name)
 
-        Returns the text content or empty string on failure.
-        object_type: acForm=2, acReport=4, acModule=5, acMacro=8
-        """
-        temp_path = None
-        try:
-            fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_exp_")
-            os.close(fd)
-            self._dispatcher.access_app.SaveAsText(object_type, object_name, temp_path)
-            with open(temp_path, "rb") as f:
-                raw = f.read()
-            # SaveAsText outputs UTF-16-LE with BOM; decode accordingly
-            content = raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
-            return content
-        except Exception:
-            return ""
-        finally:
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except Exception:
-                    pass
+    def import_macro_from_text(self, macro_name: str, macro_data: str) -> bool:
+        return self._versioning.import_macro_from_text(macro_name, macro_data)
 
-    def _load_object_from_text(self, object_type: int, object_name: str, text_data: str) -> bool:
-        """Import an Access object from text data using LoadFromText.
+    def export_all_versioning(self, output_dir: str, *, dedup: bool = True, module_ext: str = ".bas") -> dict:
+        return self._versioning.export_all_versioning(
+            output_dir,
+            dedup=dedup,
+            module_ext=module_ext,
+            get_forms_fn=self.get_forms,
+            get_reports_fn=self.get_reports,
+            get_modules_fn=self.get_modules,
+            get_macros_fn=self.get_macros,
+            get_queries_fn=self.get_queries,
+            export_form_to_text_fn=self._ui.export_form_to_text,
+            export_report_to_text_fn=self._ui.export_report_to_text,
+        )
 
-        object_type: acForm=2, acReport=4, acModule=5, acMacro=8
+    def export_query_to_text(self, query_name: str) -> str:
+        return self._versioning.export_query_to_text(query_name)
 
-        Encoding: VBA modules (acModule=5) expect the system ANSI codepage
-        without BOM. Forms, reports, queries, and macros expect UTF-16-LE
-        with BOM. Using the wrong encoding causes Access to store
-        garbage (BOM chars as literal code) and corrupts the module.
-        """
-        temp_path = None
-        try:
-            fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_imp_")
-            os.close(fd)
-            # VBA modules (.bas) use system ANSI codepage — no BOM.
-            # Everything else (forms, reports, macros, queries) uses
-            # UTF-16-LE with BOM.
-            if object_type == 5:  # acModule
-                import locale
-                enc = locale.getpreferredencoding(False) or "cp1252"
-                with open(temp_path, "w", encoding=enc, errors="replace") as f:
-                    f.write(text_data)
-            else:
-                with open(temp_path, "wb") as f:
-                    f.write(b"\xff\xfe")
-                    f.write(text_data.encode("utf-16-le"))
-            self._dispatcher.access_app.LoadFromText(object_type, object_name, temp_path)
-            return True
-        except Exception:
-            return False
-        finally:
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except Exception:
-                    pass
+    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
+        return self._versioning.import_query_from_text(query_name, query_data)
+
+    def compare_versioning(self, export_dir: str) -> dict:
+        return self._versioning.compare_versioning(
+            export_dir,
+            get_forms_fn=self.get_forms,
+            get_reports_fn=self.get_reports,
+            get_modules_fn=self.get_modules,
+            get_macros_fn=self.get_macros,
+            get_queries_fn=self.get_queries,
+            export_form_to_text_fn=self._ui.export_form_to_text,
+            export_report_to_text_fn=self._ui.export_report_to_text,
+            export_macro_to_text_fn=self.export_macro_to_text,
+            export_query_to_text_fn=self.export_query_to_text,
+            export_module_to_text_fn=self.export_module_to_text,
+        )
+
+    def import_all_versioning(self, input_dir: str) -> dict:
+        return self._versioning.import_all_versioning(
+            input_dir,
+            get_modules_fn=self.get_modules,
+            set_vba_code_fn=self.set_vba_code,
+            compile_vba_fn=self.compile_vba,
+            import_form_from_text_fn=self._ui.import_form_from_text,
+            import_report_from_text_fn=self._ui.import_report_from_text,
+            import_macro_from_text_fn=self.import_macro_from_text,
+            import_query_from_text_fn=self.import_query_from_text,
+        )
+
+    def export_schema_ddl(self, output_dir: str) -> dict:
+        return self._versioning.export_schema_ddl(output_dir)
+
+    # Delegated to VbaOperations
+
+    # ========================================================================
+    # FORM OPERATIONS
+    # ========================================================================
+
+    def get_forms(self) -> list[FormInfo]:
+        return self._ui.get_forms()
+
+    def form_exists(self, form_name: str) -> bool:
+        return self._ui.form_exists(form_name)
+
+    def get_form_controls(self, form_name: str) -> list[ControlInfo]:
+        return self._ui.get_form_controls(form_name)
+
+    def open_form(self, form_name: str) -> bool:
+        return self._ui.open_form(form_name)
+
+    def close_form(self, form_name: str) -> bool:
+        return self._ui.close_form(form_name)
+
+    def delete_form(self, form_name: str) -> bool:
+        return self._ui.delete_form(form_name)
+
+    def export_form_to_text(self, form_name: str) -> str:
+        return self._ui.export_form_to_text(form_name)
+
+    def import_form_from_text(self, form_name: str, form_data: str) -> bool:
+        return self._ui.import_form_from_text(form_name, form_data)
+
+    # ========================================================================
+    # CONTROL OPERATIONS
+    # ========================================================================
+
+    def get_control_properties(self, form_name: str, control_name: str) -> dict:
+        return self._ui.get_control_properties(form_name, control_name)
+
+    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
+        return self._ui.set_control_property(form_name, control_name, property_name, value)
+
+    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        return self._ui.set_control_properties(form_name, control_name, properties)
+
+    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
+        return self._ui.get_control_event_procedures(form_name, control_name)
+
+    # ========================================================================
+    # REPORT OPERATIONS
+    # ========================================================================
+
+    def get_reports(self) -> list[ReportInfo]:
+        return self._ui.get_reports()
+
+    def report_exists(self, report_name: str) -> bool:
+        return self._ui.report_exists(report_name)
+
+    def delete_report(self, report_name: str) -> bool:
+        return self._ui.delete_report(report_name)
+
+    def export_report_to_text(self, report_name: str) -> str:
+        return self._ui.export_report_to_text(report_name)
+
+    def import_report_from_text(self, report_name: str, report_data: str) -> bool:
+        return self._ui.import_report_from_text(report_name, report_data)
+
+    # ========================================================================
+    # MACRO OPERATIONS
+    # ========================================================================
+
+    def get_macros(self) -> list[MacroInfo]:
+        return self._ui.get_macros()
+
+    # Delegated to VbaOperations
+    def get_vba_project_name(self) -> str:
+        return self._vba.get_vba_project_name()
+
+    def get_modules(self) -> list[ModuleInfo]:
+        return self._vba.get_modules()
+
+    def get_vba_code(self, module_name: str) -> str:
+        return self._vba.get_vba_code(module_name)
+
+    def set_vba_code(self, module_name: str, code: str) -> bool:
+        return self._vba.set_vba_code(module_name, code)
+
+    def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
+        return self._vba.add_vba_procedure(module_name, procedure_name, code)
+
+    def delete_module(self, module_name: str) -> bool:
+        return self._vba.delete_module(module_name)
+
+    def save_database(self) -> dict:
+        return self._vba.save_database()
+
+    def compile_vba(self) -> dict:
+        return self._vba.compile_vba()
 
     @staticmethod
     def _normalize_dao_value(value: Any) -> Any:
@@ -967,824 +768,32 @@ class WinComAdapter(AccessAdapter):
             print(f"Cleanup warning: close_access failed: {e}", file=sys.stderr)
 
     def set_vba_code(self, module_name: str, code: str) -> bool:
-        """Set VBA code in a module.
-
-        For non-existent modules: uses LoadFromText which auto-creates,
-        names, and saves the module without triggering 'Save As' dialogs.
-        For existing modules: uses DeleteLines + AddFromString (safe
-        in-memory update on already-named components).
-        """
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return False
-            try:
-                # Check if module already exists
-                target_module = None
-                for mod in vb_project.VBComponents:
-                    if mod.Name == module_name:
-                        target_module = mod
-                        break
-
-                if target_module is None:
-                    # New module: use LoadFromText (bypasses Access UI layer)
-                    text_data = f"Attribute VB_Name = \"{module_name}\"\r\n{code}"
-                    return self._load_object_from_text(5, module_name, text_data)
-                else:
-                    # Existing module: clear and repopulate in-memory
-                    try:
-                        target_module.CodeModule.DeleteLines(
-                            1, target_module.CodeModule.CountOfLines
-                        )
-                        target_module.CodeModule.AddFromString(code)
-                        return True
-                    except Exception:
-                        return False
-            except Exception as set_vba_exc:
-                import traceback
-                traceback.print_exc()
-                print(f"[set_vba_code] Exception: {set_vba_exc}", file=sys.stderr)
-                return False
-
-        return self._dispatcher.call(self._trusted_locations_wrap, _do)
-
-    # ========================================================================
-    # FORM OPERATIONS
-    # ========================================================================
-
-    def get_forms(self) -> list[FormInfo]:
-        """Get all forms in the database."""
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[FormInfo]:
-            forms: list[FormInfo] = []
-            try:
-                all_forms = self._dispatcher.access_app.CurrentProject.AllForms
-                for i in range(all_forms.Count):
-                    form_obj = all_forms(i)
-                    try:
-                        record_source = ""
-                        try:
-                            record_source = str(form_obj.Properties("RecordSource")) if form_obj.Properties.Exists("RecordSource") else ""
-                        except Exception:
-                            pass
-                        forms.append(FormInfo(name=form_obj.Name, record_source=record_source))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return forms
-
-        return self._dispatcher.call(_do)
-
-    def form_exists(self, form_name: str) -> bool:
-        """Check if a form exists."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            try:
-                all_forms = self._dispatcher.access_app.CurrentProject.AllForms
-                for i in range(all_forms.Count):
-                    if all_forms(i).Name == form_name:
-                        return True
-            except Exception:
-                pass
-            return False
-
-        return self._dispatcher.call(_do)
-
-    def get_form_controls(self, form_name: str) -> list[ControlInfo]:
-        """Get all controls in a form by opening it in design view."""
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[ControlInfo]:
-            controls: list[ControlInfo] = []
-            opened = False
-            try:
-                # Open in design view (acDesign). Numeric value 1 avoids triggering events.
-                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
-                opened = True
-
-                # Get the form via Screen.ActiveForm (most reliable after OpenForm).
-                # Fallback: try the Forms collection.
-                try:
-                    form = self._dispatcher.access_app.Screen.ActiveForm
-                except Exception:
-                    form = self._dispatcher.access_app.Forms(form_name)
-
-                if form is not None:
-                    for i in range(form.Controls.Count):
-                        try:
-                            ctrl = form.Controls(i)
-                            ctrl_name = ctrl.Name
-                            ctrl_type_code = ctrl.ControlType
-                            ctrl_type = self._access_control_type_name(ctrl_type_code)
-
-                            # Collect key readability properties individually
-                            # (bulk iteration of Properties is slow and exception-prone).
-                            props: dict[str, str] = {}
-                            for prop_name in ("Visible", "Enabled", "Left", "Top",
-                                              "Width", "Height", "Caption",
-                                              "ControlSource", "TabIndex"):
-                                try:
-                                    val = ctrl.Properties(prop_name).Value
-                                    if val is not None:
-                                        props[prop_name] = str(val)
-                                except Exception:
-                                    pass
-
-                            controls.append(ControlInfo(
-                                name=ctrl_name, type=ctrl_type, properties=props,
-                            ))
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-            finally:
-                if opened:
-                    try:
-                        # Close form without saving (acForm=2, acSaveNo=2)
-                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)
-                    except Exception:
-                        pass
-            return controls
-
-        return self._dispatcher.call(_do)
-
-    def export_form_to_text(self, form_name: str) -> str:
-        """Export a form to text representation via SaveAsText."""
-        if not self.is_connected():
-            return ""
-
-        def _do() -> str:
-            return self._save_object_to_text(2, form_name)
-
-        return self._dispatcher.call(_do)
-
-    def import_form_from_text(self, form_name: str, form_data: str) -> bool:
-        """Import a form from text data via LoadFromText."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            return self._load_object_from_text(2, form_name, form_data)
-
-        return self._dispatcher.call(_do)
-
-    def open_form(self, form_name: str) -> bool:
-        """Open a form in Access (appears on the server desktop)."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            try:
-                self._dispatcher.access_app.DoCmd.OpenForm(form_name)
-                return True
-            except Exception:
-                return False
-
-        return self._dispatcher.call(_do)
-
-    def close_form(self, form_name: str) -> bool:
-        """Close an open form without saving."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            try:
-                self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acForm=2, acSaveNo=2
-                return True
-            except Exception:
-                return False
-
-        return self._dispatcher.call(_do)
-
-    def get_control_properties(self, form_name: str, control_name: str) -> dict:
-        """Get all properties of a specific control by opening the form in design view."""
-        if not self.is_connected():
-            return {}
-
-        def _do() -> dict:
-            opened = False
-            try:
-                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
-                opened = True
-
-                try:
-                    form = self._dispatcher.access_app.Screen.ActiveForm
-                except Exception:
-                    form = self._dispatcher.access_app.Forms(form_name)
-
-                if form is not None:
-                    for i in range(form.Controls.Count):
-                        try:
-                            ctrl = form.Controls(i)
-                            if ctrl.Name == control_name:
-                                props: dict[str, str] = {}
-                                for prop in ctrl.Properties:
-                                    try:
-                                        props[prop.Name] = str(prop.Value)
-                                    except Exception:
-                                        pass
-                                return props
-                        except Exception:
-                            pass
-                return {}
-            except Exception:
-                return {}
-            finally:
-                if opened:
-                    try:
-                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)
-                    except Exception:
-                        pass
-
-        return self._dispatcher.call(_do)
-
-    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, str]) -> dict[str, bool]:
-        """Set multiple properties at once. Returns dict of {property_name: success}.
-
-        Iterates through all properties and calls set_control_property for each.
-        Continues even if some properties fail. Returns per-property success dict.
-        """
-        if not self.is_connected():
-            return {}
-
-        def _do() -> dict[str, bool]:
-            results: dict[str, bool] = {}
-            for prop_name, value in properties.items():
-                try:
-                    opened = False
-                    try:
-                        self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
-                        opened = True
-
-                        try:
-                            form = self._dispatcher.access_app.Screen.ActiveForm
-                        except Exception:
-                            form = self._dispatcher.access_app.Forms(form_name)
-
-                        success = False
-                        if form is not None:
-                            for i in range(form.Controls.Count):
-                                try:
-                                    ctrl = form.Controls(i)
-                                    if ctrl.Name == control_name:
-                                        ctrl.Properties(prop_name).Value = value
-                                        success = True
-                                        break
-                                except Exception:
-                                    pass
-                    except Exception:
-                        success = False
-                    finally:
-                        if opened:
-                            try:
-                                self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)
-                            except Exception:
-                                pass
-                    results[prop_name] = success
-                except Exception:
-                    results[prop_name] = False
-            return results
-
-        return self._dispatcher.call(_do)
-
-    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
-        """List event procedures for a specific control in a form.
-
-        Access stores event procedures with ControlName_EventName convention
-        in the form's code module (e.g., cmdSave_Click, txtName_AfterUpdate).
-
-        If control_name is empty, returns ALL event procedures in the form module.
-        If control_name is specified, filters to procedures with that prefix.
-
-        Returns list of {procedure_name, event_name, code, start_line}.
-        """
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[dict]:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return []
-            try:
-                # Find the form module - Access names form modules as "Form_<form_name>"
-                form_module_name = f"Form_{form_name}"
-                target_module = None
-                for comp in vb_project.VBComponents:
-                    if comp.Name == form_module_name:
-                        target_module = comp.CodeModule
-                        break
-                if target_module is None:
-                    return []
-
-                # List all procedures in the module
-                total_lines = target_module.CountOfLines
-                if total_lines == 0:
-                    return []
-
-                all_procedures: list[dict] = []
-                seen_procs: set[str] = set()
-
-                for line in range(1, total_lines + 1):
-                    try:
-                        proc_name = target_module.ProcOfLine(line, 0)
-                        if proc_name and proc_name not in seen_procs:
-                            seen_procs.add(proc_name)
-                            start_line = target_module.ProcStartLine(proc_name, 0)
-                            line_count = target_module.ProcCountLines(proc_name, 0)
-                            code = target_module.Lines(start_line, line_count)
-                            all_procedures.append({
-                                "procedure_name": proc_name,
-                                "start_line": start_line,
-                                "line_count": line_count,
-                                "code": code,
-                            })
-                    except Exception:
-                        pass
-
-                # Filter by control_name prefix if specified
-                if control_name:
-                    prefix = f"{control_name}_"
-                    filtered = []
-                    for proc in all_procedures:
-                        if proc["procedure_name"].startswith(prefix):
-                            # Extract event name (part after control_name_)
-                            event_name = proc["procedure_name"][len(prefix):]
-                            filtered.append({
-                                "procedure_name": proc["procedure_name"],
-                                "event_name": event_name,
-                                "code": proc["code"],
-                                "start_line": proc["start_line"],
-                            })
-                    return filtered
-                else:
-                    # Return all procedures with event_name parsed from name
-                    result = []
-                    for proc in all_procedures:
-                        # Try to find underscore to split control_name from event
-                        proc_name = proc["procedure_name"]
-                        if "_" in proc_name:
-                            parts = proc_name.split("_", 1)
-                            result.append({
-                                "procedure_name": proc_name,
-                                "event_name": parts[1] if len(parts) > 1 else "",
-                                "code": proc["code"],
-                                "start_line": proc["start_line"],
-                            })
-                        else:
-                            result.append({
-                                "procedure_name": proc_name,
-                                "event_name": "",
-                                "code": proc["code"],
-                                "start_line": proc["start_line"],
-                            })
-                    return result
-            except Exception:
-                return []
-
-        return self._dispatcher.call(_do)
-
-    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
-        """Set a property of a control by opening the form in design view.
-
-        Opens the form in design view, sets the property, and saves the form.
-        Returns True if the property was set successfully.
-        """
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            opened = False
-            try:
-                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)
-                opened = True
-
-                try:
-                    form = self._dispatcher.access_app.Screen.ActiveForm
-                except Exception:
-                    form = self._dispatcher.access_app.Forms(form_name)
-
-                if form is not None:
-                    for i in range(form.Controls.Count):
-                        try:
-                            ctrl = form.Controls(i)
-                            if ctrl.Name == control_name:
-                                ctrl.Properties(property_name).Value = value
-                                return True
-                        except Exception:
-                            pass
-                return False
-            except Exception:
-                return False
-            finally:
-                if opened:
-                    try:
-                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes
-                    except Exception:
-                        pass
-
-        return self._dispatcher.call(_do)
-
-    def delete_form(self, form_name: str) -> bool:
-        """Delete a form from the database."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            try:
-                self._dispatcher.access_app.DoCmd.DeleteObject(2, form_name)
-                return True
-            except Exception:
-                return False
-
-        return self._dispatcher.call(_do)
-
-    # ========================================================================
-    # REPORT OPERATIONS
-    # ========================================================================
-
-    def get_reports(self) -> list[ReportInfo]:
-        """Get all reports in the database."""
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[ReportInfo]:
-            reports: list[ReportInfo] = []
-            try:
-                all_reports = self._dispatcher.access_app.CurrentProject.AllReports
-                for i in range(all_reports.Count):
-                    report_obj = all_reports(i)
-                    try:
-                        record_source = ""
-                        try:
-                            record_source = str(report_obj.Properties("RecordSource")) if report_obj.Properties.Exists("RecordSource") else ""
-                        except Exception:
-                            pass
-                        reports.append(ReportInfo(name=report_obj.Name, record_source=record_source))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return reports
-
-        return self._dispatcher.call(_do)
-
-    def export_report_to_text(self, report_name: str) -> str:
-        """Export a report to text representation via SaveAsText."""
-        if not self.is_connected():
-            return ""
-
-        def _do() -> str:
-            return self._save_object_to_text(4, report_name)
-
-        return self._dispatcher.call(_do)
-
-    def import_report_from_text(self, report_name: str, report_data: str) -> bool:
-        """Import a report from text data via LoadFromText."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            return self._load_object_from_text(4, report_name, report_data)
-
-        return self._dispatcher.call(_do)
-
-    def report_exists(self, report_name: str) -> bool:
-        """Check if a report exists."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            try:
-                all_reports = self._dispatcher.access_app.CurrentProject.AllReports
-                for i in range(all_reports.Count):
-                    if all_reports(i).Name == report_name:
-                        return True
-            except Exception:
-                pass
-            return False
-
-        return self._dispatcher.call(_do)
-
-    def delete_report(self, report_name: str) -> bool:
-        """Delete a report from the database."""
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            try:
-                self._dispatcher.access_app.DoCmd.DeleteObject(4, report_name)
-                return True
-            except Exception:
-                return False
-
-        return self._dispatcher.call(_do)
-
-    # ========================================================================
-    # MACRO OPERATIONS
-    # ========================================================================
-
-    def get_macros(self) -> list[MacroInfo]:
-        """Get all macros in the database."""
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[MacroInfo]:
-            macros: list[MacroInfo] = []
-            try:
-                all_macros = self._dispatcher.access_app.CurrentProject.AllMacros
-                for i in range(all_macros.Count):
-                    macro_obj = all_macros(i)
-                    try:
-                        macros.append(MacroInfo(name=macro_obj.Name, type="Macro"))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return macros
-
-        return self._dispatcher.call(_do)
+        return self._vba.set_vba_code(module_name, code)
 
     # ========================================================================
     # VBA/MODULE OPERATIONS
     # ========================================================================
 
     def get_vba_project_name(self) -> str:
-        """Get the VBA project name from COM."""
-        if not self.is_connected():
-            return ""
-        def _do() -> str:
-            vb_project = self._get_vb_project()
-            return vb_project.Name if vb_project else ""
-        try:
-            return self._dispatcher.call(_do)
-        except Exception:
-            return ""
+        return self._vba.get_vba_project_name()
 
     def get_modules(self) -> list[ModuleInfo]:
-        """Get all VBA modules in the database."""
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[ModuleInfo]:
-            modules: list[ModuleInfo] = []
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return []
-            try:
-                for comp in vb_project.VBComponents:
-                    try:
-                        code = ""
-                        if comp.Type == 1:
-                            code = comp.CodeModule.Lines(1, comp.CodeModule.CountOfLines)
-                        modules.append(ModuleInfo(
-                            name=comp.Name,
-                            type="Standard Module" if comp.Type == 1 else "Class Module",
-                            code=code,
-                        ))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            return modules
-
-        return self._dispatcher.call(_do)
+        return self._vba.get_modules()
 
     def get_vba_code(self, module_name: str) -> str:
-        """Get VBA code from a module."""
-        if not self.is_connected():
-            return ""
-
-        def _do() -> str:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return ""
-            try:
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        lines = comp.CodeModule.CountOfLines
-                        if lines > 0:
-                            return comp.CodeModule.Lines(1, lines)
-                        return ""
-            except Exception:
-                pass
-            return ""
-
-        return self._dispatcher.call(_do)
+        return self._vba.get_vba_code(module_name)
 
     def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
-        """Add a VBA procedure to a module.
-
-        For non-existent modules: uses LoadFromText to create and name
-        the module. For existing modules: safely appends via AddFromString
-        on the already-named component.
-        """
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return False
-            try:
-                target_module = None
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        target_module = comp
-                        break
-                if target_module is None:
-                    # New module: use LoadFromText (bypasses Access UI layer)
-                    text_data = f"Attribute VB_Name = \"{module_name}\"\r\n{code}"
-                    return self._load_object_from_text(5, module_name, text_data)
-                else:
-                    # Existing module: append via AddFromString (safe on named)
-                    target_module.CodeModule.AddFromString(code)
-                    return True
-            except Exception:
-                return False
-
-        return self._dispatcher.call(self._trusted_locations_wrap, _do)
+        return self._vba.add_vba_procedure(module_name, procedure_name, code)
 
     def delete_module(self, module_name: str) -> bool:
-        """Delete a VBA module from the database.
-
-        Args:
-            module_name: Name of the module to delete
-
-        Returns:
-            True if deleted, False if not found or error
-        """
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return False
-            try:
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        vb_project.VBComponents.Remove(comp)
-                        return True
-                return False
-            except Exception:
-                return False
-
-        return self._dispatcher.call(_do)
+        return self._vba.delete_module(module_name)
 
     def save_database(self) -> dict:
-        """Save all VBA modules and database changes.
-
-        Uses DoCmd.Save to persist each standard module.
-        Returns structured result with success/error.
-
-        Returns:
-            dict with success=True on success, error message on failure
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        def _do() -> dict:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return {"success": False, "error": "No VBA project"}
-            app = self._dispatcher.access_app
-            saved = 0
-            errors = []
-            try:
-                for comp in vb_project.VBComponents:
-                    if comp.Type == 1:  # vbext_ct_StdModule
-                        try:
-                            app.DoCmd.Save(5, comp.Name)  # 5 = acModule
-                            saved += 1
-                        except Exception as e:
-                            errors.append(f"{comp.Name}: {e}")
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-            return {
-                "success": True,
-                "saved_modules": saved,
-                "errors": errors,
-            }
-
-        return self._dispatcher.call(_do)
+        return self._vba.save_database()
 
     def compile_vba(self) -> dict:
-        """Compile VBA code.
-
-        Tries known DoCmd.RunCommand constants for VBA compilation.
-        The correct command ID varies by Access version:
-        - 301: Access 16.0 (Office 365 / 2021) — confirmed working
-        - 206: acCmdCompileAllModules (older versions)
-        - 317: acCmdCompileAndSaveAllModules (older versions)
-        - 232: 0xE8 — commonly documented online
-
-        Returns:
-            dict with success=True on success
-            dict with success=False and error message on failure
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        # Compile command IDs by Access version (most likely first)
-        _COMPILE_CMD_IDS = [301, 206, 317, 232]
-
-        def _do() -> dict:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return {"success": False, "error": "No VBA project"}
-            app = self._dispatcher.access_app
-
-            # Save all modules first so compilation doesn't trigger "Save As" dialog
-            for comp in vb_project.VBComponents:
-                if comp.Type == 1:  # vbext_ct_StdModule
-                    try:
-                        app.DoCmd.Save(5, comp.Name)
-                    except Exception:
-                        pass
-
-            # Start dialog killer as safety net for any remaining dialogs
-            dismissed = threading.Event()
-            killer_thread = threading.Thread(
-                target=self._dialog_killer,
-                args=(dismissed,),
-                daemon=True,
-            )
-            killer_thread.start()
-
-            try:
-                for cmd_id in _COMPILE_CMD_IDS:
-                    try:
-                        app.DoCmd.RunCommand(cmd_id)
-                        return {"success": True}
-                    except Exception:
-                        continue
-                return {
-                    "success": False,
-                    "error": "Could not find working compile command for this Access version",
-                }
-            finally:
-                dismissed.set()
-                killer_thread.join(timeout=2.0)
-
-        try:
-            return self._dispatcher.call(self._trusted_locations_wrap, _do)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-
-    @staticmethod
-    def _dialog_killer(stop_event: threading.Event) -> None:
-        """Background thread that clicks the accept button on Access 'Save As' dialogs.
-
-        The 'Save As' dialog appears when Access VBA compilation encounters an
-        unnamed module.  It blocks the COM/STA thread, so we run this from a
-        separate daemon thread to dismiss it by clicking the accept button.
-
-        Args:
-            stop_event: threading.Event — set when the dialog killer should stop.
-        """
-        try:
-            import win32con
-            import win32gui
-            import time
-
-            while not stop_event.is_set():
-                def find_and_click(hwnd: int, _: object) -> bool:
-                    if stop_event.is_set():
-                        return False
-                    cls = win32gui.GetClassName(hwnd)
-                    title = win32gui.GetWindowText(hwnd)
-                    if cls != "#32770" or "save" not in title.lower():
-                        return True
-                    # Found the dialog — find the accept button (OK, Save, etc.)
-                    btn = win32gui.FindWindowEx(hwnd, None, "Button", None)
-                    while btn:
-                        btn_title = win32gui.GetWindowText(btn).strip()
-                        if btn_title in ("OK", "Save", "&OK", "&Save"):
-                            win32gui.PostMessage(hwnd, win32con.WM_COMMAND,
-                                                 win32gui.GetWindowLong(btn, win32con.GWL_ID), 0)
-                            return True
-                        btn = win32gui.FindWindowEx(hwnd, btn, "Button", None)
-                    # Fallback: press Enter on the dialog itself
-                    win32gui.PostMessage(hwnd, win32con.WM_KEYDOWN, 0x0D, 0)
-                    return True
-
-                win32gui.EnumWindows(find_and_click, None)
-                if not stop_event.is_set():
-                    time.sleep(0.1)
-
-        except ImportError:
-            pass  # Not on Windows
-        except Exception:
-            pass  # Best-effort
+        return self._vba.compile_vba()
 
     # ========================================================================
     # TRUSTED LOCATIONS (Pre/Post Hook for VBA Operations)
@@ -2718,567 +1727,10 @@ class WinComAdapter(AccessAdapter):
         return sql
 
     # ========================================================================
-    # VERSIONING EXPORT (git-friendly text export)
+    # VERSIONING (delegated to VersioningIo)
     # ========================================================================
 
-    def export_module_to_text(self, module_name: str) -> str:
-        """Export VBA module code as plain text."""
-        if not self.is_connected():
-            return ""
-
-        def _do() -> str:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return ""
-            try:
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        lines = comp.CodeModule.CountOfLines
-                        if lines > 0:
-                            return comp.CodeModule.Lines(1, lines)
-                        return ""
-            except Exception:
-                pass
-            return ""
-
-        return self._dispatcher.call(_do)
-
-    def export_macro_to_text(self, macro_name: str) -> str:
-        """Export a macro to text representation via SaveAsText."""
-        if not self.is_connected():
-            return ""
-
-        def _do() -> str:
-            return self._save_object_to_text(8, macro_name)
-
-        return self._dispatcher.call(_do)
-
-    def export_all_versioning(
-        self,
-        output_dir: str,
-        *,
-        dedup: bool = True,
-        module_ext: str = ".bas",
-    ) -> dict:
-        """Export all forms, reports, modules, macros, and queries to a directory structure.
-
-        Args:
-            output_dir: Root directory for export
-            dedup: If True, skip export when SHA256 of content matches existing file (default True)
-            module_ext: Extension for module files, '.bas' (default) or '.txt'
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected to database", "exported": {}}
-
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-        except Exception as e:
-            return {"success": False, "error": f"Cannot create directory: {e}", "exported": {}}
-
-        def safe_filename(name: str) -> str:
-            for ch in '\\/:*?"<>|':
-                name = name.replace(ch, '_')
-            return name
-
-        exported = {"forms": [], "reports": [], "modules": [], "macros": [], "queries": []}
-
-        # Helper: SHA256 file hash
-        def _file_hash(path: str) -> str:
-            h = hashlib.sha256()
-            with open(path, "rb") as f:
-                h.update(f.read())
-            return h.hexdigest()
-
-        # Helper: compute content hash for an object
-        def _export_and_hash(object_type: int, name: str, out_path: str) -> tuple[bool, str]:
-            """Export via COM SaveAsText, return (success, sha256_of_new_content)."""
-            temp_path = None
-            try:
-                fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_exp_")
-                os.close(fd)
-                self._dispatcher.access_app.SaveAsText(object_type, name, temp_path)
-                with open(temp_path, "rb") as f:
-                    raw = f.read()
-                content = raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
-                h = hashlib.sha256(content.encode("utf-8")).hexdigest()
-                # Check if we should skip (dedup enabled and content unchanged)
-                skip = False
-                if dedup and os.path.exists(out_path):
-                    existing_hash = _file_hash(out_path)
-                    if existing_hash == h:
-                        skip = True
-                if not skip:
-                    with open(out_path, "w", encoding="utf-8") as f:
-                        f.write(content)
-                return True, h, skip
-            except Exception:
-                return False, "", False
-            finally:
-                if temp_path:
-                    try:
-                        os.unlink(temp_path)
-                    except Exception:
-                        pass
-
-        # ── Export forms ──────────────────────────────────────────────────────
-        try:
-            forms = self.get_forms()
-            forms_dir = os.path.join(output_dir, "forms")
-            os.makedirs(forms_dir, exist_ok=True)
-            for form in forms:
-                try:
-                    safe_name = safe_filename(form.name)
-                    out_path = os.path.join(forms_dir, f"forms_{safe_name}.txt")
-                    success, new_hash, skipped = _export_and_hash(2, form.name, out_path)
-                    if success and not skipped:
-                        exported["forms"].append(form.name)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # ── Export reports ───────────────────────────────────────────────────
-        try:
-            reports = self.get_reports()
-            reports_dir = os.path.join(output_dir, "reports")
-            os.makedirs(reports_dir, exist_ok=True)
-            for report in reports:
-                try:
-                    safe_name = safe_filename(report.name)
-                    out_path = os.path.join(reports_dir, f"reports_{safe_name}.txt")
-                    success, new_hash, skipped = _export_and_hash(4, report.name, out_path)
-                    if success and not skipped:
-                        exported["reports"].append(report.name)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # ── Export VBA modules (in-memory, use _hash_content) ───────────────
-        try:
-            modules = self.get_modules()
-            modules_dir = os.path.join(output_dir, "modules")
-            os.makedirs(modules_dir, exist_ok=True)
-            for mod in modules:
-                try:
-                    safe_name = safe_filename(mod.name)
-                    out_path = os.path.join(modules_dir, f"modules_{safe_name}{module_ext}")
-                    content = mod.code or ""
-
-                    if dedup and os.path.exists(out_path):
-                        # SHA256 existing file vs in-memory content
-                        existing_hash = _file_hash(out_path)
-                        new_hash = self._hash_content(content)
-                        if existing_hash == new_hash:
-                            # Skip — content unchanged
-                            pass
-                        else:
-                            with open(out_path, "w", encoding="utf-8") as f:
-                                f.write(content)
-                            exported["modules"].append(mod.name)
-                    else:
-                        with open(out_path, "w", encoding="utf-8") as f:
-                            f.write(content)
-                        exported["modules"].append(mod.name)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # ── Export macros (static text, use _hash_content) ──────────────────
-        try:
-            macros = self.get_macros()
-            macros_dir = os.path.join(output_dir, "macros")
-            os.makedirs(macros_dir, exist_ok=True)
-            for macro in macros:
-                try:
-                    safe_name = safe_filename(macro.name)
-                    out_path = os.path.join(macros_dir, f"macros_{safe_name}.txt")
-                    content = f"Macro: {macro.name}\nType: Access Macro\n"
-
-                    if dedup and os.path.exists(out_path):
-                        existing_hash = _file_hash(out_path)
-                        new_hash = self._hash_content(content)
-                        if existing_hash == new_hash:
-                            pass
-                        else:
-                            with open(out_path, "w", encoding="utf-8") as f:
-                                f.write(content)
-                            exported["macros"].append(macro.name)
-                    else:
-                        with open(out_path, "w", encoding="utf-8") as f:
-                            f.write(content)
-                        exported["macros"].append(macro.name)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # ── Export queries (SaveAsText acQuery=5) ──────────────────────────────
-        try:
-            queries = self.get_queries()
-            queries_dir = os.path.join(output_dir, "queries")
-            os.makedirs(queries_dir, exist_ok=True)
-            for query in queries:
-                try:
-                    safe_name = safe_filename(query.name)
-                    out_path = os.path.join(queries_dir, f"queries_{safe_name}.txt")
-                    success, new_hash, skipped = _export_and_hash(5, query.name, out_path)
-                    if success and not skipped:
-                        exported["queries"].append(query.name)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        total = sum(len(v) for v in exported.values())
-
-        return {
-            "success": True,
-            "exported": exported,
-            "output_dir": output_dir,
-            "file_count": total,
-        }
-
-    # ========================================================================
-    # QUERY EXPORT / IMPORT (SaveAsText / LoadFromText with acQuery=5)
-    # ========================================================================
-
-    def export_query_to_text(self, query_name: str) -> str:
-        """Export a query to text using SaveAsText(acQuery=5, query_name, temp_path).
-
-        Returns the text content or empty string on failure.
-        """
-        if not self.is_connected():
-            return ""
-
-        def _do() -> str:
-            return self._save_object_to_text(5, query_name)
-
-        return self._dispatcher.call(_do)
-
-    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
-        """Import a query from text data using LoadFromText(acQuery=5, ...).
-
-        Returns True on success, False on failure.
-        """
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            return self._load_object_from_text(5, query_name, query_data)
-
-        return self._dispatcher.call(_do)
-
-    # ========================================================================
-    # VERSIONING COMPARE (git diff support)
-    # ========================================================================
-
-    @staticmethod
-    def _hash_file(file_path: str) -> str:
-        """Compute SHA256 hexdigest of a file's content."""
-        if not os.path.exists(file_path):
-            return ""
-        h = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            h.update(f.read())
-        return h.hexdigest()
-
-    @staticmethod
-    def _hash_content(content: str) -> str:
-        """Compute SHA256 hexdigest of a string (in-memory VBA code, etc.)."""
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-    def compare_versioning(self, export_dir: str) -> dict:
-        """Compare objects in the DB against exported files in export_dir.
-
-        Returns dict with:
-          - new: objects in DB but not in export_dir
-          - missing: objects in export_dir but not in DB
-          - changed: objects in both but content differs
-          - unchanged: objects in both with identical content
-        Each entry: {"type": "form"|"report"|"module"|"macro"|"query", "name": str}
-        """
-        if not self.is_connected():
-            return {"new": [], "missing": [], "changed": [], "unchanged": []}
-
-        def safe_name(name: str) -> str:
-            for ch in '\\/:*?"<>|':
-                name = name.replace(ch, '_')
-            return name
-
-        result = {"new": [], "missing": [], "changed": [], "unchanged": []}
-
-        subdirs = {
-            "forms": (2, "forms", self.get_forms),
-            "reports": (4, "reports", self.get_reports),
-            "modules": (5, "modules", self.get_modules),
-            "macros": (8, "macros", self.get_macros),
-            "queries": (5, "queries", self.get_queries),
-        }
-
-        for obj_type, (_, dir_name, getter) in subdirs.items():
-            dir_path = os.path.join(export_dir, dir_name)
-            if not os.path.exists(dir_path):
-                os.makedirs(dir_path, exist_ok=True)
-                continue
-
-            # Collect exported file names
-            exported_files = {}
-            if os.path.isdir(dir_path):
-                for fname in os.listdir(dir_path):
-                    if fname.endswith(".txt") or fname.endswith(".bas"):
-                        # e.g. forms_frmMain.txt → frmMain
-                        parts = fname.split("_", 1)
-                        if len(parts) == 2:
-                            exported_files[parts[1]] = os.path.join(dir_path, fname)
-
-            # Scan DB objects
-            try:
-                db_objects = getter()
-            except Exception:
-                db_objects = []
-
-            for obj in db_objects:
-                obj_name = safe_name(obj.name)
-                file_pattern = f"{dir_name}_{obj_name}"
-                matching_files = [
-                    f for f in os.listdir(dir_path)
-                    if f.startswith(file_pattern)
-                ]
-
-                if not matching_files:
-                    # In DB, not in export
-                    result["new"].append({"type": obj_type.rstrip("s"), "name": obj.name})
-                else:
-                    # Check content
-                    file_path = os.path.join(dir_path, matching_files[0])
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            file_content = f.read()
-                    except Exception:
-                        file_content = ""
-
-                    # Get DB content for comparison
-                    db_content = ""
-                    if obj_type in ("modules",):
-                        db_content = getattr(obj, "code", "") or ""
-                    else:
-                        # For forms/reports/macros/queries, read via export
-                        if obj_type == "forms":
-                            db_content = self.export_form_to_text(obj.name)
-                        elif obj_type == "reports":
-                            db_content = self.export_report_to_text(obj.name)
-                        elif obj_type == "macros":
-                            db_content = self.export_macro_to_text(obj.name)
-                        elif obj_type == "queries":
-                            db_content = self.export_query_to_text(obj.name)
-
-                    if db_content == file_content:
-                        result["unchanged"].append({"type": obj_type.rstrip("s"), "name": obj.name})
-                    else:
-                        result["changed"].append({"type": obj_type.rstrip("s"), "name": obj.name})
-
-            # Find missing (in export but not in DB)
-            for fname in os.listdir(dir_path):
-                if fname.startswith(f"{dir_name}_"):
-                    parts = fname.split("_", 1)
-                    if len(parts) == 2:
-                        obj_name = parts[1]
-                        # Check if it's in DB
-                        in_db = any(
-                            safe_name(obj.name) == safe_name(obj_name)
-                            for obj in db_objects
-                        )
-                        if not in_db:
-                            result["missing"].append({
-                                "type": obj_type.rstrip("s"),
-                                "name": obj_name.rsplit(".", 1)[0],  # strip extension
-                            })
-
-        return result
-
-    # ========================================================================
-    # IMPORT ALL VERSIONING
-    # ========================================================================
-
-    def import_all_versioning(self, input_dir: str) -> dict:
-        """Import all objects from an exported versioning directory.
-
-        Ordering: modules → forms/reports → macros → queries.
-        Returns dict with per-type results and overall success.
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected to database", "imported": {}}
-
-        if not os.path.isdir(input_dir):
-            return {"success": False, "error": f"Directory not found: {input_dir}", "imported": {}}
-
-        def safe_read_file(path: str) -> str:
-            """Read file: detect BOM for UTF-16-LE, else decode as UTF-8.
-
-            export_all_versioning writes all files as UTF-8. Raw Access
-            SaveAsText output uses UTF-16-LE with BOM — handle both.
-            """
-            try:
-                with open(path, "rb") as f:
-                    raw = f.read()
-                if len(raw) >= 2 and raw[0] == 0xff and raw[1] == 0xfe:
-                    return raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
-                return raw.decode("utf-8", errors="replace")
-            except Exception:
-                return ""
-
-        imported = {"modules": [], "forms": [], "reports": [], "macros": [], "queries": []}
-        errors = []
-
-        subdirs = [
-            ("modules", "modules", ".bas", ".txt"),
-            ("forms", "forms", ".txt", ".txt"),
-            ("reports", "reports", ".txt", ".txt"),
-            ("macros", "macros", ".txt", ".txt"),
-            ("queries", "queries", ".txt", ".txt"),
-        ]
-
-        for type_key, dir_name, ext, _ in subdirs:
-            dir_path = os.path.join(input_dir, dir_name)
-            if not os.path.isdir(dir_path):
-                continue
-
-            # Collect files in this subdir, validate all exist first
-            files_to_import = []
-            for fname in os.listdir(dir_path):
-                if fname.startswith(f"{dir_name}_") and (fname.endswith(ext) or fname.endswith(".bas")):
-                    file_path = os.path.join(dir_path, fname)
-                    if os.path.isfile(file_path):
-                        files_to_import.append((fname, file_path))
-
-            # Sort by name for deterministic order
-            files_to_import.sort(key=lambda x: x[0])
-
-            for fname, file_path in files_to_import:
-                # Extract object name from filename
-                # e.g. modules_modTest.bas → modTest
-                name = fname[len(dir_name) + 1:]
-                if name.endswith(".txt") or name.endswith(".bas"):
-                    name = name[:name.rfind(".")]
-                name = name.replace("_", " ")
-
-                try:
-                    data = safe_read_file(file_path)
-
-                    if type_key == "modules":
-                        # set_vba_code handles both new (LoadFromText via
-                        # dispatcher) and existing (AddFromString) modules
-                        ok = self.set_vba_code(name, data)
-                        if ok:
-                            imported["modules"].append(name)
-                        else:
-                            errors.append(f"module {name}: set_vba_code failed")
-
-                        # Compile to verify
-                        compile_result = self.compile_vba()
-                        if not compile_result.get("success"):
-                            errors.append(f"module {name}: compile error")
-
-                    elif type_key == "forms":
-                        success = self.import_form_from_text(name, data)
-                        if success:
-                            imported["forms"].append(name)
-                        else:
-                            errors.append(f"form {name}: import failed")
-
-                    elif type_key == "reports":
-                        success = self.import_report_from_text(name, data)
-                        if success:
-                            imported["reports"].append(name)
-                        else:
-                            errors.append(f"report {name}: import failed")
-
-                    elif type_key == "macros":
-                        success = self.import_macro_from_text(name, data) if hasattr(self, "import_macro_from_text") else False
-                        if success:
-                            imported["macros"].append(name)
-                        else:
-                            errors.append(f"macro {name}: import failed")
-
-                    elif type_key == "queries":
-                        success = self.import_query_from_text(name, data)
-                        if success:
-                            imported["queries"].append(name)
-                        else:
-                            errors.append(f"query {name}: import failed")
-
-                except Exception as e:
-                    errors.append(f"{type_key.rstrip('s')} {name}: {e}")
-
-        return {
-            "success": len(errors) == 0,
-            "imported": imported,
-            "errors": errors if errors else None,
-        }
-
-    def export_schema_ddl(self, output_dir: str) -> dict:
-        """Export table schemas as DDL SQL files via COM introspection.
-
-        Uses get_tables() and get_relationships() (both available via COM's DAO model).
-        Generates CREATE TABLE and ALTER TABLE statements.
-
-        Args:
-            output_dir: Root directory for schema output
-
-        Returns:
-            dict with success, ddl_tables path, ddl_relationships path
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        from pathlib import Path
-
-        tables = self.get_tables()
-        relationships = self.get_relationships()
-
-        schema_dir = Path(output_dir) / "schema"
-        schema_dir.mkdir(parents=True, exist_ok=True)
-
-        ddl_tables_path = schema_dir / "ddl_tables.sql"
-        ddl_rels_path = schema_dir / "ddl_relationships.sql"
-
-        with open(ddl_tables_path, "w", encoding="utf-8") as f:
-            f.write("-- Access Table DDL\n-- Generated by ms-access-mcp-server\n\n")
-            for table in tables:
-                f.write(f"CREATE TABLE [{table.name}] (\n")
-                col_defs = []
-                for field in table.fields:
-                    col_def = f"  [{field.name}] {field.type}"
-                    if field.required:
-                        col_def += " NOT NULL"
-                    else:
-                        col_def += " NULL"
-                    col_defs.append(col_def)
-                f.write(",\n".join(col_defs))
-                f.write("\n);\n\n")
-
-        with open(ddl_rels_path, "w", encoding="utf-8") as f:
-            f.write("-- Access Relationship DDL\n-- Generated by ms-access-mcp-server\n\n")
-            for rel in relationships:
-                f.write(f"-- Relationship: {rel.name}\n")
-                f.write(f"-- Table: {rel.table}, Foreign Table: {rel.foreign_table}\n")
-                f.write(f"-- Attributes: {rel.attributes}\n")
-                f.write(f"ALTER TABLE [{rel.table}] ADD CONSTRAINT [{rel.name}] ")
-                f.write(f"FOREIGN KEY REFERENCES [{rel.foreign_table}];\n")
-
-        return {
-            "success": True,
-            "ddl_tables": str(ddl_tables_path),
-            "ddl_relationships": str(ddl_rels_path),
-            "tables_exported": len(tables),
-            "relationships_exported": len(relationships),
-        }
-
-    # ========================================================================
-    # SQL SCRIPT EXECUTION
-    # ========================================================================
+    # Delegated to VbaOperations
 
     # ------------------------------------------------------------------- #
     #  SQL Script Execution
@@ -3498,142 +1950,12 @@ class WinComAdapter(AccessAdapter):
         except Exception:
             return False
 
-    # ========================================================================
-    # VBA PROCEDURE OPERATIONS
-    # ========================================================================
-
+    # Delegated to VbaOperations
     def vba_list_procedures(self, module_name: str) -> list[dict]:
-        """List all procedures in a module with name, type, line info.
-
-        Uses CodeModule.ProcOfLine to detect procedure boundaries.
-
-        Returns:
-            List of dicts with keys: name, type ("Sub"|"Function"|"Property"),
-            start_line, line_count
-        """
-        if not self.is_connected():
-            return []
-
-        def _do() -> list[dict]:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return []
-            try:
-                target_module = None
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        target_module = comp.CodeModule
-                        break
-                if target_module is None:
-                    return []
-
-                total_lines = target_module.CountOfLines
-                if total_lines == 0:
-                    return []
-
-                procedures: list[dict] = []
-                seen_procs: set[str] = set()
-
-                for line in range(1, total_lines + 1):
-                    try:
-                        proc_name = target_module.ProcOfLine(line, 0)
-                        if proc_name and proc_name not in seen_procs:
-                            seen_procs.add(proc_name)
-                            proc_kind = target_module.ProcKind(line, 0)
-                            proc_type = {0: "Sub", 1: "Function", 2: "Property"}.get(proc_kind, "Sub")
-                            start_line = target_module.ProcStartLine(proc_name, 0)
-                            line_count = target_module.ProcCountLines(proc_name, 0)
-                            procedures.append({
-                                "name": proc_name,
-                                "type": proc_type,
-                                "start_line": start_line,
-                                "line_count": line_count,
-                            })
-                    except Exception:
-                        pass
-                return procedures
-            except Exception:
-                return []
-
-        return self._dispatcher.call(_do)
+        return self._vba.vba_list_procedures(module_name)
 
     def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict:
-        """Get full source code of a specific procedure.
-
-        Returns:
-            dict with keys: name, type, code, signature
-        """
-        if not self.is_connected():
-            return {}
-
-        def _do() -> dict:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return {}
-            try:
-                target_module = None
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        target_module = comp.CodeModule
-                        break
-                if target_module is None:
-                    return {}
-
-                start_line = target_module.ProcStartLine(procedure_name, 0)
-                line_count = target_module.ProcCountLines(procedure_name, 0)
-                code = target_module.Lines(start_line, line_count)
-
-                # Extract signature (first line of the procedure)
-                lines = code.split("\n")
-                signature = lines[0] if lines else ""
-
-                proc_kind = target_module.ProcKind(start_line, 0)
-                proc_type = {0: "Sub", 1: "Function", 2: "Property"}.get(proc_kind, "Sub")
-
-                return {
-                    "name": procedure_name,
-                    "type": proc_type,
-                    "code": code,
-                    "signature": signature,
-                }
-            except Exception:
-                return {}
-
-        return self._dispatcher.call(_do)
+        return self._vba.vba_get_procedure(module_name, procedure_name)
 
     def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
-        """Replace a procedure's body with new code (preserves signature).
-
-        Deletes the old procedure lines and inserts new code at the same position.
-
-        Returns:
-            True on success, False on failure
-        """
-        if not self.is_connected():
-            return False
-
-        def _do() -> bool:
-            vb_project = self._get_vb_project()
-            if vb_project is None:
-                return False
-            try:
-                target_module = None
-                for comp in vb_project.VBComponents:
-                    if comp.Name == module_name:
-                        target_module = comp.CodeModule
-                        break
-                if target_module is None:
-                    return False
-
-                start_line = target_module.ProcStartLine(procedure_name, 0)
-                line_count = target_module.ProcCountLines(procedure_name, 0)
-
-                # Delete old procedure lines
-                target_module.DeleteLines(start_line, line_count)
-                # Insert new code at the same position
-                target_module.InsertLines(start_line, new_code)
-                return True
-            except Exception:
-                return False
-
-        return self._dispatcher.call(self._trusted_locations_wrap, _do)
+        return self._vba.vba_replace_procedure(module_name, procedure_name, new_code)
