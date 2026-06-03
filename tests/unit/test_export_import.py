@@ -173,7 +173,7 @@ class TestRestoreModuleBackup:
         mock_adapter = MagicMock()
         mock_adapter.get_vba_code.return_value = "Old code"
 
-        with patch.object(service, "import_module_from_text") as mock_import:
+        with patch.object(service._backup, "import_module_from_text") as mock_import:
             mock_import.return_value = {"success": True, "module_name": "mod_funcs"}
 
             result = service.restore_module_backup(mock_adapter, "mod_funcs", str(backup_path))
@@ -294,7 +294,7 @@ class TestRestoreFormBackup:
         mock_adapter = MagicMock()
         mock_adapter.form_exists.return_value = True
 
-        with patch.object(service, "import_form_from_text") as mock_import:
+        with patch.object(service._backup, "import_form_from_text") as mock_import:
             mock_import.return_value = {"success": True, "form_name": "TestForm"}
 
             result = service.restore_form_backup(mock_adapter, "TestForm", str(backup_path))

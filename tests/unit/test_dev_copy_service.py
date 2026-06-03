@@ -549,7 +549,7 @@ class TestReportBackup:
         svc = DevCopyService()
         svc._backup_base = str(tmp_path)
 
-        with patch.object(svc, "import_report_from_file", return_value={"success": True, "report_name": "TestReport"}) as mock_restore:
+        with patch.object(svc._backup, "import_report_from_file", return_value={"success": True, "report_name": "TestReport"}) as mock_restore:
             result = svc.restore_report_backup(adapter, "TestReport", str(report_file))
             mock_restore.assert_called_once_with(adapter, "TestReport", str(report_file))
             assert result["success"] is True
