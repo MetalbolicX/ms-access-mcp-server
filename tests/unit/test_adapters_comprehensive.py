@@ -604,6 +604,22 @@ class TestOdbcAdapterCopyDatabase:
         assert result is False
 
 
+class TestOdbcAdapterComOnlyRegression:
+    """Regression coverage: COM-only methods must stay present and raise NotImplementedError."""
+
+    def setup_method(self):
+        self.adapter = OdbcAdapter()
+
+    # Methods that currently exist and raise NotImplementedError
+    def test_import_all_versioning_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.import_all_versioning("/input_dir")
+
+    def test_compare_versioning_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.compare_versioning("/export_dir")
+
+
 class TestOdbcAdapterSaveDatabase:
     """Test that save_database raises NotImplementedError for OdbcAdapter."""
 

@@ -2,6 +2,7 @@ import os
 from typing import Any, Optional
 import pyodbc
 from .base import AccessAdapter
+from .com_only_mixin import ComOnlyAdapterMixin
 from ..models.database import (
     TableInfo,
     RelationshipInfo,
@@ -17,11 +18,12 @@ ACE_OLEDB_12 = "Microsoft.ACE.OLEDB.12.0"
 ACE_OLEDB_16 = "Microsoft.ACE.OLEDB.16.0"
 
 
-class OdbcAdapter(AccessAdapter):
+class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
     """Data-only adapter using pyodbc for fast read-only access.
 
-    Implements IDataAdapter + ISchemaAdapter.
-    COM-only operations raise NotImplementedError.
+    Inherits ComOnlyAdapterMixin first so its NotImplementedError stubs
+    take precedence over AccessAdapter protocol stubs for COM-only methods.
+    Implements IDataAdapter + ISchemaAdapter (via AccessAdapter protocol).
     """
 
     def __init__(self) -> None:
@@ -649,156 +651,8 @@ class OdbcAdapter(AccessAdapter):
         }
 
     # ========================================================================
-    # COM-only operations — raise NotImplementedError
+    # Compact/repair and copy — special implementations (not from mixin)
     # ========================================================================
-
-    def launch_access(self, visible: bool = False) -> None:
-        """Launch Access UI — not supported via ODBC."""
-        raise NotImplementedError("OdbcAdapter cannot launch Access UI")
-
-    def close_access(self) -> None:
-        """Close Access UI — not supported via ODBC."""
-        raise NotImplementedError("OdbcAdapter cannot close Access UI")
-
-    def get_forms(self) -> list:
-        """Get forms — not available via ODBC."""
-        raise NotImplementedError("get_forms requires COM (WinComAdapter)")
-
-    def get_reports(self) -> list:
-        """Get reports — not available via ODBC."""
-        raise NotImplementedError("get_reports requires COM (WinComAdapter)")
-
-    def get_macros(self) -> list:
-        """Get macros — not available via ODBC."""
-        raise NotImplementedError("get_macros requires COM (WinComAdapter)")
-
-    def get_modules(self) -> list:
-        """Get modules — not available via ODBC."""
-        raise NotImplementedError("get_modules requires COM (WinComAdapter)")
-
-    def form_exists(self, form_name: str) -> bool:
-        """Form existence check — not available via ODBC."""
-        raise NotImplementedError("form_exists requires COM (WinComAdapter)")
-
-    def report_exists(self, report_name: str) -> bool:
-        """Report existence check — not available via ODBC."""
-        raise NotImplementedError("report_exists requires COM (WinComAdapter)")
-
-    def get_form_controls(self, form_name: str) -> list:
-        """Get form controls — not available via ODBC."""
-        raise NotImplementedError("get_form_controls requires COM (WinComAdapter)")
-
-    def open_form(self, form_name: str) -> bool:
-        """Open form — not available via ODBC."""
-        raise NotImplementedError("open_form requires COM (WinComAdapter)")
-
-    def close_form(self, form_name: str) -> bool:
-        """Close form — not available via ODBC."""
-        raise NotImplementedError("close_form requires COM (WinComAdapter)")
-
-    def delete_form(self, form_name: str) -> bool:
-        """Delete form — not available via ODBC."""
-        raise NotImplementedError("delete_form requires COM (WinComAdapter)")
-
-    def delete_report(self, report_name: str) -> bool:
-        """Delete report — not available via ODBC."""
-        raise NotImplementedError("delete_report requires COM (WinComAdapter)")
-
-    def get_control_properties(self, form_name: str, control_name: str) -> dict:
-        """Get control properties — not available via ODBC."""
-        raise NotImplementedError("get_control_properties requires COM (WinComAdapter)")
-
-    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
-        """Set control property — not available via ODBC."""
-        raise NotImplementedError("set_control_property requires COM (WinComAdapter)")
-
-    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
-        """Set multiple properties at once — not available via ODBC."""
-        raise NotImplementedError("set_control_properties requires COM (WinComAdapter)")
-
-    def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
-        """List event procedures for a control — not available via ODBC."""
-        raise NotImplementedError("get_control_event_procedures requires COM (WinComAdapter)")
-
-    def get_vba_code(self, module_name: str) -> str:
-        """Get VBA code — not available via ODBC."""
-        raise NotImplementedError("get_vba_code requires COM (WinComAdapter)")
-
-    def set_vba_code(self, module_name: str, code: str) -> bool:
-        """Modify VBA code — not available via ODBC."""
-        raise NotImplementedError("set_vba_code requires COM (WinComAdapter)")
-
-    def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
-        """Add VBA procedure — not available via ODBC."""
-        raise NotImplementedError("add_vba_procedure requires COM (WinComAdapter)")
-
-    def compile_vba(self) -> dict:
-        """Compile VBA — not available via ODBC."""
-        raise NotImplementedError("compile_vba requires COM (WinComAdapter)")
-
-    def save_database(self) -> dict:
-        """Save VBA modules — not available via ODBC."""
-        raise NotImplementedError("save_database requires COM (WinComAdapter)")
-
-    def delete_module(self, module_name: str) -> bool:
-        """Delete module — not available via ODBC."""
-        raise NotImplementedError("delete_module requires COM (WinComAdapter)")
-
-    def vba_list_procedures(self, module_name: str) -> list[dict]:
-        """List procedures in a module — not available via ODBC."""
-        raise NotImplementedError("vba_list_procedures requires COM (WinComAdapter)")
-
-    def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict:
-        """Get procedure source — not available via ODBC."""
-        raise NotImplementedError("vba_get_procedure requires COM (WinComAdapter)")
-
-    def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
-        """Replace procedure body — not available via ODBC."""
-        raise NotImplementedError("vba_replace_procedure requires COM (WinComAdapter)")
-
-    def export_form_to_text(self, form_name: str) -> str:
-        """Export form — not available via ODBC."""
-        raise NotImplementedError("export_form_to_text requires COM (WinComAdapter)")
-
-    def import_form_from_text(self, form_name: str, form_data: str) -> bool:
-        """Import form — not available via ODBC."""
-        raise NotImplementedError("import_form_from_text requires COM (WinComAdapter)")
-
-    def export_report_to_text(self, report_name: str) -> str:
-        """Export report — not available via ODBC."""
-        raise NotImplementedError("export_report_to_text requires COM (WinComAdapter)")
-
-    def import_report_from_text(self, report_name: str, report_data: str) -> bool:
-        """Import report — not available via ODBC."""
-        raise NotImplementedError("import_report_from_text requires COM (WinComAdapter)")
-
-    def export_module_to_text(self, module_name: str) -> str:
-        """Export module — not available via ODBC."""
-        raise NotImplementedError("export_module_to_text requires COM (WinComAdapter)")
-
-    def export_macro_to_text(self, macro_name: str) -> str:
-        """Export macro — not available via ODBC."""
-        raise NotImplementedError("export_macro_to_text requires COM (WinComAdapter)")
-
-    def export_all_versioning(self, output_dir: str) -> dict:
-        """Export versioning — not available via ODBC."""
-        raise NotImplementedError("export_all_versioning requires COM (WinComAdapter)")
-
-    def export_query_to_text(self, query_name: str) -> str:
-        """Export query text — not available via ODBC."""
-        raise NotImplementedError("export_query_to_text requires COM (WinComAdapter)")
-
-    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
-        """Import query — not available via ODBC."""
-        raise NotImplementedError("import_query_from_text requires COM (WinComAdapter)")
-
-    def import_all_versioning(self, input_dir: str) -> dict:
-        """Import versioning — not available via ODBC."""
-        raise NotImplementedError("import_all_versioning requires COM (WinComAdapter)")
-
-    def compare_versioning(self, export_dir: str) -> dict:
-        """Compare versioning — not available via ODBC."""
-        raise NotImplementedError("compare_versioning requires COM (WinComAdapter)")
 
     def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
         """Compact or repair database — not available via ODBC."""
@@ -807,7 +661,7 @@ class OdbcAdapter(AccessAdapter):
         return {"success": False, "error": "Not available via ODBC"}
 
     def copy_database(self, source: str, dest: str) -> bool:
-        """Copy database file — available via ODBC."""
+        """Copy database file via file system copy (not COM)."""
         import shutil
         try:
             shutil.copy2(source, dest)

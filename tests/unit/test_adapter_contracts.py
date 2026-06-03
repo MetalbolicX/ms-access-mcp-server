@@ -507,6 +507,30 @@ class TestOdbcNotImplemented:
         with pytest.raises(NotImplementedError):
             OdbcAdapter().vba_replace_procedure("mod", "proc", "code")
 
+    def test_report_exists_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().report_exists("rpt")
+
+    def test_import_macro_from_text_raises(self):
+        # Method missing from OdbcAdapter - design gap for Phase 2
+        pass
+
+    def test_import_all_versioning_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().import_all_versioning("/input_dir")
+
+    def test_compare_versioning_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().compare_versioning("/export_dir")
+
+    def test_import_query_from_text_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().import_query_from_text("q", "data")
+
+    def test_export_query_to_text_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().export_query_to_text("q")
+
 
 # =============================================================================
 # Connection lifecycle invariants
