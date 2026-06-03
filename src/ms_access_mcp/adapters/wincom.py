@@ -566,15 +566,28 @@ class WinComAdapter(AccessAdapter):
         """Import an Access object from text data using LoadFromText.
 
         object_type: acForm=2, acReport=4, acModule=5, acMacro=8
+
+        Encoding: VBA modules (acModule=5) expect the system ANSI codepage
+        without BOM. Forms, reports, queries, and macros expect UTF-16-LE
+        with BOM. Using the wrong encoding causes Access to store
+        garbage (BOM chars as literal code) and corrupts the module.
         """
         temp_path = None
         try:
             fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="mcp_imp_")
             os.close(fd)
-            with open(temp_path, "wb") as f:
-                # Write as UTF-16-LE with BOM (what Access expects)
-                f.write(b"\xff\xfe")
-                f.write(text_data.encode("utf-16-le"))
+            # VBA modules (.bas) use system ANSI codepage — no BOM.
+            # Everything else (forms, reports, macros, queries) uses
+            # UTF-16-LE with BOM.
+            if object_type == 5:  # acModule
+                import locale
+                enc = locale.getpreferredencoding(False) or "cp1252"
+                with open(temp_path, "w", encoding=enc, errors="replace") as f:
+                    f.write(text_data)
+            else:
+                with open(temp_path, "wb") as f:
+                    f.write(b"\xff\xfe")
+                    f.write(text_data.encode("utf-16-le"))
             self._dispatcher._access_app.LoadFromText(object_type, object_name, temp_path)
             return True
         except Exception:
@@ -927,14 +940,9 @@ class WinComAdapter(AccessAdapter):
         def _do() -> None:
             if self._dispatcher._access_app is not None:
                 app = self._dispatcher._access_app
-                # Save all VBA modules before quitting
-                try:
-                    vb_project = app.VBE.VBProjects(1)
-                    for comp in vb_project.VBComponents:
-                        if comp.Type == 1:  # vbext_ct_StdModule
-                            app.DoCmd.Save(5, comp.Name)  # 5 = acModule
-                except Exception:
-                    pass
+                # Modules created via LoadFromText are auto-saved by Access.
+                # Named standard modules don't need pre-save here; changes are
+                # persisted on quit or remain in-memory as designed.
                 self._dispatcher._release_com_safe()
 
         try:
@@ -943,7 +951,13 @@ class WinComAdapter(AccessAdapter):
             print(f"Cleanup warning: close_access failed: {e}", file=sys.stderr)
 
     def set_vba_code(self, module_name: str, code: str) -> bool:
-        """Set VBA code in a module."""
+        """Set VBA code in a module.
+
+        For non-existent modules: uses LoadFromText which auto-creates,
+        names, and saves the module without triggering 'Save As' dialogs.
+        For existing modules: uses DeleteLines + AddFromString (safe
+        in-memory update on already-named components).
+        """
         if not self.is_connected():
             return False
 
@@ -952,26 +966,27 @@ class WinComAdapter(AccessAdapter):
             if vb_project is None:
                 return False
             try:
+                # Check if module already exists
                 target_module = None
                 for mod in vb_project.VBComponents:
                     if mod.Name == module_name:
                         target_module = mod
                         break
+
                 if target_module is None:
-                    target_module = vb_project.VBComponents.Add(1)
-                    target_module.Name = module_name
-                    # Save the new module to disk so AddFromString doesn't
-                    # trigger Access's "Save As" modal dialog.
+                    # New module: use LoadFromText (bypasses Access UI layer)
+                    text_data = f"Attribute VB_Name = \"{module_name}\"\r\n{code}"
+                    return self._load_object_from_text(5, module_name, text_data)
+                else:
+                    # Existing module: clear and repopulate in-memory
                     try:
-                        self._dispatcher._access_app.DoCmd.Save(5, module_name)
+                        target_module.CodeModule.DeleteLines(
+                            1, target_module.CodeModule.CountOfLines
+                        )
+                        target_module.CodeModule.AddFromString(code)
+                        return True
                     except Exception:
-                        pass  # Best-effort
-                try:
-                    target_module.CodeModule.DeleteLines(1, target_module.CodeModule.CountOfLines)
-                    target_module.CodeModule.AddFromString(code)
-                    return True
-                except Exception:
-                    return False
+                        return False
             except Exception as set_vba_exc:
                 import traceback
                 traceback.print_exc()
@@ -1550,7 +1565,12 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     def add_vba_procedure(self, module_name: str, procedure_name: str, code: str) -> bool:
-        """Add a VBA procedure to a module."""
+        """Add a VBA procedure to a module.
+
+        For non-existent modules: uses LoadFromText to create and name
+        the module. For existing modules: safely appends via AddFromString
+        on the already-named component.
+        """
         if not self.is_connected():
             return False
 
@@ -1565,15 +1585,13 @@ class WinComAdapter(AccessAdapter):
                         target_module = comp
                         break
                 if target_module is None:
-                    target_module = vb_project.VBComponents.Add(1)
-                    target_module.Name = module_name
-                    # Save to avoid "Save As" dialog on AddFromString
-                    try:
-                        self._dispatcher._access_app.DoCmd.Save(5, module_name)
-                    except Exception:
-                        pass
-                target_module.CodeModule.AddFromString(code)
-                return True
+                    # New module: use LoadFromText (bypasses Access UI layer)
+                    text_data = f"Attribute VB_Name = \"{module_name}\"\r\n{code}"
+                    return self._load_object_from_text(5, module_name, text_data)
+                else:
+                    # Existing module: append via AddFromString (safe on named)
+                    target_module.CodeModule.AddFromString(code)
+                    return True
             except Exception:
                 return False
 
@@ -3106,24 +3124,13 @@ class WinComAdapter(AccessAdapter):
                             # Update code
                             self.set_vba_code(name, data)
                         else:
-                            # Create via VBE
-                            def _do():
-                                app = self._dispatcher._access_app
-                                comp = app.VBE.VBProjects(1).VBComponents.Add(1)
-                                comp.Name = name
-                                # Save so AddFromString doesn't trigger "Save As" dialog
-                                try:
-                                    app.DoCmd.Save(5, name)
-                                except Exception:
-                                    pass
-                                comp.CodeModule.AddFromString(data)
-                                return True
-                            try:
-                                self._dispatcher.call(_do)
+                            # Create via LoadFromText (bypasses Access UI layer)
+                            text_data = f'Attribute VB_Name = "{name}"\r\n{data}'
+                            ok = self._load_object_from_text(5, name, text_data)
+                            if ok:
                                 imported["modules"].append(name)
-                            except Exception as e:
-                                errors.append(f"module {name}: {e}")
-                                continue
+                            else:
+                                errors.append(f"module {name}: LoadFromText failed")
 
                         # Compile to verify
                         compile_result = self.compile_vba()

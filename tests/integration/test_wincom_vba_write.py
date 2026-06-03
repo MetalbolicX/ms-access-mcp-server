@@ -191,6 +191,42 @@ class TestWinComVbaAddProcedure:
         assert isinstance(ok2, bool)
 
 
+class TestWinComVbaAddProcedureNewModule:
+    """Tests for add_vba_procedure on non-existent modules (LoadFromText path)."""
+
+    def setup_method(self):
+        self.adapter: WinComAdapter = WinComAdapter()
+
+    def teardown_method(self):
+        _cleanup_adapter(self.adapter)
+
+    def test_add_vba_procedure_nonexistent_module(self, temp_db_copy: str):
+        """add_vba_procedure on a non-existent module creates the module first.
+
+        This tests the LoadFromText codepath for new module creation.
+        """
+        assert self.adapter.connect(temp_db_copy)
+
+        proc_code = (
+            "Public Function BrandNewFunc(ByVal x As Long) As Long\n"
+            "    BrandNewFunc = x * 2\n"
+            "End Function\n"
+        )
+
+        module_name = _unique_name("modBrandNew")
+        ok = self.adapter.add_vba_procedure(module_name, "BrandNewFunc", proc_code)
+        assert ok, "add_vba_procedure should create the module and return True"
+
+        # Verify the module was created
+        modules = self.adapter.get_modules()
+        names = [m.name for m in modules]
+        assert module_name in names, f"Module {module_name} not found in {names}"
+
+        # Verify the procedure is in the module
+        module_code = self.adapter.get_vba_code(module_name)
+        assert "BrandNewFunc" in module_code, f"Expected 'BrandNewFunc' in module code, got: {module_code[:200]}"
+
+
 # =============================================================================
 # VBA Delete Module
 # =============================================================================

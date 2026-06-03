@@ -1041,6 +1041,56 @@ class TestWinComVBA:
         code = adapter.get_vba_code("NonExistent")
         assert code == ""
 
+    def test_set_vba_code_missing_module_uses_load_from_text(self, adapter, mock_app, tmp_path):
+        """set_vba_code for a non-existent module must call _load_object_from_text.
+
+        This is the LoadFromText codepath that avoids 'Save As' dialogs on
+        unnamed newly-created modules.
+        """
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        # Empty VBComponents — module does NOT exist
+        mock_app.VBE = MockVBE(MockVBProjects([MockVBProject("TestProject")]))
+        mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([])
+
+        code = "Public Sub NewCode()\nEnd Sub"
+        with patch.object(adapter, "_load_object_from_text", wraps=adapter._load_object_from_text) as mock_lft:
+            result = adapter.set_vba_code("modNewModule", code)
+            assert result is True
+            # Must call LoadFromText with object_type=5 (acModule)
+            mock_lft.assert_called_once()
+            args = mock_lft.call_args[0]
+            assert args[0] == 5  # acModule
+            assert args[1] == "modNewModule"
+            # Text must include Attribute VB_Name header
+            assert 'Attribute VB_Name = "modNewModule"' in args[2]
+            assert code in args[2]
+
+    def test_set_vba_code_existing_module_uses_delete_and_add_from_string(self, adapter, mock_app, tmp_path):
+        """set_vba_code for an existing module must use DeleteLines + AddFromString.
+
+        This preserves the existing safe in-memory update path and does NOT
+        call _load_object_from_text (which is only for new module creation).
+        """
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        comp = MockVBComponent("modExisting", comp_type=1, code="Old Code\nLine2")
+        mock_app.VBE = MockVBE(MockVBProjects([MockVBProject("TestProject")]))
+        mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([comp])
+
+        new_code = "Public Sub UpdatedCode()\nEnd Sub"
+        with patch.object(adapter, "_load_object_from_text", wraps=adapter._load_object_from_text) as mock_lft:
+            result = adapter.set_vba_code("modExisting", new_code)
+            assert result is True
+            # LoadFromText must NOT be called for existing modules
+            mock_lft.assert_not_called()
+            # CodeModule must have been cleared and repopulated
+            final_code = comp.CodeModule.Lines(1, comp.CodeModule.CountOfLines)
+            assert "UpdatedCode" in final_code
+            assert "Old Code" not in final_code
+
     def test_set_vba_code(self, adapter, mock_app, tmp_path):
         db_path = tmp_path / "test.accdb"
         db_path.write_text("mock")
@@ -1077,6 +1127,51 @@ class TestWinComVBA:
         mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([comp])
         result = adapter.save_database()
         assert result["success"] is True
+
+    def test_add_vba_procedure_missing_module_uses_load_from_text(self, adapter, mock_app, tmp_path):
+        """add_vba_procedure for a non-existent module must call _load_object_from_text.
+
+        This is the LoadFromText codepath for new module creation.
+        """
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        # Empty VBComponents — module does NOT exist
+        mock_app.VBE = MockVBE(MockVBProjects([MockVBProject("TestProject")]))
+        mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([])
+
+        code = "Public Sub MyProc()\nEnd Sub"
+        with patch.object(adapter, "_load_object_from_text", wraps=adapter._load_object_from_text) as mock_lft:
+            result = adapter.add_vba_procedure("modNew", "MyProc", code)
+            assert result is True
+            mock_lft.assert_called_once()
+            args = mock_lft.call_args[0]
+            assert args[0] == 5
+            assert args[1] == "modNew"
+            assert 'Attribute VB_Name = "modNew"' in args[2]
+            assert code in args[2]
+
+    def test_add_vba_procedure_existing_module_uses_add_from_string(self, adapter, mock_app, tmp_path):
+        """add_vba_procedure for an existing module must use AddFromString (append).
+
+        The existing-module path must NOT call _load_object_from_text — it
+        safely appends via AddFromString on the named module.
+        """
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        comp = MockVBComponent("modExisting", comp_type=1, code="Public Sub ExistingProc()\nEnd Sub")
+        mock_app.VBE = MockVBE(MockVBProjects([MockVBProject("TestProject")]))
+        mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([comp])
+
+        code = "Public Sub NewProc()\nEnd Sub"
+        with patch.object(adapter, "_load_object_from_text", wraps=adapter._load_object_from_text) as mock_lft:
+            result = adapter.add_vba_procedure("modExisting", "NewProc", code)
+            assert result is True
+            # Must NOT use LoadFromText for existing module append
+            mock_lft.assert_not_called()
+            final_code = comp.CodeModule.Lines(1, comp.CodeModule.CountOfLines)
+            assert "NewProc" in final_code
 
     def test_add_vba_procedure(self, adapter, mock_app, tmp_path):
         db_path = tmp_path / "test.accdb"
@@ -1578,6 +1673,29 @@ class TestWinComLaunchClose:
     def test_close_access_not_connected(self, adapter):
         # Should not raise when not connected
         adapter.close_access()
+
+    def test_close_access_does_not_pre_save_modules(self, adapter, mock_app, tmp_path):
+        """close_access must NOT call DoCmd.Save(5, ...) for unnamed modules.
+
+        Since set_vba_code/add_vba_procedure now use LoadFromText which
+        auto-saves, there is no need to pre-save modules in close_access.
+        This test ensures no DoCmd.Save call is made in close_access.
+        """
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        # Set up a real module so the loop body runs
+        comp = MockVBComponent("modReal", comp_type=1, code="Public Sub Real()\nEnd Sub")
+        mock_app.VBE = MockVBE(MockVBProjects([MockVBProject("TestProject")]))
+        mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([comp])
+
+        # Capture DoCmd calls
+        initial_save_count = len(mock_app.DoCmd.calls)
+        adapter.close_access()
+        # Only Close (object_type, object_name, save) should be recorded,
+        # NOT Save(5, module_name) calls in a pre-save loop
+        save_calls = [c for c in mock_app.DoCmd.calls if c[0] == "Save"]
+        assert len(save_calls) == 0, f"Unexpected DoCmd.Save calls: {save_calls}"
 
 
 class TestWinComSchemaServiceIntegration:
