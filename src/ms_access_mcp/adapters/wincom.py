@@ -3065,11 +3065,17 @@ class WinComAdapter(AccessAdapter):
             return {"success": False, "error": f"Directory not found: {input_dir}", "imported": {}}
 
         def safe_read_file(path: str) -> str:
-            """Read file, handling UTF-16-LE BOM from Access SaveAsText."""
+            """Read file: detect BOM for UTF-16-LE, else decode as UTF-8.
+
+            export_all_versioning writes all files as UTF-8. Raw Access
+            SaveAsText output uses UTF-16-LE with BOM — handle both.
+            """
             try:
                 with open(path, "rb") as f:
                     raw = f.read()
-                return raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
+                if len(raw) >= 2 and raw[0] == 0xff and raw[1] == 0xfe:
+                    return raw.decode("utf-16-le", errors="replace").lstrip("\ufeff")
+                return raw.decode("utf-8", errors="replace")
             except Exception:
                 return ""
 
@@ -3112,33 +3118,18 @@ class WinComAdapter(AccessAdapter):
                     data = safe_read_file(file_path)
 
                     if type_key == "modules":
-                        # For modules: create empty → set code → compile
-                        # First try to get existing module
-                        existing = None
-                        for m in self.get_modules():
-                            if m.name == name:
-                                existing = m
-                                break
-
-                        if existing:
-                            # Update code
-                            self.set_vba_code(name, data)
+                        # set_vba_code handles both new (LoadFromText via
+                        # dispatcher) and existing (AddFromString) modules
+                        ok = self.set_vba_code(name, data)
+                        if ok:
+                            imported["modules"].append(name)
                         else:
-                            # Create via LoadFromText (bypasses Access UI layer)
-                            text_data = f'Attribute VB_Name = "{name}"\r\n{data}'
-                            ok = self._load_object_from_text(5, name, text_data)
-                            if ok:
-                                imported["modules"].append(name)
-                            else:
-                                errors.append(f"module {name}: LoadFromText failed")
+                            errors.append(f"module {name}: set_vba_code failed")
 
                         # Compile to verify
                         compile_result = self.compile_vba()
                         if not compile_result.get("success"):
                             errors.append(f"module {name}: compile error")
-                        else:
-                            if name not in imported["modules"]:
-                                imported["modules"].append(name)
 
                     elif type_key == "forms":
                         success = self.import_form_from_text(name, data)

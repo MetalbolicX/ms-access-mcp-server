@@ -251,13 +251,9 @@ class TestWinComVbaImportAllVersioning:
         _cleanup_adapter(self.adapter)
 
     def test_import_all_versioning_finds_and_processes_module(self, temp_db_copy: str, tmp_path: pathlib.Path):
-        """import_all_versioning finds a .bas file, extracts the module name, and processes it.
+        """import_all_versioning loads a .bas file, creates the module, and compiles it.
 
-        NOTE: The full round-trip (export → reimport) is broken for modules due to an
-        encoding mismatch in the production code: export_all_versioning writes modules
-        as UTF-8 but import_all_versioning reads them via safe_read_file which decodes
-        as UTF-16-LE. This test verifies that the file is found, the name is extracted,
-        and the function processes it without crashing — even if LoadFromText fails.
+        Verifies the full round-trip: file read → LoadFromText → module created → code readable.
         """
         assert self.adapter.connect(temp_db_copy)
 
@@ -269,23 +265,24 @@ class TestWinComVbaImportAllVersioning:
         mod_name = f"modImport{uuid.uuid4().hex[:8]}"
         bas_filename = f"modules_{mod_name}.bas"
 
-        # Write a .bas file in UTF-16-LE with BOM (matching what safe_read_file expects)
+        # Write a .bas file in UTF-8 (matching export_all_versioning output)
         bas_file = modules_dir / bas_filename
-        bas_content = "\ufeffPublic Sub X()\n    Dim x As Long\n    x = 42\nEnd Sub"
-        bas_file.write_text(bas_content, encoding="utf-16-le")
+        bas_content = "Public Sub X()\n    Dim x As Long\n    x = 42\nEnd Sub"
+        bas_file.write_text(bas_content, encoding="utf-8")
 
         # Call import_all_versioning
         result = self.adapter.import_all_versioning(str(tmp_path))
 
-        # The file was found and the module name was extracted
+        # The module was loaded successfully via LoadFromText
         assert mod_name in result.get("imported", {}).get("modules", []), (
             f"Expected {mod_name} in imported modules, got: {result}"
         )
 
-        # Note: _load_object_from_text(5, ...) may fail due to the pre-existing
-        # encoding mismatch in safe_read_file (UTF-16-LE decode for modules).
-        # This is a known production bug — the test records the expected behaviour
-        # without asserting LoadFromText success.
+        # Verify the code was actually loaded by reading it back
+        code = self.adapter.get_vba_code(mod_name)
+        # VBA normalizes keywords to lowercase and adds blank lines — check case-insensitive
+        assert "Public Sub x()" in code, f"Expected 'Public Sub x()' in module code, got: {code[:200]}"
+        assert "x = 42" in code, f"Expected 'x = 42' in module code, got: {code[:200]}"
 
 
 # =============================================================================
