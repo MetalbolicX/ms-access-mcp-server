@@ -1,5 +1,5 @@
 """VBA Extensibility tools for MS Access database — Phase 1 SDD."""
-from .server import mcp, connection_service, schema_service, dev_copy_service
+from .server import mcp, connection_service, dev_copy_service
 
 
 def _get_adapter(connection_name: str = "default"):
@@ -28,8 +28,7 @@ def get_vba_projects(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    project_name = schema_service.get_vba_project_name()
+    project_name = adapter.get_vba_project_name()
     if project_name:
         return {"success": True, "projects": [project_name], "count": 1}
     return {"success": True, "projects": [], "count": 0}
@@ -49,8 +48,7 @@ def get_vba_code(module_name: str, connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    code = schema_service.get_vba_code(module_name)
+    code = adapter.get_vba_code(module_name)
     if not code:
         return {"success": False, "error": f"Module '{module_name}' not found or empty"}
     return {"success": True, "module": module_name, "code": code}

@@ -1,5 +1,5 @@
 """COM Automation and form/report discovery tools for MS Access — Phase 1 SDD."""
-from .server import mcp, connection_service, schema_service, com_automation_service
+from .server import mcp, connection_service, com_automation_service
 
 
 def _get_adapter(connection_name: str = "default"):
@@ -52,8 +52,7 @@ def get_forms(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    forms = schema_service.get_forms()
+    forms = adapter.get_forms()
     return {"success": True, "forms": [f.model_dump() for f in forms], "count": len(forms)}
 
 
@@ -70,8 +69,7 @@ def get_reports(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    reports = schema_service.get_reports()
+    reports = adapter.get_reports()
     return {"success": True, "reports": [r.model_dump() for r in reports], "count": len(reports)}
 
 
@@ -88,8 +86,7 @@ def get_macros(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    macros = schema_service.get_macros()
+    macros = adapter.get_macros()
     return {"success": True, "macros": [m.model_dump() for m in macros], "count": len(macros)}
 
 
@@ -106,8 +103,7 @@ def get_modules(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    modules = schema_service.get_modules()
+    modules = adapter.get_modules()
     return {"success": True, "modules": [m.model_dump() for m in modules], "count": len(modules)}
 
 
@@ -160,8 +156,7 @@ def form_exists(form_name: str, connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    exists = schema_service.form_exists(form_name)
+    exists = adapter.form_exists(form_name)
     return {"success": True, "exists": exists, "form": form_name}
 
 
@@ -179,8 +174,7 @@ def get_form_controls(form_name: str, connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    controls = schema_service.get_form_controls(form_name)
+    controls = adapter.get_form_controls(form_name)
     return {"success": True, "controls": [c.model_dump() for c in controls], "count": len(controls)}
 
 

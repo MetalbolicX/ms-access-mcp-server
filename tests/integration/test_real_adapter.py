@@ -194,25 +194,23 @@ class TestSchemaServiceRealDb:
 
     def setup_method(self):
         from ms_access_mcp.adapters.wincom import WinComAdapter
-        from ms_access_mcp.services.schema import SchemaService
 
         self.adapter = WinComAdapter()
         assert self.adapter.connect(TEST_DB)
-        self.service = SchemaService(self.adapter)
 
     def teardown_method(self):
         self.adapter.disconnect()
 
     def test_get_tables(self):
-        tables = self.service.get_tables()
+        tables = self.adapter.get_tables()
         assert isinstance(tables, list)
         assert len(tables) > 0
 
     def test_get_relationships(self):
-        rels = self.service.get_relationships()
+        rels = self.adapter.get_relationships()
         assert isinstance(rels, list)
 
     def test_form_exists(self):
-        forms = self.service.get_forms()
+        forms = self.adapter.get_forms()
         if forms:
-            assert self.service.form_exists(forms[0].name) is True
+            assert self.adapter.form_exists(forms[0].name) is True

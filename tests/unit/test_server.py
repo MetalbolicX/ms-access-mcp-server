@@ -11,7 +11,6 @@ class TestServerInitialization:
     def test_services_are_initialized(self):
         """Should initialize all required services."""
         assert server.connection_service is not None
-        assert server.schema_service is not None
         assert server.com_automation_service is not None
         assert server.migration_service is not None
         assert server.dev_copy_service is not None

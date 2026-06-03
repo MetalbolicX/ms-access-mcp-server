@@ -1,5 +1,5 @@
 """Schema and metadata tools for MS Access database — Phase 1 SDD."""
-from .server import mcp, connection_service, schema_service, _path_guard
+from .server import mcp, connection_service, _path_guard
 
 
 def _get_adapter(connection_name: str = "default"):
@@ -15,6 +15,15 @@ def _check_connected(connection_name: str = "default"):
     return connection_service.is_connected(connection_name)
 
 
+def _get_table_schema(adapter, table_name: str):
+    """Find a table by name from the adapter's table list."""
+    tables = adapter.get_tables()
+    for table in tables:
+        if table.name == table_name:
+            return table
+    return None
+
+
 @mcp.tool()
 def get_tables(connection_name: str = "default") -> dict:
     """
@@ -26,9 +35,7 @@ def get_tables(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    # Update schema service to use the correct adapter
-    schema_service.set_adapter(adapter)
-    tables = schema_service.get_tables()
+    tables = adapter.get_tables()
     return {"success": True, "tables": [t.model_dump() for t in tables], "count": len(tables)}
 
 
@@ -46,8 +53,7 @@ def get_table_schema(table_name: str, connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    table = schema_service.get_table_schema(table_name)
+    table = _get_table_schema(adapter, table_name)
     if table is None:
         return {"success": False, "error": f"Table '{table_name}' not found"}
     return {"success": True, "table": table.model_dump()}
@@ -66,8 +72,7 @@ def get_relationships(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    relationships = schema_service.get_relationships()
+    relationships = adapter.get_relationships()
     return {
         "success": True,
         "relationships": [r.model_dump() for r in relationships],
@@ -121,9 +126,8 @@ def get_er_diagram(connection_name: str = "default") -> dict:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    schema_service.set_adapter(adapter)
-    tables = schema_service.get_tables()
-    relationships = schema_service.get_relationships()
+    tables = adapter.get_tables()
+    relationships = adapter.get_relationships()
 
     nodes = []
     for table in tables:

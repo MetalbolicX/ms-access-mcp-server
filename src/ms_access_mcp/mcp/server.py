@@ -1,7 +1,7 @@
 from typing import Optional, Any
 from fastmcp import FastMCP
 from ..services.connection import ConnectionPool
-from ..services.schema import SchemaService
+
 from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
 from ..services.dev_copy_service import DevCopyService
@@ -16,7 +16,6 @@ mcp = FastMCP("MS Access MCP Server")
 
 # Initialize services
 connection_service = ConnectionPool()
-schema_service = SchemaService()
 com_automation_service = COMAutomationService()
 migration_service = MigrationService(connector_registry=_default_registry)
 dev_copy_service = DevCopyService()
@@ -39,7 +38,7 @@ def _init_http_config() -> None:
 
 
 # Import tool modules to register their @mcp.tool() decorators
-from . import connection, schema, crud, export, com, vba, system, migration, linked_tables, dev_copy  # noqa: E402, F811
+from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
@@ -69,13 +68,15 @@ from .vba import (  # noqa: E402
 )
 from .system import (  # noqa: E402
     get_system_tables, get_object_metadata,
+    recover_access, diagnose_environment,
+)
+from .persistence import (  # noqa: E402
     export_form_to_text, import_form_from_text, delete_form,
     export_report_to_text, import_report_from_text, delete_report,
     export_module_to_text, export_macro_to_text,
-    export_all_versioning, execute_sql_script,
     export_query_to_text, import_query_from_text,
-    export_schema_ddl, compare_versioning, import_all_versioning,
-    recover_access, diagnose_environment,
+    export_all_versioning, import_all_versioning, compare_versioning,
+    export_schema_ddl, execute_sql_script,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import get_linked_tables, create_linked_table, refresh_linked_table, unlink_table  # noqa: E402

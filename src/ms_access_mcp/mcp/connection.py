@@ -8,7 +8,7 @@ Tools:
 - get_active_connection() → returns active connection name (NEW)
 - is_connected() → checks connection status
 """
-from .server import mcp, connection_service, schema_service, com_automation_service, _path_guard
+from .server import mcp, connection_service, com_automation_service, _path_guard
 from ..adapters.wincom import WinComAdapter
 from ..adapters.odbc import OdbcAdapter
 
@@ -36,7 +36,6 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
         # Use backward-compatible 2-arg API for the actual connection
         result = connection_service.connect(database_path, adapter)
         if result:
-            schema_service.set_adapter(adapter)
             com_automation_service.set_adapter(adapter)
         return {"success": result, "connected": result, "database": database_path, "name": name}
     except KeyError as e:

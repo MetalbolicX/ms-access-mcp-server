@@ -30,17 +30,15 @@ class TestConnectAccess:
             assert result["success"] is False
             assert result["connected"] is False
 
-    def test_connect_access_sets_adapter_on_schema_and_com_services(self):
-        """connect_access should set adapter on schema_service and com_automation_service."""
+    def test_connect_access_sets_adapter_on_com_service(self):
+        """connect_access should set adapter on com_automation_service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
         mock_conn.connect.return_value = True
-        mock_schema = MagicMock()
         mock_com = MagicMock()
-        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn, schema_service=mock_schema, com_automation_service=mock_com):
+        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
             result = server.connect_access("test.accdb", use_com=True)
             assert result["success"] is True
-            mock_schema.set_adapter.assert_called_once()
             mock_com.set_adapter.assert_called_once()
 
 

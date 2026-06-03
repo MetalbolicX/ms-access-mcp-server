@@ -287,38 +287,3 @@ class TestOdbcAdapterQueryCrud:
         assert "DROP VIEW" in sql_query
         assert "[Q1]" in sql_query
         assert result == {"success": True}
-
-
-class TestSchemaServiceQueryCrud:
-    """Task 2.5/2.7: TDD tests for SchemaService.get_queries calling adapter."""
-
-    def test_get_queries_calls_adapter_get_queries(self):
-        """SchemaService.get_queries should delegate to adapter.get_queries()."""
-        from ms_access_mcp.services.schema import SchemaService
-
-        mock_adapter = MagicMock()
-        mock_adapter.get_queries.return_value = [
-            QueryInfo(name="Q1", sql="SELECT * FROM Table1", type="select"),
-            QueryInfo(name="Q2", sql="SELECT id FROM Table2", type="select"),
-        ]
-
-        service = SchemaService()
-        service.set_adapter(mock_adapter)
-
-        result = service.get_queries()
-
-        mock_adapter.get_queries.assert_called_once()
-        assert len(result) == 2
-        assert result[0].name == "Q1"
-        assert result[1].name == "Q2"
-
-    def test_get_queries_returns_empty_list_when_no_adapter(self):
-        """SchemaService.get_queries should return empty list when adapter is None."""
-        from ms_access_mcp.services.schema import SchemaService
-
-        service = SchemaService()
-        # No adapter set
-
-        result = service.get_queries()
-
-        assert result == []

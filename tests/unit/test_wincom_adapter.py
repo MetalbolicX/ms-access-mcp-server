@@ -1698,31 +1698,6 @@ class TestWinComLaunchClose:
         assert len(save_calls) == 0, f"Unexpected DoCmd.Save calls: {save_calls}"
 
 
-class TestWinComSchemaServiceIntegration:
-    """WinComAdapter used via SchemaService (end-to-end dispatch)."""
-
-    def test_get_tables_via_service(self, adapter, mock_app, tmp_path):
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
-        from ms_access_mcp.services.schema import SchemaService
-        service = SchemaService(adapter)
-        tables = service.get_tables()
-        assert isinstance(tables, list)
-
-    def test_form_exists_via_service(self, adapter, mock_app, tmp_path):
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
-        mock_app.CurrentProject.AllForms = MockProjectCollection([
-            MockProjectItem("MyForm"),
-        ])
-        from ms_access_mcp.services.schema import SchemaService
-        service = SchemaService(adapter)
-        assert service.form_exists("MyForm") is True
-        assert service.form_exists("NonExistent") is False
-
-
 class TestWinComSchemaInspectorDelegation:
     """Tests that verify WinComAdapter delegates schema operations to self._schema.
 

@@ -44,12 +44,12 @@ class TestGetVbaProjects:
 
     def test_get_vba_projects_returns_empty_when_no_project(self):
         """get_vba_projects should return empty list when no project found."""
-        mock_schema = MagicMock()
-        mock_schema.get_vba_project_name.return_value = ""
+        mock_adapter = MagicMock()
+        mock_adapter.get_vba_project_name.return_value = ""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_vba_projects.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_vba_projects.__globals__, connection_service=mock_conn):
             result = server.get_vba_projects()
             assert result["success"] is True
             assert result["projects"] == []
@@ -57,12 +57,12 @@ class TestGetVbaProjects:
 
     def test_get_vba_projects_returns_project_name(self):
         """get_vba_projects should return project name when found."""
-        mock_schema = MagicMock()
-        mock_schema.get_vba_project_name.return_value = "MyProject"
+        mock_adapter = MagicMock()
+        mock_adapter.get_vba_project_name.return_value = "MyProject"
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_vba_projects.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_vba_projects.__globals__, connection_service=mock_conn):
             result = server.get_vba_projects()
             assert result["success"] is True
             assert result["projects"] == ["MyProject"]
@@ -74,24 +74,24 @@ class TestGetVbaCode:
 
     def test_get_vba_code_returns_error_for_empty_module(self):
         """get_vba_code should return error when module not found or empty."""
-        mock_schema = MagicMock()
-        mock_schema.get_vba_code.return_value = ""
+        mock_adapter = MagicMock()
+        mock_adapter.get_vba_code.return_value = ""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_vba_code.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_vba_code.__globals__, connection_service=mock_conn):
             result = server.get_vba_code("NonExistentModule")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
 
     def test_get_vba_code_returns_code_on_success(self):
         """get_vba_code should return code when module exists."""
-        mock_schema = MagicMock()
-        mock_schema.get_vba_code.return_value = "Sub Test()\nEnd Sub"
+        mock_adapter = MagicMock()
+        mock_adapter.get_vba_code.return_value = "Sub Test()\nEnd Sub"
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_vba_code.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_vba_code.__globals__, connection_service=mock_conn):
             result = server.get_vba_code("modTest")
             assert result["success"] is True
             assert result["module"] == "modTest"

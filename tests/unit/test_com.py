@@ -65,12 +65,12 @@ class TestFormDiscoveryTools:
         """get_forms should return success with form list."""
         mock_form = MagicMock()
         mock_form.model_dump.return_value = {"name": "TestForm"}
-        mock_schema = MagicMock()
-        mock_schema.get_forms.return_value = [mock_form]
+        mock_adapter = MagicMock()
+        mock_adapter.get_forms.return_value = [mock_form]
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_forms.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_forms.__globals__, connection_service=mock_conn):
             result = server.get_forms()
             assert result["success"] is True
             assert result["count"] == 1
@@ -80,12 +80,12 @@ class TestFormDiscoveryTools:
         """get_reports should return success with report list."""
         mock_report = MagicMock()
         mock_report.model_dump.return_value = {"name": "TestReport"}
-        mock_schema = MagicMock()
-        mock_schema.get_reports.return_value = [mock_report]
+        mock_adapter = MagicMock()
+        mock_adapter.get_reports.return_value = [mock_report]
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_reports.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_reports.__globals__, connection_service=mock_conn):
             result = server.get_reports()
             assert result["success"] is True
             assert result["count"] == 1
@@ -94,12 +94,12 @@ class TestFormDiscoveryTools:
         """get_macros should return success with macro list."""
         mock_macro = MagicMock()
         mock_macro.model_dump.return_value = {"name": "TestMacro"}
-        mock_schema = MagicMock()
-        mock_schema.get_macros.return_value = [mock_macro]
+        mock_adapter = MagicMock()
+        mock_adapter.get_macros.return_value = [mock_macro]
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_macros.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_macros.__globals__, connection_service=mock_conn):
             result = server.get_macros()
             assert result["success"] is True
             assert result["count"] == 1
@@ -108,12 +108,12 @@ class TestFormDiscoveryTools:
         """get_modules should return success with module list."""
         mock_module = MagicMock()
         mock_module.model_dump.return_value = {"name": "modTest"}
-        mock_schema = MagicMock()
-        mock_schema.get_modules.return_value = [mock_module]
+        mock_adapter = MagicMock()
+        mock_adapter.get_modules.return_value = [mock_module]
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_conn.get_adapter.return_value = MagicMock()
-        with patch.dict(server.get_modules.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_modules.__globals__, connection_service=mock_conn):
             result = server.get_modules()
             assert result["success"] is True
             assert result["count"] == 1
@@ -170,11 +170,12 @@ class TestControlTools:
 
     def test_form_exists_returns_exists_flag(self):
         """form_exists should return exists flag."""
+        mock_adapter = MagicMock()
+        mock_adapter.form_exists.return_value = True
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_schema = MagicMock()
-        mock_schema.form_exists.return_value = True
-        with patch.dict(server.form_exists.__globals__, connection_service=mock_conn, schema_service=mock_schema):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.form_exists.__globals__, connection_service=mock_conn):
             result = server.form_exists("TestForm")
             assert result["success"] is True
             assert result["exists"] is True
