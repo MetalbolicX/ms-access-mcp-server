@@ -79,12 +79,12 @@ class TestComDispatcherCleanup:
         # DAO Close still happened even though ADO failed
         mock_db.Close.assert_called_once_with()
 
-    def test_release_com_safe_imports_subprocess(self):
-        """The wincom module imports subprocess (needed for taskkill)."""
+    def test_com_dispatcher_imports_subprocess(self):
+        """The com_dispatcher module imports subprocess (needed for taskkill)."""
         import importlib
-        import ms_access_mcp.adapters.wincom as wincom_mod
-        importlib.reload(wincom_mod)
-        assert hasattr(wincom_mod, 'subprocess') or 'subprocess' in dir(wincom_mod)
+        import ms_access_mcp.adapters.com_dispatcher as com_disp_mod
+        importlib.reload(com_disp_mod)
+        assert hasattr(com_disp_mod, 'subprocess') or 'subprocess' in dir(com_disp_mod)
 
     def test_disconnect_wires_release_com_safe(self):
         """disconnect() calls _release_com_safe via dispatcher."""
