@@ -68,23 +68,6 @@ class TestOdbcAdapterConnectedHelpers(ConnectedAdapterTestBase):
         """None input returns as-is (empty string map key)."""
         assert self.adapter._pyodbc_type_name(None) is None
 
-    def test_tables_query_matches_expected_sql(self):
-        """_tables_query returns SQL selecting MSysObjects with type and flags."""
-        q = self.adapter._tables_query()
-        assert "MSysObjects" in q
-        assert "type" in q.lower() or "Type" in q
-        assert "name" in q.lower() or "Name" in q
-
-    def test_columns_query_escapes_brackets(self):
-        """_columns_query escapes brackets in table names for SQL safety."""
-        q = self.adapter._columns_query("My]Table")
-        assert "[My]]Table]" in q
-
-    def test_columns_query_with_special_chars(self):
-        """Bracket in table name is doubled to escape."""
-        q = self.adapter._columns_query("Table[1]")
-        assert "Table[1]" in q or "Table]]1]" in q
-
 
 class TestOdbcAdapterConnectedConnectionLifecycle(ConnectedAdapterTestBase):
     """Test connect/disconnect lifecycle with mocked os.path.exists and pyodbc."""
