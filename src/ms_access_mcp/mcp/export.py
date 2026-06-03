@@ -16,15 +16,20 @@ def _check_connected(connection_name: str = "default"):
 
 
 @mcp.tool()
-def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = ",", header: bool = True, connection_name: str = "default") -> dict:
+def export_table_csv(sql: str, file_path: str, delimiter: str = ",", header: bool = True, encoding: str = "utf-8", connection_name: str = "default") -> dict:
     """
-    Export a table or query to a CSV file.
+    Export the result of a SQL query to a CSV file.
+
+    Uses the ACE/Jet Text IISAM for fast server-side CSV generation when
+    possible (delimiter=',', encoding supported). Falls back to fetching
+    rows in Python and writing via csv.DictWriter.
 
     Args:
-        table_or_query_name: Name of the table or query to export
+        sql: SQL SELECT query to export
         file_path: Path to the output CSV file
         delimiter: Field delimiter (default ',')
         header: Whether to write header row (default True)
+        encoding: Output file encoding (default 'utf-8')
         connection_name: Connection identifier (defaults to "default")
     """
     if not _check_connected(connection_name):
@@ -35,7 +40,7 @@ def export_table_csv(table_or_query_name: str, file_path: str, delimiter: str = 
         return {"success": False, "error": "No adapter available"}
 
     try:
-        result = adapter.export_table_csv(table_or_query_name, file_path, delimiter, header)
+        result = adapter.export_table_csv(sql, file_path, delimiter, header, encoding)
         return result
     except Exception as e:
         return {"success": False, "error": str(e)}

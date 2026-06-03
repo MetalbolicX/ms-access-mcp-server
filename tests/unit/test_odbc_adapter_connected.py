@@ -412,7 +412,7 @@ class TestOdbcAdapterConnectedExportCsv(ConnectedAdapterTestBase):
     """Test CSV export functionality."""
 
     def test_export_table_csv_writes_header_and_rows(self):
-        """export_table_csv writes CSV with header and data rows."""
+        """export_table_csv writes CSV with header and data rows (fallback path)."""
         self._setup_description(["ID", "Name"])
         self._setup_fetchall([(1, "Alice"), (2, "Bob")])
 
@@ -421,18 +421,20 @@ class TestOdbcAdapterConnectedExportCsv(ConnectedAdapterTestBase):
         }):
             with patch("builtins.open", create=True) as mock_open:
                 with patch("pathlib.Path.mkdir"):
-                    result = self.adapter.export_table_csv("T", "D:/tmp/out.csv")
+                    # delimiter=';' forces csv.DictWriter fallback so we don't
+                    # hit the IISAM cursor path in this unit test
+                    result = self.adapter.export_table_csv("T", "D:/tmp/out.csv", delimiter=";")
 
         assert result["success"] is True
         assert result["rows_exported"] == 2
         mock_open.return_value.__enter__.return_value.write.assert_called()
 
     def test_export_table_csv_creates_parent_dir(self):
-        """export_table_csv creates parent directory if it does not exist."""
+        """export_table_csv creates parent directory if it does not exist (fallback path)."""
         with patch.object(self.adapter, "execute_query", return_value={"success": True, "rows": [], "columns": []}):
             with patch("builtins.open", create=True):
                 with patch("pathlib.Path.mkdir") as mock_mkdir:
-                    self.adapter.export_table_csv("T", "D:/tmp/subdir/out.csv")
+                    self.adapter.export_table_csv("T", "D:/tmp/subdir/out.csv", delimiter=";")
 
         mock_mkdir.assert_called()
 

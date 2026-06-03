@@ -2586,42 +2586,76 @@ class WinComAdapter(AccessAdapter):
     # DATA EXPORT (CSV/JSON)
     # ========================================================================
 
-    def export_table_csv(self, table_or_query: str, file_path: str, delimiter: str = ",", header: bool = True) -> dict:
-        """Export a table or query to a CSV file.
+    _CODEPAGE_MAP = {
+        "utf-8": 65001,
+        "utf-16": 1200,
+        "latin-1": 28591,
+        "windows-1252": 1252,
+        "cp1252": 1252,
+        "shift-jis": 932,
+    }
+
+    def export_table_csv(self, sql: str, file_path: str, delimiter: str = ",", header: bool = True, encoding: str = "utf-8") -> dict:
+        """Export the result of a SQL query to a CSV file.
+
+        Uses the ACE/Jet Text IISAM (INSERT INTO [Text;...]) as the primary path
+        for performance. Falls back to csv.DictWriter when delimiter != "," or
+        the encoding is not supported by the Text IISAM code page map.
 
         Args:
-            table_or_query: Name of the table or query to export
+            sql: SQL SELECT query, or a table/query name (backwards compatible)
             file_path: Path to the output CSV file
             delimiter: Field delimiter (default ',')
             header: Whether to write header row (default True)
+            encoding: Output file encoding (default 'utf-8')
 
         Returns:
             dict with success=True, rows_exported=N, file_path
         """
         import csv
+        import re
         from pathlib import Path
+
+        # Backwards compat: bare table/query name → SELECT * FROM [name]
+        if not re.match(r'^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|EXEC|EXECUTE|WITH)\s', sql, re.IGNORECASE):
+            sql = f"SELECT * FROM [{sql}]"
 
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
 
-        result = self.execute_query(f"SELECT * FROM [{table_or_query}]")
-        if not result.get("success"):
-            return {"success": False, "error": result.get("error", "Query failed")}
+        def _fallback():
+            result = self.execute_query(sql)
+            if not result.get("success"):
+                return {"success": False, "error": result.get("error", "Query failed")}
+            rows = result.get("rows", [])
+            columns = result.get("columns", [])
+            try:
+                Path(file_path).parent.mkdir(parents=True, exist_ok=True)
+                with open(file_path, "w", newline="", encoding=encoding) as f:
+                    writer = csv.DictWriter(f, fieldnames=columns, delimiter=delimiter)
+                    if header:
+                        writer.writeheader()
+                    writer.writerows(rows)
+                return {"success": True, "rows_exported": len(rows), "file_path": file_path}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
-        rows = result.get("rows", [])
-        columns = result.get("columns", [])
+        codepage = self._CODEPAGE_MAP.get(encoding)
+        if delimiter != "," or codepage is None:
+            return _fallback()
 
         try:
-            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=columns, delimiter=delimiter)
-                if header:
-                    writer.writeheader()
-                writer.writerows(rows)
-
-            return {"success": True, "rows_exported": len(rows), "file_path": file_path}
+            p = Path(file_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            conn_str = (
+                f"Text;FMT=Delimited;HDR={'YES' if header else 'NO'};"
+                f"CharacterSet={codepage};DATABASE={p.parent.absolute()}"
+            )
+            insert_sql = f"INSERT INTO [{conn_str}].[{p.name}] {sql}"
+            self.db.Execute(insert_sql, DAO_DB_FAIL_ON_ERROR)
+            return {"success": True, "rows_exported": self.db.RecordsAffected, "file_path": file_path}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return _fallback()
 
     def export_query_json(self, query_name: str, file_path: str, pretty: bool = False) -> dict:
         """Export a query to a JSON file.
