@@ -1,15 +1,15 @@
 from typing import Optional
-from ..adapters.base import AccessAdapter
+from ..adapters.interfaces import IUiAdapter
 
 
 class COMAutomationService:
     """Manages Access COM automation (launch, VBA injection, form control)."""
 
-    def __init__(self, adapter: Optional[AccessAdapter] = None):
+    def __init__(self, adapter: Optional[IUiAdapter] = None):
         self._adapter = adapter
         self._access_running = False
 
-    def set_adapter(self, adapter: AccessAdapter) -> None:
+    def set_adapter(self, adapter: IUiAdapter) -> None:
         """Set the adapter for COM operations."""
         self._adapter = adapter
 

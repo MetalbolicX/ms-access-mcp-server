@@ -48,21 +48,21 @@ class TestWinComAdapterExportAllVersioning:
 
 
 class TestOdbcAdapterVersioning:
-    """ODBC adapter versioning returns empty/false (COM-only operations)."""
+    """ODBC adapter raises NotImplementedError for COM-only operations."""
 
     def setup_method(self):
         from ms_access_mcp.adapters.odbc import OdbcAdapter
         self.adapter = OdbcAdapter()
 
-    def test_export_module_to_text_returns_empty(self):
-        # ODBC returns empty string for module export (not implemented)
-        result = self.adapter.export_module_to_text("mod")
-        assert result == ""
+    def test_export_module_to_text_raises(self):
+        # ODBC raises NotImplementedError for module export (COM-only operation)
+        with pytest.raises(NotImplementedError):
+            self.adapter.export_module_to_text("mod")
 
-    def test_export_macro_to_text_returns_empty(self):
-        # ODBC returns empty string for macro export (not implemented)
-        result = self.adapter.export_macro_to_text("mcr")
-        assert result == ""
+    def test_export_macro_to_text_raises(self):
+        # ODBC raises NotImplementedError for macro export (COM-only operation)
+        with pytest.raises(NotImplementedError):
+            self.adapter.export_macro_to_text("mcr")
 
     def test_export_all_versioning_raises(self):
         with pytest.raises(NotImplementedError):

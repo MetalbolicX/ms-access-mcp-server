@@ -12,6 +12,14 @@ class VersioningOrchestrator:
     All methods accept an AccessAdapter and return standardized dicts.
     """
 
+    def __init__(self, dev_copy_service: DevCopyService | None = None):
+        self._dev_copy_service = dev_copy_service
+
+    def _get_dev_copy_service(self) -> DevCopyService:
+        if self._dev_copy_service is None:
+            self._dev_copy_service = DevCopyService()
+        return self._dev_copy_service
+
     def export_all(self, output_dir, adapter, dedup=True, module_ext=".bas"):
         """Export all forms, reports, modules, macros, and queries to a directory structure.
 
@@ -102,7 +110,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.export_module_backup(adapter, module_name, backup_dir)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -122,7 +130,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.import_module_from_text(adapter, module_name, file_path)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -142,7 +150,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.export_form_backup(adapter, form_name, backup_dir)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -162,7 +170,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.import_form_from_text(adapter, form_name, file_path)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -182,7 +190,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.restore_form_backup(adapter, form_name, backup_path)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -202,7 +210,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.export_report_backup(adapter, report_name, backup_dir)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -222,7 +230,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.import_report_from_file(adapter, report_name, file_path)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:
@@ -242,7 +250,7 @@ class VersioningOrchestrator:
         try:
             if not adapter.is_connected():
                 return {"success": False, "error": "Not connected"}
-            service = DevCopyService()
+            service = self._get_dev_copy_service()
             result = service.restore_report_backup(adapter, report_name, backup_path)
             return {"success": result.get("success", False), "error": None}
         except Exception as e:

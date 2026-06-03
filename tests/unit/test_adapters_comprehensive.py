@@ -100,55 +100,68 @@ class TestOdbcAdapterStubs:
     def setup_method(self):
         self.adapter = OdbcAdapter()
 
-    def test_get_forms_returns_empty(self):
-        assert self.adapter.get_forms() == []
+    def test_get_forms_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.get_forms()
 
-    def test_get_reports_returns_empty(self):
-        assert self.adapter.get_reports() == []
+    def test_get_reports_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.get_reports()
 
-    def test_get_macros_returns_empty(self):
-        assert self.adapter.get_macros() == []
+    def test_get_macros_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.get_macros()
 
-    def test_get_modules_returns_empty(self):
-        assert self.adapter.get_modules() == []
+    def test_get_modules_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.get_modules()
 
-    def test_get_vba_code_returns_empty(self):
-        assert self.adapter.get_vba_code("mod") == ""
+    def test_get_vba_code_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.get_vba_code("mod")
 
     def test_get_system_tables_returns_empty(self):
         assert self.adapter.get_system_tables() == []
 
-    def test_form_exists_returns_false(self):
-        assert self.adapter.form_exists("frm") is False
+    def test_form_exists_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.form_exists("frm")
 
-    def test_get_form_controls_returns_empty(self):
-        assert self.adapter.get_form_controls("frm") == []
+    def test_get_form_controls_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.get_form_controls("frm")
 
-    def test_export_form_to_text_returns_empty(self):
-        assert self.adapter.export_form_to_text("frm") == ""
+    def test_export_form_to_text_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.export_form_to_text("frm")
 
-    def test_import_form_from_text_returns_false(self):
-        assert self.adapter.import_form_from_text("frm", "data") is False
+    def test_import_form_from_text_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.import_form_from_text("frm", "data")
 
-    def test_delete_form_returns_false(self):
-        assert self.adapter.delete_form("frm") is False
+    def test_delete_form_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.delete_form("frm")
 
-    def test_export_report_to_text_returns_empty(self):
-        assert self.adapter.export_report_to_text("rpt") == ""
+    def test_export_report_to_text_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.export_report_to_text("rpt")
 
-    def test_import_report_from_text_returns_false(self):
-        assert self.adapter.import_report_from_text("rpt", "data") is False
+    def test_import_report_from_text_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.import_report_from_text("rpt", "data")
 
-    def test_delete_report_returns_false(self):
-        assert self.adapter.delete_report("rpt") is False
+    def test_delete_report_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.delete_report("rpt")
 
-    def test_add_vba_procedure_returns_false(self):
-        assert self.adapter.add_vba_procedure("mod", "proc", "code") is False
+    def test_add_vba_procedure_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.add_vba_procedure("mod", "proc", "code")
 
-    def test_compile_vba_returns_error_dict(self):
-        result = self.adapter.compile_vba()
-        assert result["success"] is False
-        assert "ODBC" in result["error"] or "not available" in result["error"].lower()
+    def test_compile_vba_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            self.adapter.compile_vba()
 
     def test_get_object_metadata_returns_empty(self):
         assert self.adapter.get_object_metadata("obj") == {}
@@ -568,15 +581,15 @@ class TestWinComAdapterExecuteSqlScriptConnected:
 
 
 class TestOdbcAdapterDeleteModule:
-    """Test that delete_module returns False for OdbcAdapter (COM-only)."""
+    """Test that delete_module raises NotImplementedError for OdbcAdapter."""
 
     def setup_method(self):
         self.adapter = OdbcAdapter()
 
-    def test_delete_module_returns_false(self):
-        """OdbcAdapter.delete_module returns False (COM-only operation)."""
-        result = self.adapter.delete_module("any_module")
-        assert result is False
+    def test_delete_module_raises_not_implemented(self):
+        """OdbcAdapter.delete_module raises NotImplementedError (COM-only)."""
+        with pytest.raises(NotImplementedError):
+            self.adapter.delete_module("any_module")
 
 
 class TestOdbcAdapterCopyDatabase:
@@ -592,16 +605,15 @@ class TestOdbcAdapterCopyDatabase:
 
 
 class TestOdbcAdapterSaveDatabase:
-    """Test that save_database returns error dict for OdbcAdapter (COM-only)."""
+    """Test that save_database raises NotImplementedError for OdbcAdapter."""
 
     def setup_method(self):
         self.adapter = OdbcAdapter()
 
-    def test_save_database_returns_error_dict(self):
-        """OdbcAdapter.save_database returns error dict (COM-only operation)."""
-        result = self.adapter.save_database()
-        assert result["success"] is False
-        assert "ODBC" in result["error"] or "not available" in result["error"].lower()
+    def test_save_database_raises_not_implemented(self):
+        """OdbcAdapter.save_database raises NotImplementedError (COM-only)."""
+        with pytest.raises(NotImplementedError):
+            self.adapter.save_database()
 
 
 class TestAccessAdapterProtocol:

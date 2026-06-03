@@ -65,17 +65,14 @@ class TestCompileVbaReturnsDict:
 class TestOdbcAdapterCompileVbaReturnsDict:
     """Task 1.5 GREEN: OdbcAdapter.compile_vba() must return dict."""
 
-    def test_odbc_compile_vba_returns_error_dict(self):
-        """OdbcAdapter.compile_vba() returns {"success": False, "error": "Not available via ODBC"}."""
+    def test_odbc_compile_vba_raises_not_implemented(self):
+        """OdbcAdapter.compile_vba() raises NotImplementedError (COM-only)."""
         from ms_access_mcp.adapters.odbc import OdbcAdapter
 
         adapter = OdbcAdapter()
 
-        result = adapter.compile_vba()
-
-        assert isinstance(result, dict), "compile_vba() must return dict"
-        assert result.get("success") is False
-        assert "ODBC" in result.get("error", "") or "not available" in result.get("error", "").lower()
+        with pytest.raises(NotImplementedError):
+            adapter.compile_vba()
 
 
 class TestCompileWithRetry:

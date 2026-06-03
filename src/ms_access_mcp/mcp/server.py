@@ -5,6 +5,7 @@ from ..services.schema import SchemaService
 from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
 from ..services.dev_copy_service import DevCopyService
+from ..connectors.registry import _default_registry
 from ..config import ServerConfig
 from ..auth import ApiKeyMiddleware
 from ..path_guard import PathGuard
@@ -17,7 +18,7 @@ mcp = FastMCP("MS Access MCP Server")
 connection_service = ConnectionPool()
 schema_service = SchemaService()
 com_automation_service = COMAutomationService()
-migration_service = MigrationService()
+migration_service = MigrationService(connector_registry=_default_registry)
 dev_copy_service = DevCopyService()
 
 # Lazily initialized config and path guard (only for HTTP mode via serve command)

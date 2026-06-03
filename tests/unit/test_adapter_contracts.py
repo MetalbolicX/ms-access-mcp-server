@@ -463,17 +463,21 @@ class TestOdbcNotImplemented:
         with pytest.raises(NotImplementedError):
             OdbcAdapter().set_vba_code("mod", "code")
 
-    def test_open_form_returns_false(self):
-        assert OdbcAdapter().open_form("frm") is False
+    def test_open_form_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().open_form("frm")
 
-    def test_close_form_returns_false(self):
-        assert OdbcAdapter().close_form("frm") is False
+    def test_close_form_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().close_form("frm")
 
-    def test_get_control_properties_returns_empty_dict(self):
-        assert OdbcAdapter().get_control_properties("frm", "ctrl") == {}
+    def test_get_control_properties_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().get_control_properties("frm", "ctrl")
 
-    def test_set_control_property_returns_false(self):
-        assert OdbcAdapter().set_control_property("frm", "ctrl", "prop", "val") is False
+    def test_set_control_property_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().set_control_property("frm", "ctrl", "prop", "val")
 
     def test_compact_repair_returns_error_dict(self):
         # ODBC does not support compact/repair via COM
@@ -483,20 +487,25 @@ class TestOdbcNotImplemented:
     def test_copy_database_returns_false(self):
         assert OdbcAdapter().copy_database("s.accdb", "d.accdb") is False
 
-    def test_set_control_properties_returns_none(self):
-        assert OdbcAdapter().set_control_properties("frm", "ctrl", {}) is None
+    def test_set_control_properties_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().set_control_properties("frm", "ctrl", {})
 
-    def test_get_control_event_procedures_returns_none(self):
-        assert OdbcAdapter().get_control_event_procedures("frm", "") is None
+    def test_get_control_event_procedures_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().get_control_event_procedures("frm", "")
 
-    def test_vba_list_procedures_returns_none(self):
-        assert OdbcAdapter().vba_list_procedures("mod") is None
+    def test_vba_list_procedures_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().vba_list_procedures("mod")
 
-    def test_vba_get_procedure_returns_none(self):
-        assert OdbcAdapter().vba_get_procedure("mod", "proc") is None
+    def test_vba_get_procedure_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().vba_get_procedure("mod", "proc")
 
-    def test_vba_replace_procedure_returns_none(self):
-        assert OdbcAdapter().vba_replace_procedure("mod", "proc", "code") is None
+    def test_vba_replace_procedure_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().vba_replace_procedure("mod", "proc", "code")
 
 
 # =============================================================================

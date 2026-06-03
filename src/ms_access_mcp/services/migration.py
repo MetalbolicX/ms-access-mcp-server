@@ -10,19 +10,8 @@ from ..adapters.base import AccessAdapter
 from .schema_mapper import SchemaMapper
 from .verification import VerificationService
 from ..connectors.base import ConnectorCapabilities
-from ..connectors.postgres import PostgresConnector
-from ..connectors.mysql import MySqlConnector
-from ..connectors.sqlite import SqliteConnector
-from ..connectors.sqlserver import SqlServerConnector
 from .transfer_strategy import TransferContext, TransferStrategySelector
-
-CONNECTORS = {
-    "postgres": PostgresConnector,
-    "mysql": MySqlConnector,
-    "mariadb": MySqlConnector,
-    "sqlite": SqliteConnector,
-    "sqlserver": SqlServerConnector,
-}
+from ..connectors.registry import ConnectorRegistry, _default_registry
 
 
 class JobTracker:
@@ -77,11 +66,12 @@ class JobTracker:
 class MigrationService:
     """Orchestrates schema extraction, upload, and data transfer."""
 
-    def __init__(self):
+    def __init__(self, connector_registry: ConnectorRegistry | None = None):
         self._tracker = JobTracker()
         self._schema_mapper = SchemaMapper()
         self._transfer_selector = TransferStrategySelector()
         self._verification = VerificationService()
+        self._connector_registry = connector_registry or _default_registry
 
     @staticmethod
     def _build_select(
@@ -250,8 +240,9 @@ class MigrationService:
 
     def upload_schema(self, target_type: str, connection_string: str, schema: ExtractedSchema) -> dict:
         """Create tables in target database."""
-        connector_cls = CONNECTORS.get(target_type)
-        if not connector_cls:
+        try:
+            connector_cls = self._connector_registry.get(target_type)
+        except KeyError:
             return {"success": False, "error": f"Unknown target type: {target_type}"}
 
         connector = connector_cls()
@@ -292,8 +283,9 @@ class MigrationService:
         self._tracker.create_job(job_id, target_type)
         self._tracker.update_job(job_id, status="running", phase="transfer")
 
-        connector_cls = CONNECTORS.get(target_type)
-        if not connector_cls:
+        try:
+            connector_cls = self._connector_registry.get(target_type)
+        except KeyError:
             return {"success": False, "job_id": job_id, "error": f"Unknown target type: {target_type}"}
 
         connector = connector_cls()
