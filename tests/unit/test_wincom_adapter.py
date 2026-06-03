@@ -1845,155 +1845,107 @@ class TestWinComAdapterLifecycle:
         assert "t2" in tables2
 
 
-class TestWinComTrustedLocations:
-    """Trusted Locations preservation hooks."""
+class TestVbaOperationsTrustedLocationsSingleSource:
+    """Verify VbaOperations and trusted_locations.py are the single source of truth.
 
-    def test_capture_trusted_locations_returns_list(self, adapter, mock_app, tmp_path, monkeypatch):
-        """Capture returns list of location dicts with path/description."""
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
+    After removing duplicate methods from WinComAdapter (PR 3), the trusted_locations
+    module-level functions are the sole implementation. VbaOperations wraps them
+    via its _trusted_locations_wrap method.
+    """
 
-        # Mock subprocess.run to avoid real registry access
-        captured_runs = []
+    def test_vba_operations_has_trusted_locations_wrap(self):
+        """VbaOperations has _trusted_locations_wrap that delegates to module functions."""
+        from ms_access_mcp.adapters.vba_operations import VbaOperations
+        from ms_access_mcp.adapters.trusted_locations import capture_trusted_locations, restore_trusted_locations
+        # VbaOperations._trusted_locations_wrap is a bound method
+        assert hasattr(VbaOperations, "_trusted_locations_wrap")
 
-        def mock_run(cmd, **kwargs):
-            captured_runs.append(cmd)
-            return MagicMock(returncode=0, stdout="", stderr="")
+    def test_trusted_locations_module_functions_exist(self):
+        """Module-level capture_trusted_locations and restore_trusted_locations exist."""
+        from ms_access_mcp.adapters.trusted_locations import capture_trusted_locations, restore_trusted_locations
+        assert callable(capture_trusted_locations)
+        assert callable(restore_trusted_locations)
 
-        monkeypatch.setattr("subprocess.run", mock_run)
+    def test_vba_operations_trusted_locations_wrap_uses_module_functions(self, mock_app, monkeypatch):
+        """VbaOperations._trusted_locations_wrap calls module-level capture/restore."""
+        from ms_access_mcp.adapters.vba_operations import VbaOperations
+        from ms_access_mcp.adapters.trusted_locations import capture_trusted_locations, restore_trusted_locations
 
-        result = adapter._capture_trusted_locations()
-        assert isinstance(result, list)
+        dispatcher = MagicMock()
+        dispatcher._started = True
+        vba = VbaOperations(dispatcher)
 
-    def test_restore_trusted_locations_returns_bool(self, adapter, mock_app, tmp_path, monkeypatch):
-        """Restore returns True on success."""
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
-
-        locations = [{"path": "C:\\Trusted", "description": "Test location"}]
-        result = adapter._restore_trusted_locations(locations)
-        assert isinstance(result, bool)
-
-    def test_capture_trusted_locations_non_windows(self, adapter, monkeypatch):
-        """On non-Windows, capture returns empty list without error."""
-        monkeypatch.setattr(sys, "platform", "linux")
-        result = adapter._capture_trusted_locations()
-        assert result == []
-
-    def test_trusted_locations_wrap_flag_off_skips(self, adapter, mock_app, tmp_path, monkeypatch):
-        """When preserve_trusted_locations is False, capture/restore are skipped."""
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
-
-        capture_called = False
-        restore_called = False
+        capture_called = []
+        restore_called = []
 
         def mock_capture():
-            nonlocal capture_called
-            capture_called = True
+            capture_called.append(1)
+            return [{"path": "C:\\Test", "description": "Test"}]
+
+        def mock_restore(locs):
+            restore_called.append(locs)
+            return True
+
+        monkeypatch.setattr("ms_access_mcp.adapters.vba_operations.capture_trusted_locations", mock_capture)
+        monkeypatch.setattr("ms_access_mcp.adapters.vba_operations.restore_trusted_locations", mock_restore)
+        monkeypatch.setattr(
+            "ms_access_mcp.adapters.vba_operations.ServerConfig",
+            lambda: MagicMock(preserve_trusted_locations=True),
+        )
+
+        def inner():
+            return "success"
+
+        result = vba._trusted_locations_wrap(inner)
+        assert result == "success"
+        assert len(capture_called) == 1
+        assert len(restore_called) == 1
+
+    def test_vba_operations_trusted_locations_wrap_skips_when_disabled(self, mock_app, monkeypatch):
+        """When preserve_trusted_locations is False, capture/restore are not called."""
+        from ms_access_mcp.adapters.vba_operations import VbaOperations
+
+        dispatcher = MagicMock()
+        dispatcher._started = True
+        vba = VbaOperations(dispatcher)
+
+        called = []
+
+        def mock_capture():
+            called.append("capture")
             return []
 
         def mock_restore(locs):
-            nonlocal restore_called
-            restore_called = True
+            called.append("restore")
             return True
 
-        monkeypatch.setattr(adapter, "_capture_trusted_locations", mock_capture)
-        monkeypatch.setattr(adapter, "_restore_trusted_locations", mock_restore)
-
-        # Patch config to False
+        monkeypatch.setattr("ms_access_mcp.adapters.vba_operations.capture_trusted_locations", mock_capture)
+        monkeypatch.setattr("ms_access_mcp.adapters.vba_operations.restore_trusted_locations", mock_restore)
         monkeypatch.setattr(
-            "ms_access_mcp.adapters.wincom.ServerConfig",
+            "ms_access_mcp.adapters.vba_operations.ServerConfig",
             lambda: MagicMock(preserve_trusted_locations=False),
         )
 
-        def inner_fn():
-            return "called"
+        result = vba._trusted_locations_wrap(lambda: "done")
+        assert result == "done"
+        assert called == []
 
-        result = adapter._trusted_locations_wrap(inner_fn)
-        assert result == "called"
-        assert capture_called is False
-        assert restore_called is False
+    def test_wincom_adapter_no_duplicate_trusted_locations_methods(self):
+        """WinComAdapter no longer has _capture_trusted_locations / _restore_trusted_locations / _trusted_locations_wrap."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        assert not hasattr(WinComAdapter, "_capture_trusted_locations")
+        assert not hasattr(WinComAdapter, "_restore_trusted_locations")
+        assert not hasattr(WinComAdapter, "_trusted_locations_wrap")
 
-    def test_trusted_locations_wrap_flag_on_calls_hooks(self, adapter, mock_app, tmp_path, monkeypatch):
-        """When preserve_trusted_locations is True, capture/restore are called."""
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
+    def test_wincom_adapter_no_duplicate_access_control_type_name(self):
+        """WinComAdapter no longer has _access_control_type_name (exists in UiOperations)."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        assert not hasattr(WinComAdapter, "_access_control_type_name")
 
-        capture_called = False
-        restore_called = False
-
-        def mock_capture():
-            nonlocal capture_called
-            capture_called = True
-            return [{"path": "C:\\Trusted", "description": "Test"}]
-
-        def mock_restore(locs):
-            nonlocal restore_called
-            restore_called = True
-            return True
-
-        monkeypatch.setattr(adapter, "_capture_trusted_locations", mock_capture)
-        monkeypatch.setattr(adapter, "_restore_trusted_locations", mock_restore)
-
-        # Patch config to True
-        monkeypatch.setattr(
-            "ms_access_mcp.adapters.wincom.ServerConfig",
-            lambda: MagicMock(preserve_trusted_locations=True),
-        )
-
-        def inner_fn():
-            return "inner_result"
-
-        result = adapter._trusted_locations_wrap(inner_fn)
-        assert result == "inner_result"
-        assert capture_called is True
-        assert restore_called is True
-
-    def test_vba_modifying_methods_use_trusted_locations_wrap(self, adapter, mock_app, tmp_path, monkeypatch):
-        """set_vba_code, add_vba_procedure, vba_replace_procedure, compile_vba use wrap."""
-        db_path = tmp_path / "test.accdb"
-        db_path.write_text("mock")
-        adapter.connect(str(db_path))
-
-        # Set up VBA project with a module
-        comp = MockVBComponent("modTest", comp_type=1, code="")
-        mock_app.VBE = MockVBE(MockVBProjects([MockVBProject("TestProject")]))
-        mock_app.VBE.VBProjects(1).VBComponents = MockVBComponents([comp])
-
-        # Patch config to True so wrap is used
-        monkeypatch.setattr(
-            "ms_access_mcp.adapters.wincom.ServerConfig",
-            lambda: MagicMock(preserve_trusted_locations=True),
-        )
-
-        # Mock capture/restore
-        captured = False
-        restored = False
-
-        def mock_capture():
-            nonlocal captured
-            captured = True
-            return [{"path": "C:\\Trusted", "description": ""}]
-
-        def mock_restore(locs):
-            nonlocal restored
-            restored = True
-            return True
-
-        monkeypatch.setattr(adapter, "_capture_trusted_locations", mock_capture)
-        monkeypatch.setattr(adapter, "_restore_trusted_locations", mock_restore)
-
-        # Call set_vba_code - should trigger wrap
-        result = adapter.set_vba_code("modTest", "Sub Test()\nEnd Sub")
-        # set_vba_code dispatches so our mock may not see it in same thread context
-        # but at minimum the wrapper was set up correctly
-        # We just verify the method doesn't crash
-        assert isinstance(result, bool)
+    def test_ui_operations_has_access_control_type_name(self):
+        """UiOperations still has _access_control_type_name as the canonical implementation."""
+        from ms_access_mcp.adapters.ui_operations import UiOperations
+        assert hasattr(UiOperations, "_access_control_type_name")
 
 
 class TestStripSqlComments:
