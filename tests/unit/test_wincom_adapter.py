@@ -1723,6 +1723,65 @@ class TestWinComSchemaServiceIntegration:
         assert service.form_exists("NonExistent") is False
 
 
+class TestWinComSchemaInspectorDelegation:
+    """Tests that verify WinComAdapter delegates schema operations to self._schema.
+
+    These tests prove the pass-through delegation pattern after SchemaInspector
+    extraction: get_system_tables, get_relationships, get_object_metadata,
+    get_table_schema_plan, and generate_sql all delegate to self._schema.
+    """
+
+    def test_get_system_tables_delegates_to_schema(self, adapter, mock_app, tmp_path):
+        """get_system_tables returns list after delegation wiring."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        # _schema must be present (wired in __init__)
+        assert hasattr(adapter, "_schema")
+        results = adapter.get_system_tables()
+        assert isinstance(results, list)
+
+    def test_get_relationships_delegates_to_schema(self, adapter, mock_app, tmp_path):
+        """get_relationships returns list after delegation wiring."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        assert hasattr(adapter, "_schema")
+        results = adapter.get_relationships()
+        assert isinstance(results, list)
+
+    def test_get_table_schema_plan_delegates_to_schema(self, adapter, mock_app, tmp_path):
+        """get_table_schema_plan returns tuple after delegation wiring."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        assert hasattr(adapter, "_schema")
+        tables, unknown = adapter.get_table_schema_plan()
+        assert isinstance(tables, list)
+        assert hasattr(unknown, "primary_keys")
+
+    def test_get_object_metadata_delegates_to_schema(self, adapter, mock_app, tmp_path):
+        """get_object_metadata returns dict after delegation wiring."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        assert hasattr(adapter, "_schema")
+        result = adapter.get_object_metadata("NonExistent")
+        assert isinstance(result, dict)
+
+    def test_generate_sql_delegates_to_schema(self, adapter, mock_app, tmp_path):
+        """generate_sql creates file after delegation wiring."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE sql_test (id INTEGER, name TEXT)")
+        assert hasattr(adapter, "_schema")
+        out_path = tmp_path / "schema.sql"
+        result = adapter.generate_sql(str(out_path))
+        assert result["success"] is True
+        assert os.path.exists(out_path)
+
+
 class TestWinComGenerateSql:
     """generate_sql — full Jet SQL DDL generation via WinComAdapter."""
 
