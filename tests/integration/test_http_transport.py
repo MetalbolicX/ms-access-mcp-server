@@ -761,5 +761,6 @@ class TestFullServerStartup:
         from ms_access_mcp.cli import main as cli_main
         assert cli_main is not None
         assert hasattr(cli_main, "app")
-        assert hasattr(cli_main, "serve")
-        assert hasattr(cli_main, "connect")
+        assert hasattr(cli_main, "export_all")
+        assert hasattr(cli_main, "compare_versioning")
+        assert hasattr(cli_main, "export_vba")
