@@ -5,7 +5,7 @@ requiring COM automation. Each stub raises NotImplementedError("requires COM aut
 
 Methods that OdbcAdapter implements itself (ODBC data operations) are NOT in this mixin:
 - execute_query, insert_data, update_data, delete_data
-- export_table_csv, export_query_json
+- export_data
 - get_tables, get_queries, create_query, set_query_sql, delete_query, create_table, delete_table
 - get_linked_tables, create_linked_table, refresh_linked_table, unlink_table
 - export_schema_ddl

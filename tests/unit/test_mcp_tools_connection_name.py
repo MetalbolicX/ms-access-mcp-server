@@ -10,7 +10,7 @@ class TestConnectionNameThroughTools:
     @pytest.mark.parametrize("tool_name,tool_args,tool_kwargs", [
         ("get_tables", (), {}),
         ("get_queries", (), {}),
-        ("export_table_csv", ("table", "/tmp/out.csv"), {}),
+        ("export_data", ("SELECT * FROM [table]", "/tmp/out.csv", "csv"), {}),
         ("get_linked_tables", (), {}),
         ("get_forms", (), {}),
         ("get_vba_projects", (), {}),

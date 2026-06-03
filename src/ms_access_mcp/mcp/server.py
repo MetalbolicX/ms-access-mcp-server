@@ -51,7 +51,7 @@ from .crud import (  # noqa: E402
     create_table, delete_table,
     query_data, insert_data, update_data, delete_data,
 )
-from .export import export_table_csv, export_query_json  # noqa: E402
+from .export import export_data  # noqa: E402
 from .com import (  # noqa: E402
     launch_access, close_access,
     get_forms, get_reports, get_macros, get_modules,

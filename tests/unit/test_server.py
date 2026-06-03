@@ -45,10 +45,9 @@ class TestReExports:
         assert callable(query_data)
 
     def test_export_tools_are_exported(self):
-        """Should export export tools."""
-        from ms_access_mcp.mcp.server import export_table_csv, export_query_json
-        assert callable(export_table_csv)
-        assert callable(export_query_json)
+        """Should export export tool."""
+        from ms_access_mcp.mcp.server import export_data
+        assert callable(export_data)
 
     def test_com_tools_are_exported(self):
         """Should export COM automation tools."""

@@ -1384,7 +1384,7 @@ class TestWinComExport:
         adapter.execute_query("CREATE TABLE export_test (id INTEGER, val TEXT)")
         adapter.insert_data("export_test", {"id": 1, "val": "hello"})
         out = tmp_path / "out.csv"
-        result = adapter.export_table_csv("export_test", str(out))
+        result = adapter.export_data("SELECT id, val FROM [export_test]", str(out), format="csv", delimiter=";")
         assert result["success"] is True
         assert result["rows_exported"] == 1
         assert out.exists()
@@ -1396,7 +1396,7 @@ class TestWinComExport:
         adapter.execute_query("CREATE TABLE export_test (id INTEGER, val TEXT)")
         adapter.insert_data("export_test", {"id": 1, "val": "hello"})
         out = tmp_path / "out.json"
-        result = adapter.export_query_json("export_test", str(out))
+        result = adapter.export_data("SELECT id, val FROM [export_test]", str(out), format="json")
         assert result["success"] is True
         assert result["rows_exported"] == 1
         assert out.exists()
@@ -1404,7 +1404,7 @@ class TestWinComExport:
         assert data[0]["val"] == "hello"
 
     def test_export_not_connected(self, adapter):
-        result = adapter.export_table_csv("t", "/tmp/out.csv")
+        result = adapter.export_data("SELECT * FROM [t]", "/tmp/out.csv")
         assert result["success"] is False
 
 

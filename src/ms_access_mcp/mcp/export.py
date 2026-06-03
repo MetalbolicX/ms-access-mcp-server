@@ -1,4 +1,9 @@
-"""Data export tools for MS Access database — Phase 1 SDD."""
+"""Data export tool for MS Access database — Strategy-pattern driven.
+
+Replaces the old ``export_table_csv`` / ``export_query_json`` with a single
+``export_data`` tool that accepts a ``format`` parameter (``csv``, ``json``,
+``excel``).
+"""
 from .server import mcp, connection_service
 
 
@@ -16,21 +21,46 @@ def _check_connected(connection_name: str = "default"):
 
 
 @mcp.tool()
-def export_table_csv(sql: str, file_path: str, delimiter: str = ",", header: bool = True, encoding: str = "utf-8", connection_name: str = "default") -> dict:
-    """
-    Export the result of a SQL query to a CSV file.
+def export_data(
+    sql: str,
+    file_path: str,
+    format: str = "csv",
+    delimiter: str = ",",
+    header: bool = True,
+    encoding: str = "utf-8",
+    pretty: bool = False,
+    sheet_name: str = "Sheet1",
+    connection_name: str = "default",
+) -> dict:
+    """Export the result of a SQL SELECT query to a file in the given format.
 
-    Uses the ACE/Jet Text IISAM for fast server-side CSV generation when
-    possible (delimiter=',', encoding supported). Falls back to fetching
-    rows in Python and writing via csv.DictWriter.
+    Uses the Strategy pattern behind the scenes — each format has a dedicated
+    strategy that tries an Access-engine IISAM fast path first (for CSV and
+    Excel) and falls back to a Python-side writer when the engine is
+    unavailable.
 
     Args:
-        sql: SQL SELECT query to export
-        file_path: Path to the output CSV file
-        delimiter: Field delimiter (default ',')
-        header: Whether to write header row (default True)
-        encoding: Output file encoding (default 'utf-8')
-        connection_name: Connection identifier (defaults to "default")
+        sql: Raw ``SELECT`` query to execute.  No automatic wrapping — pass
+            the exact SQL you want to run.
+        file_path: Destination file path (e.g. ``"/tmp/report.csv"``,
+            ``"/tmp/data.xlsx"``).
+        format: Output format — ``"csv"`` (default), ``"json"``, or
+            ``"excel"``.
+        delimiter: CSV field delimiter (default ``","``).  Only used when
+            ``format="csv"``.
+        header: Whether to write a header row (default ``True``).  Only
+            used when ``format="csv"``.
+        encoding: Output file encoding (default ``"utf-8"``).  Only used
+            when ``format="csv"``.
+        pretty: Whether to indent the JSON output (default ``False``).
+            Only used when ``format="json"``.
+        sheet_name: Worksheet name inside the Excel workbook (default
+            ``"Sheet1"``).  Only used when ``format="excel"``.
+        connection_name: Connection identifier (defaults to ``"default"``).
+
+    Returns:
+        A dict with ``success`` (bool), ``rows_exported`` (int),
+        ``file_path`` (str), and optionally ``error`` (str).
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
@@ -40,32 +70,16 @@ def export_table_csv(sql: str, file_path: str, delimiter: str = ",", header: boo
         return {"success": False, "error": "No adapter available"}
 
     try:
-        result = adapter.export_table_csv(sql, file_path, delimiter, header, encoding)
-        return result
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+        # Forward format-specific options as keyword arguments
+        options = {}
+        if format == "csv":
+            options = {"delimiter": delimiter, "header": header, "encoding": encoding}
+        elif format == "json":
+            options = {"pretty": pretty}
+        elif format == "excel":
+            options = {"sheet_name": sheet_name}
 
-
-@mcp.tool()
-def export_query_json(query_name: str, file_path: str, pretty: bool = False, connection_name: str = "default") -> dict:
-    """
-    Export a query to a JSON file.
-
-    Args:
-        query_name: Name of the query to export
-        file_path: Path to the output JSON file
-        pretty: Whether to format JSON with indentation (default False)
-        connection_name: Connection identifier (defaults to "default")
-    """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    adapter = _get_adapter(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "No adapter available"}
-
-    try:
-        result = adapter.export_query_json(query_name, file_path, pretty)
+        result = adapter.export_data(sql, file_path, format, **options)
         return result
     except Exception as e:
         return {"success": False, "error": str(e)}

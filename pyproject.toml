@@ -11,10 +11,12 @@ dependencies = [
     "pyodbc>=5.0.0",
     "psycopg2-binary>=2.9.0",
     "mysql-connector-python>=8.0.0",
+    "openpyxl>=3.1.5",
 ]
 
 [project.optional-dependencies]
 windows = ["pywin32>=306"]
+excel = ["openpyxl>=3.1.0"]
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.5.0",

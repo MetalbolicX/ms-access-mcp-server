@@ -39,7 +39,9 @@ class WinComAdapter(AccessAdapter):
     different async workers.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, strategy_selector: Any | None = None) -> None:
+        from .export.strategies import ExportStrategySelector
+
         self._dispatcher = ComDispatcher()
         self._vba = VbaOperations(self._dispatcher)
         self._ui = UiOperations(self._dispatcher)
@@ -57,6 +59,8 @@ class WinComAdapter(AccessAdapter):
         # State mirrors what dispatcher holds for query purposes
         self._db_path: Optional[str] = None
         self._ado_conn: Optional[Any] = None
+        # Export strategy registry (injectable for testing)
+        self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
 
     def _ensure_windows(self) -> None:
         """Raise RuntimeError if not on Windows. Called before first COM operation."""
@@ -589,111 +593,53 @@ class WinComAdapter(AccessAdapter):
         return self._dispatcher.call(_do)
 
     # ========================================================================
-    # DATA EXPORT (CSV/JSON)
+    # DATA EXPORT (Strategy pattern — csv, json, excel)
     # ========================================================================
 
-    _CODEPAGE_MAP = {
-        "utf-8": 65001,
-        "utf-16": 1200,
-        "latin-1": 28591,
-        "windows-1252": 1252,
-        "cp1252": 1252,
-        "shift-jis": 932,
-    }
+    def export_data(self, sql: str, file_path: str, format: str = "csv", **options: Any) -> dict:
+        """Export the result of a SQL SELECT query to a file.
 
-    def export_table_csv(self, sql: str, file_path: str, delimiter: str = ",", header: bool = True, encoding: str = "utf-8") -> dict:
-        """Export the result of a SQL query to a CSV file.
-
-        Uses the ACE/Jet Text IISAM (INSERT INTO [Text;...]) as the primary path
-        for performance. Falls back to csv.DictWriter when delimiter != "," or
-        the encoding is not supported by the Text IISAM code page map.
+        Delegates to the appropriate ``ExportStrategy`` registered in
+        ``self._strategy_selector``.  The strategy tries an Access-engine
+        IISAM fast path first (for CSV and Excel) and falls back to a
+        Python-side writer when the engine is unavailable or the format
+        has no IISAM support (JSON).
 
         Args:
-            sql: SQL SELECT query, or a table/query name (backwards compatible)
-            file_path: Path to the output CSV file
-            delimiter: Field delimiter (default ',')
-            header: Whether to write header row (default True)
-            encoding: Output file encoding (default 'utf-8')
+            sql: Raw ``SELECT`` query to execute.
+            file_path: Destination file path.
+            format: Output format — ``"csv"`` (default), ``"json"``, or ``"excel"``.
+            **options: Format-specific options forwarded to the strategy.
+                Common options: ``delimiter``, ``header``, ``encoding``,
+                ``pretty``, ``sheet_name``.
 
         Returns:
-            dict with success=True, rows_exported=N, file_path
+            dict with ``success=True``, ``rows_exported`` (int), ``file_path`` (str),
+            or ``success=False``, ``error`` (str).
         """
-        import csv
-        import re
-        from pathlib import Path
-
-        # Backwards compat: bare table/query name → SELECT * FROM [name]
-        if not re.match(r'^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|EXEC|EXECUTE|WITH)\s', sql, re.IGNORECASE):
-            sql = f"SELECT * FROM [{sql}]"
-
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
 
-        def _fallback():
-            result = self.execute_query(sql)
-            if not result.get("success"):
-                return {"success": False, "error": result.get("error", "Query failed")}
-            rows = result.get("rows", [])
-            columns = result.get("columns", [])
-            try:
-                Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-                with open(file_path, "w", newline="", encoding=encoding) as f:
-                    writer = csv.DictWriter(f, fieldnames=columns, delimiter=delimiter)
-                    if header:
-                        writer.writeheader()
-                    writer.writerows(rows)
-                return {"success": True, "rows_exported": len(rows), "file_path": file_path}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        codepage = self._CODEPAGE_MAP.get(encoding)
-        if delimiter != "," or codepage is None:
-            return _fallback()
+        from .export.strategies import ExportContext
 
         try:
-            p = Path(file_path)
-            p.parent.mkdir(parents=True, exist_ok=True)
-            conn_str = (
-                f"Text;FMT=Delimited;HDR={'YES' if header else 'NO'};"
-                f"CharacterSet={codepage};DATABASE={p.parent.absolute()}"
-            )
-            insert_sql = f"INSERT INTO [{conn_str}].[{p.name}] {sql}"
-            self.db.Execute(insert_sql, DAO_DB_FAIL_ON_ERROR)
-            return {"success": True, "rows_exported": self.db.RecordsAffected, "file_path": file_path}
-        except Exception as e:
-            return _fallback()
-
-    def export_query_json(self, query_name: str, file_path: str, pretty: bool = False) -> dict:
-        """Export a query to a JSON file.
-
-        Args:
-            query_name: Name of the query to export
-            file_path: Path to the output JSON file
-            pretty: Whether to format JSON with indentation (default False)
-
-        Returns:
-            dict with success=True, rows_exported=N, file_path
-        """
-        import json
-        from pathlib import Path
-
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        result = self.execute_query(f"SELECT * FROM [{query_name}]")
-        if not result.get("success"):
-            return {"success": False, "error": result.get("error", "Query failed")}
-
-        rows = result.get("rows", [])
-
-        try:
-            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(rows, f, indent=2 if pretty else None)
-
-            return {"success": True, "rows_exported": len(rows), "file_path": file_path}
-        except Exception as e:
+            strategy = self._strategy_selector.get(format)
+        except ValueError as e:
             return {"success": False, "error": str(e)}
+
+        context = ExportContext(
+            sql=sql,
+            file_path=file_path,
+            options=options,
+            execute_query=self.execute_query,
+            execute_raw=self._execute_raw,
+        )
+        return strategy.export(context)
+
+    def _execute_raw(self, sql: str) -> int:
+        """Run arbitrary SQL through the Access engine (IISAM, DDL, etc.)."""
+        self.db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return self.db.RecordsAffected
 
     @staticmethod
     def _strip_sql_comments(sql: str) -> str:

@@ -1,7 +1,7 @@
 """
-Integration tests for MCP export tools (export_table_csv, export_query_json).
+Integration tests for MCP export tool (export_data).
 
-Tier 1: SQLite-backed OdbcAdapter verifies export tools can succeed via ODBC.
+Tier 1: SQLite-backed OdbcAdapter verifies export can succeed via ODBC.
 Tier 3: WinCom happy-path verifies file creation with real Access DB.
 """
 
@@ -16,11 +16,10 @@ from helpers import call_mcp_tool, skip_unless_windows, skip_unless_db
 
 
 class TestExportOdbcAdapter:
-    """Tier 1: Verify export tools work via OdbcAdapter (SQLite-backed)."""
+    """Tier 1: Verify export_data works via OdbcAdapter (SQLite-backed)."""
 
-    def test_export_table_csv_via_sqlite_adapter(self, pool_with_sqlite):
-        """export_table_csv succeeds via SQLite-backed OdbcAdapter."""
-        # Create a test table in the SQLite database
+    def test_export_data_csv_via_sqlite_adapter(self, pool_with_sqlite):
+        """export_data(format='csv') succeeds via SQLite-backed OdbcAdapter."""
         adapter = pool_with_sqlite.get_adapter("default")
         adapter.execute_query("CREATE TABLE test_export_csv (ID INTEGER PRIMARY KEY, Name TEXT)")
         adapter.execute_query("INSERT INTO test_export_csv VALUES (1, 'Alice'), (2, 'Bob')")
@@ -30,12 +29,15 @@ class TestExportOdbcAdapter:
 
         try:
             result = call_mcp_tool(
-                "export_table_csv",
-                "test_export_csv",
+                "export_data",
+                "SELECT ID, Name FROM [test_export_csv]",
                 csv_path,
+                format="csv",
+                delimiter=",",
+                header=True,
                 connection_service=pool_with_sqlite,
             )
-            assert result["success"] is True, f"export_table_csv failed: {result.get('error')}"
+            assert result["success"] is True, f"export_data failed: {result.get('error')}"
             assert result["rows_exported"] == 2
             assert result["file_path"] == csv_path
 
@@ -49,9 +51,8 @@ class TestExportOdbcAdapter:
             if os.path.exists(csv_path):
                 os.unlink(csv_path)
 
-    def test_export_query_json_via_sqlite_adapter(self, pool_with_sqlite):
-        """export_query_json succeeds via SQLite-backed OdbcAdapter."""
-        # Create a test query in the SQLite database
+    def test_export_data_json_via_sqlite_adapter(self, pool_with_sqlite):
+        """export_data(format='json') succeeds via SQLite-backed OdbcAdapter."""
         adapter = pool_with_sqlite.get_adapter("default")
         adapter.execute_query("CREATE TABLE test_export_json (ID INTEGER PRIMARY KEY, Value REAL)")
         adapter.execute_query("INSERT INTO test_export_json VALUES (10, 3.14), (20, 2.718)")
@@ -61,13 +62,14 @@ class TestExportOdbcAdapter:
 
         try:
             result = call_mcp_tool(
-                "export_query_json",
-                "test_export_json",
+                "export_data",
+                "SELECT ID, Value FROM [test_export_json]",
                 json_path,
+                format="json",
                 pretty=True,
                 connection_service=pool_with_sqlite,
             )
-            assert result["success"] is True, f"export_query_json failed: {result.get('error')}"
+            assert result["success"] is True, f"export_data failed: {result.get('error')}"
             assert result["rows_exported"] == 2
             assert result["file_path"] == json_path
 
@@ -83,7 +85,7 @@ class TestExportOdbcAdapter:
 
 
 class TestExportWinComHappyPath:
-    """Tier 3: WinCom happy-path for export tools.
+    """Tier 3: WinCom happy-path for export_data.
 
     NOTE: These tests require the pool.connect(name, db_path, adapter_type) API
     which is currently broken (pre-existing issue - pool.connect only accepts
@@ -92,8 +94,8 @@ class TestExportWinComHappyPath:
 
     pytestmark = [skip_unless_windows, skip_unless_db]
 
-    def test_export_table_csv_produces_file(self, temp_db_copy):
-        """export_table_csv via WinComAdapter produces a real CSV file."""
+    def test_export_data_csv_produces_file(self, temp_db_copy):
+        """export_data(format='csv') via WinComAdapter produces a real CSV file."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
         from ms_access_mcp.services.connection import ConnectionPool
 
@@ -108,22 +110,20 @@ class TestExportWinComHappyPath:
                 csv_path = f.name
 
             result = call_mcp_tool(
-                "export_table_csv",
-                "customers",
+                "export_data",
+                "SELECT * FROM [customers]",
                 csv_path,
+                format="csv",
                 connection_service=pool,
             )
             assert isinstance(result, dict), "Result must be a dict"
             assert "success" in result
             if result["success"]:
                 assert os.path.exists(csv_path), "CSV file should exist after export"
-                # Verify it has content
                 with open(csv_path, encoding="utf-8") as f:
                     contents = f.read()
                 assert len(contents) > 0, "CSV should have content"
             else:
-                # If it failed because the table doesn't exist in this DB,
-                # that's also a valid graceful response
                 assert "error" in result
 
             pool.disconnect("test_export")
@@ -134,8 +134,8 @@ class TestExportWinComHappyPath:
             except Exception:
                 pass
 
-    def test_export_query_json_produces_file(self, temp_db_copy):
-        """export_query_json via WinComAdapter produces a real JSON file."""
+    def test_export_data_json_produces_file(self, temp_db_copy):
+        """export_data(format='json') via WinComAdapter produces a real JSON file."""
         from ms_access_mcp.adapters.wincom import WinComAdapter
         from ms_access_mcp.services.connection import ConnectionPool
 
@@ -150,9 +150,10 @@ class TestExportWinComHappyPath:
                 json_path = f.name
 
             result = call_mcp_tool(
-                "export_query_json",
-                "qry_orders",  # Use an existing query if available
+                "export_data",
+                "SELECT * FROM [qry_orders]",
                 json_path,
+                format="json",
                 pretty=True,
                 connection_service=pool,
             )
@@ -164,7 +165,6 @@ class TestExportWinComHappyPath:
                     data = json.load(f)
                 assert isinstance(data, list), "JSON root should be a list of rows"
             else:
-                # Graceful failure if query doesn't exist
                 assert "error" in result
 
             pool.disconnect("test_export")
@@ -246,7 +246,6 @@ class TestCompareVersioning:
             assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
             pool.connect("test_cmp_bad", temp_db_copy, adapter, "com")
 
-            # compare_versioning creates subdirs internally so it doesn't error on missing parent
             result = call_mcp_tool(
                 "compare_versioning",
                 "Z:\\totally\\nonexistent\\path\\for\\compare",

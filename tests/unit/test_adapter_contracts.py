@@ -27,7 +27,7 @@ class TestProtocolCompleteness:
         "get_tables", "execute_query", "insert_data", "update_data", "delete_data",
         "create_table", "delete_table",
         # Export
-        "export_table_csv", "export_query_json",
+        "export_data",
         # Query CRUD
         "get_queries", "create_query", "set_query_sql", "delete_query",
         # COM automation
@@ -190,23 +190,23 @@ class TestNotConnectedDefaults:
         assert isinstance(result, dict)
         assert result["success"] is False
 
-    def test_wincom_export_table_csv_returns_error_dict(self):
-        result = WinComAdapter().export_table_csv("T", "/tmp/out.csv")
+    def test_wincom_export_data_returns_error_dict(self):
+        result = WinComAdapter().export_data("SELECT * FROM [T]", "/tmp/out.csv")
         assert isinstance(result, dict)
         assert result["success"] is False
 
-    def test_odbc_export_table_csv_returns_error_dict(self):
-        result = OdbcAdapter().export_table_csv("T", "/tmp/out.csv")
+    def test_odbc_export_data_returns_error_dict(self):
+        result = OdbcAdapter().export_data("SELECT * FROM [T]", "/tmp/out.csv")
         assert isinstance(result, dict)
         assert result["success"] is False
 
-    def test_wincom_export_query_json_returns_error_dict(self):
-        result = WinComAdapter().export_query_json("Q", "/tmp/out.json")
+    def test_wincom_export_data_json_returns_error_dict(self):
+        result = WinComAdapter().export_data("SELECT * FROM [Q]", "/tmp/out.json", format="json")
         assert isinstance(result, dict)
         assert result["success"] is False
 
-    def test_odbc_export_query_json_returns_error_dict(self):
-        result = OdbcAdapter().export_query_json("Q", "/tmp/out.json")
+    def test_odbc_export_data_json_returns_error_dict(self):
+        result = OdbcAdapter().export_data("SELECT * FROM [Q]", "/tmp/out.json", format="json")
         assert isinstance(result, dict)
         assert result["success"] is False
 

@@ -392,10 +392,10 @@ class TestOdbcAdapterConnectedTableDdl(ConnectedAdapterTestBase):
 
 
 class TestOdbcAdapterConnectedExportCsv(ConnectedAdapterTestBase):
-    """Test CSV export functionality."""
+    """Test CSV export via export_data."""
 
-    def test_export_table_csv_writes_header_and_rows(self):
-        """export_table_csv writes CSV with header and data rows (fallback path)."""
+    def test_export_data_csv_writes_header_and_rows(self):
+        """export_data(format='csv') writes CSV with header and data rows (fallback path)."""
         self._setup_description(["ID", "Name"])
         self._setup_fetchall([(1, "Alice"), (2, "Bob")])
 
@@ -404,49 +404,48 @@ class TestOdbcAdapterConnectedExportCsv(ConnectedAdapterTestBase):
         }):
             with patch("builtins.open", create=True) as mock_open:
                 with patch("pathlib.Path.mkdir"):
-                    # delimiter=';' forces csv.DictWriter fallback so we don't
-                    # hit the IISAM cursor path in this unit test
-                    result = self.adapter.export_table_csv("T", "D:/tmp/out.csv", delimiter=";")
+                    # delimiter=';' forces csv.DictWriter fallback
+                    result = self.adapter.export_data("SELECT * FROM [T]", "D:/tmp/out.csv", format="csv", delimiter=";")
 
         assert result["success"] is True
         assert result["rows_exported"] == 2
         mock_open.return_value.__enter__.return_value.write.assert_called()
 
-    def test_export_table_csv_creates_parent_dir(self):
-        """export_table_csv creates parent directory if it does not exist (fallback path)."""
+    def test_export_data_csv_creates_parent_dir(self):
+        """export_data(format='csv') creates parent directory if it does not exist (fallback path)."""
         with patch.object(self.adapter, "execute_query", return_value={"success": True, "rows": [], "columns": []}):
             with patch("builtins.open", create=True):
                 with patch("pathlib.Path.mkdir") as mock_mkdir:
-                    self.adapter.export_table_csv("T", "D:/tmp/subdir/out.csv", delimiter=";")
+                    self.adapter.export_data("SELECT * FROM [T]", "D:/tmp/subdir/out.csv", format="csv", delimiter=";")
 
         mock_mkdir.assert_called()
 
 
 class TestOdbcAdapterConnectedExportJson(ConnectedAdapterTestBase):
-    """Test JSON export functionality."""
+    """Test JSON export via export_data."""
 
-    def test_export_query_json_writes_rows(self):
-        """export_query_json writes JSON rows to file."""
+    def test_export_data_json_writes_rows(self):
+        """export_data(format='json') writes JSON rows to file."""
         with patch.object(self.adapter, "execute_query", return_value={
             "success": True, "rows": [{"ID": 1}, {"ID": 2}], "columns": ["ID"]
         }):
             with patch("builtins.open", create=True) as mock_open:
                 with patch("pathlib.Path.mkdir"):
-                    result = self.adapter.export_query_json("Q", "D:/tmp/out.json")
+                    result = self.adapter.export_data("SELECT * FROM [Q]", "D:/tmp/out.json", format="json")
 
         assert result["success"] is True
         assert result["rows_exported"] == 2
         mock_open.return_value.__enter__.return_value.write.assert_called()
 
-    def test_export_query_json_compact_vs_pretty(self):
-        """export_query_json with pretty=False writes compact JSON; pretty=True uses indent=2."""
+    def test_export_data_json_compact_vs_pretty(self):
+        """export_data with pretty=False writes compact JSON; pretty=True uses indent=2."""
         with patch.object(self.adapter, "execute_query", return_value={
             "success": True, "rows": [{"a": 1}], "columns": ["a"]
         }):
             with patch("builtins.open", create=True) as mock_open:
                 with patch("pathlib.Path.mkdir"):
-                    r1 = self.adapter.export_query_json("Q", "D:/tmp/compact.json", pretty=False)
-                    r2 = self.adapter.export_query_json("Q", "D:/tmp/pretty.json", pretty=True)
+                    r1 = self.adapter.export_data("SELECT * FROM [Q]", "D:/tmp/compact.json", format="json", pretty=False)
+                    r2 = self.adapter.export_data("SELECT * FROM [Q]", "D:/tmp/pretty.json", format="json", pretty=True)
 
         assert r1["success"] is True
         assert r2["success"] is True

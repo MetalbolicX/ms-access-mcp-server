@@ -225,7 +225,7 @@ class TestOdbcAdapterTableCrud:
 # ---- Data export -------------------------------------------------------------
 
 class TestOdbcAdapterExport:
-    def test_export_table_csv(self, adapter, temp_table_name):
+    def test_export_data_csv(self, adapter, temp_table_name):
         create = adapter.create_table(
             temp_table_name,
             [{"name": "ID", "type": "Long Integer", "nullable": False}]
@@ -239,7 +239,10 @@ class TestOdbcAdapterExport:
                 csv_path = f.name
 
             try:
-                result = adapter.export_table_csv(temp_table_name, csv_path)
+                result = adapter.export_data(
+                    f"SELECT * FROM [{temp_table_name}]", csv_path,
+                    format="csv", delimiter=",", header=True,
+                )
                 assert result["success"] is True
                 assert result["rows_exported"] >= 1
                 assert os.path.exists(csv_path)
@@ -251,7 +254,7 @@ class TestOdbcAdapterExport:
         finally:
             adapter.delete_table(temp_table_name)
 
-    def test_export_query_json(self, adapter, temp_table_name):
+    def test_export_data_json(self, adapter, temp_table_name):
         create = adapter.create_table(
             temp_table_name,
             [{"name": "ID", "type": "Long Integer", "nullable": False}]
@@ -265,7 +268,10 @@ class TestOdbcAdapterExport:
                 json_path = f.name
 
             try:
-                result = adapter.export_query_json(temp_table_name, json_path)
+                result = adapter.export_data(
+                    f"SELECT * FROM [{temp_table_name}]", json_path,
+                    format="json",
+                )
                 assert result["success"] is True
                 assert result["rows_exported"] >= 1
                 assert os.path.exists(json_path)

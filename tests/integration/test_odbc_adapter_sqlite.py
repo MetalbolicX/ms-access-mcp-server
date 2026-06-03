@@ -293,7 +293,7 @@ class TestOdbcAdapterSqliteSchema:
 # ---- Export operations ---------------------------------------------------------
 
 class TestOdbcAdapterSqliteExport:
-    def test_export_csv(self, odbc_adapter, temp_table_name):
+    def test_export_data_csv(self, odbc_adapter, temp_table_name):
         create = odbc_adapter.create_table(
             temp_table_name,
             [{"name": "ID", "type": "Long Integer"},
@@ -308,7 +308,10 @@ class TestOdbcAdapterSqliteExport:
                 csv_path = f.name
 
             try:
-                result = odbc_adapter.export_table_csv(temp_table_name, csv_path)
+                result = odbc_adapter.export_data(
+                    f"SELECT * FROM [{temp_table_name}]", csv_path,
+                    format="csv", delimiter=",", header=True,
+                )
                 assert result["success"] is True
                 assert result["rows_exported"] >= 1
                 assert os.path.exists(csv_path)
@@ -317,7 +320,7 @@ class TestOdbcAdapterSqliteExport:
         finally:
             odbc_adapter.delete_table(temp_table_name)
 
-    def test_export_json(self, odbc_adapter, temp_table_name):
+    def test_export_data_json(self, odbc_adapter, temp_table_name):
         create = odbc_adapter.create_table(
             temp_table_name,
             [{"name": "ID", "type": "Long Integer"}]
@@ -331,7 +334,10 @@ class TestOdbcAdapterSqliteExport:
                 json_path = f.name
 
             try:
-                result = odbc_adapter.export_query_json(temp_table_name, json_path)
+                result = odbc_adapter.export_data(
+                    f"SELECT * FROM [{temp_table_name}]", json_path,
+                    format="json",
+                )
                 assert result["success"] is True
                 assert result["rows_exported"] >= 1
                 assert os.path.exists(json_path)
@@ -357,11 +363,11 @@ class TestOdbcAdapterSqliteErrors:
         result = odbc_adapter.delete_table("_nonexistent_")
         assert result["success"] is False
 
-    def test_export_csv_nonexistent_table_returns_error(self, odbc_adapter):
+    def test_export_data_csv_nonexistent_table_returns_error(self, odbc_adapter):
         with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as f:
             csv_path = f.name
         try:
-            result = odbc_adapter.export_table_csv("_nonexistent_", csv_path)
+            result = odbc_adapter.export_data("SELECT * FROM [_nonexistent_]", csv_path, format="csv")
             assert result["success"] is False
         finally:
             os.unlink(csv_path)
