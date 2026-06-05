@@ -235,6 +235,14 @@ class MockDaoRelations:
     def Count(self) -> int:
         return len(self._relations)
 
+    def Delete(self, name: str) -> None:
+        """Delete a relation by name."""
+        for i, rel in enumerate(self._relations):
+            if rel.Name == name:
+                del self._relations[i]
+                return
+        raise Exception(f"Relation '{name}' not found")
+
 
 class MockDaoTableDefs:
     """Mock DAO TableDefs collection backed by SQLite metadata."""
@@ -331,6 +339,7 @@ class MockDaoDatabase:
         self._conn = conn
         self._db_path = db_path
         self._query_defs = MockDaoQueryDefs()
+        self._relations = MockDaoRelations()
         self.RecordsAffected = 0
 
     def Close(self) -> None:
@@ -352,7 +361,7 @@ class MockDaoDatabase:
 
     @property
     def Relations(self) -> MockDaoRelations:
-        return MockDaoRelations()
+        return self._relations
 
     def OpenRecordset(self, sql: str):
         """Execute SQL and return a DAO-style Recordset."""
@@ -934,6 +943,71 @@ class TestWinComSchema:
 
         result = adapter.delete_table("new_table")
         assert result["success"] is True
+
+    def test_delete_table_deletes_fk_relations_before_drop(self, adapter, mock_app, tmp_path):
+        """delete_table must delete DAO Relations referencing the table before DROP TABLE."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        # Inject a relation: categories → products
+        rel = MockDaoRelation(
+            name="FK_products_categories",
+            table="categories",
+            foreign_table="products",
+            fields=[MockDaoField("category_id")],
+        )
+        adapter._dispatcher._current_db._relations._relations.append(rel)
+
+        # Verify relation exists before delete
+        assert adapter._dispatcher._current_db._relations.Count == 1
+
+        # Delete the referenced (parent) table — must clean the relation first
+        result = adapter.delete_table("categories")
+        assert result["success"] is True, f"delete_table failed: {result.get('error')}"
+
+        # Verify relation was cleaned up
+        assert adapter._dispatcher._current_db._relations.Count == 0
+
+    def test_delete_table_with_nonexistent_relation_does_not_crash(self, adapter, mock_app, tmp_path):
+        """delete_table must not crash when no relations reference the table."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        result = adapter.delete_table("orphan_table")
+        assert result["success"] is True
+
+    def test_delete_table_deletes_relations_on_both_sides(self, adapter, mock_app, tmp_path):
+        """delete_table must delete relations where table appears as Table or ForeignTable."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        # products has FK to categories (rel.Table = categories)
+        rel1 = MockDaoRelation(
+            name="FK_prod_cat",
+            table="categories",
+            foreign_table="products",
+            fields=[MockDaoField("category_id")],
+        )
+        # orders has FK to customers (rel.Table = customers)
+        rel2 = MockDaoRelation(
+            name="FK_ord_cust",
+            table="customers",
+            foreign_table="orders",
+            fields=[MockDaoField("customer_id")],
+        )
+        adapter._dispatcher._current_db._relations._relations.extend([rel1, rel2])
+
+        assert adapter._dispatcher._current_db._relations.Count == 2
+
+        # Delete categories — only rel1 should be cleaned, rel2 stays
+        result = adapter.delete_table("categories")
+        assert result["success"] is True
+
+        remaining = adapter._dispatcher._current_db._relations
+        assert remaining.Count == 1
+        assert remaining(0).Name == "FK_ord_cust"
 
 
 class TestWinComFormsReportsMacros:

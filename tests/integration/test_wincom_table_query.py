@@ -152,6 +152,46 @@ class TestWinComTableDelete:
         result = self.adapter.delete_table("tblDoesNotExist_xyz")
         assert result["success"] is False
 
+    def test_delete_table_with_fk_referencing_it(self, temp_db_copy: str):
+        """DELETE TABLE must clean DAO Relations first, so a parent table can be dropped."""
+        assert self.adapter.connect(temp_db_copy)
+        parent = _unique_name("tblParent")
+        child = _unique_name("tblChild")
+
+        # Create parent via raw DDL
+        r1 = self.adapter.execute_raw_sql(
+            f"CREATE TABLE [{parent}] (ID INTEGER PRIMARY KEY, Label TEXT)"
+        )
+        assert r1 >= 0, f"CREATE parent failed: {r1}"
+
+        # Create child with FK referencing parent (inline constraint)
+        r2 = self.adapter.execute_raw_sql(
+            f"CREATE TABLE [{child}] ("
+            f"  ID INTEGER PRIMARY KEY,"
+            f"  ParentID INTEGER NOT NULL,"
+            f"  FOREIGN KEY (ParentID) REFERENCES [{parent}] (ID)"
+            f"  ON UPDATE CASCADE ON DELETE CASCADE"
+            f")"
+        )
+        assert r2 >= 0, f"CREATE child failed: {r2}"
+
+        # Verify both tables exist
+        tables = [t.name for t in self.adapter.get_tables()]
+        assert parent in tables
+        assert child in tables
+
+        # Delete parent — must clean the DAO relation first
+        result = self.adapter.delete_table(parent)
+        assert result["success"] is True, f"delete_table failed: {result.get('error')}"
+
+        # Verify parent gone, child still exists
+        tables_after = [t.name for t in self.adapter.get_tables()]
+        assert parent not in tables_after
+        assert child in tables_after
+
+        # Cleanup child
+        self.adapter.delete_table(child)
+
     def test_delete_table_not_connected(self):
         """delete_table on disconnected adapter must return error."""
         adapter = WinComAdapter()

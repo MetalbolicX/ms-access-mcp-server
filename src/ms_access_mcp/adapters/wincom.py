@@ -1180,6 +1180,9 @@ class WinComAdapter(AccessAdapter):
     def delete_table(self, table_name: str) -> dict:
         """Drop a table via DAO DDL.
 
+        Deletes all DAO Relations involving the table before DROP,
+        so tables referenced by foreign keys can be removed.
+
         Args:
             table_name: Name of the table to delete
 
@@ -1192,6 +1195,10 @@ class WinComAdapter(AccessAdapter):
         def _do() -> dict:
             try:
                 db = self._dispatcher.current_db
+                for i in range(db.Relations.Count - 1, -1, -1):
+                    rel = db.Relations(i)
+                    if rel.Table == table_name or rel.ForeignTable == table_name:
+                        db.Relations.Delete(rel.Name)
                 db.Execute(f"DROP TABLE [{table_name}]", DAO_DB_FAIL_ON_ERROR)
                 return {"success": True}
             except Exception as e:
