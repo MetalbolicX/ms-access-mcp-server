@@ -37,7 +37,10 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
         result = connection_service.connect(database_path, adapter)
         if result:
             com_automation_service.set_adapter(adapter)
-        return {"success": result, "connected": result, "database": database_path, "name": name}
+            return {"success": result, "connected": result, "database": database_path, "name": name}
+        else:
+            return {"success": False, "connected": False, "database": database_path, "name": name,
+                    "error": "COM connect failed — check server stderr for details" if use_com else "ODBC connect failed"}
     except KeyError as e:
         return {"success": False, "error": str(e)}
     except RuntimeError as e:
