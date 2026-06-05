@@ -151,6 +151,8 @@ class AccessAdapter(Protocol):
 
     def get_table_schema_plan(self) -> tuple: ...
 
+    def execute_raw_sql(self, sql: str) -> int: ...
+
 
 # Re-export the new segregated interfaces for consumers who want ISP compliance
 __all__ = [

@@ -640,8 +640,24 @@ class WinComAdapter(AccessAdapter):
 
     def _execute_raw(self, sql: str) -> int:
         """Run arbitrary SQL through the Access engine (IISAM, DDL, etc.)."""
-        self.db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
-        return self.db.RecordsAffected
+        return self._dispatcher.call(self._execute_raw_on_current_db, sql)
+
+    def _execute_raw_on_current_db(self, sql: str) -> int:
+        """Execute SQL against the current DAO database on the STA thread."""
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return db.RecordsAffected
+
+    def execute_raw_sql(self, sql: str) -> int:
+        """Execute raw SQL statement via COM dispatcher. Returns rows affected.
+
+        Args:
+            sql: Raw SQL string to execute against the Access DAO engine.
+
+        Returns:
+            int: Number of records affected by the execution.
+        """
+        return self._dispatcher.call(self._execute_raw_on_current_db, sql)
 
     @staticmethod
     def _strip_sql_comments(sql: str) -> str:

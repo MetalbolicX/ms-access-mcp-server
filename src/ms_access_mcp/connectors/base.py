@@ -14,6 +14,7 @@ class ConnectorCapabilities(BaseModel):
     """Connector capability flags used by target-agnostic orchestration."""
 
     supports_linked_insert_select: bool
+    supports_passthrough_insert_select: bool = False
     supports_checksum: bool
     supports_sampling: bool
     preferred_batch_size: int = 1000
