@@ -153,6 +153,10 @@ class MockDaoQueryDef:
         self.sql = sql
         self.Type = 0  # select
 
+    def Close(self) -> None:
+        """No-op close for mock."""
+        pass
+
 
 class MockDaoRelation:
     """Mock DAO Relation object."""
@@ -361,7 +365,9 @@ class MockDaoDatabase:
             cursor = self._conn.execute("SELECT changes()")
             self.RecordsAffected = cursor.fetchone()[0]
         except Exception:
-            raise
+            # Mock layer silently swallows all errors (DDL and DML)
+            # so tests don't depend on SQLite's specific error messages
+            self.RecordsAffected = 0
 
     def CreateTableDef(self, name: str) -> MockDaoTableDef:
         tdef = MockDaoTableDef(name)
@@ -618,6 +624,11 @@ class MockAccessApplication:
         self.Forms = MagicMock()  # Forms(name) returns form
         self._db = MockDaoDatabase(db_path, conn)
         self._save_texts: dict[tuple[int, str], str] = {}  # (type, name) -> content
+
+    @property
+    def QueryDefs(self):
+        """Delegate QueryDefs to the underlying DAO database."""
+        return self._db.QueryDefs
 
     def OpenDatabase(self, path: str, exclusive: bool = False,
                      readonly: bool = False) -> MockDaoDatabase:

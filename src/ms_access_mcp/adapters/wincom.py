@@ -955,3 +955,290 @@ class WinComAdapter(AccessAdapter):
 
     def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
         return self._vba.vba_replace_procedure(module_name, procedure_name, new_code)
+
+    # ========================================================================
+    # DAO CRUD — Data Operations
+    # ========================================================================
+
+    def insert_data(self, table_name: str, data: dict | list[dict]) -> dict:
+        """Insert one or more rows into a table via DAO SQL.
+
+        Args:
+            table_name: Name of the table
+            data: A single dict for one row, or a list of dicts for multiple rows
+
+        Returns:
+            dict with success=True and affected=number of rows inserted
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected", "affected": 0}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                rows = data if isinstance(data, list) else [data]
+                total_affected = 0
+                for row in rows:
+                    cols = ", ".join(f"[{c}]" for c in row.keys())
+                    vals = ", ".join(self._format_dao_value(v) for v in row.values())
+                    sql = f"INSERT INTO [{table_name}] ({cols}) VALUES ({vals})"
+                    db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                    total_affected += db.RecordsAffected
+                return {"success": True, "affected": total_affected}
+            except Exception as e:
+                return {"success": False, "error": str(e), "affected": 0}
+
+        return self._dispatcher.call(_do)
+
+    def update_data(self, table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+        """Update rows in a table via DAO SQL.
+
+        Args:
+            table_name: Name of the table
+            set_dict: Dict of column=value pairs to set
+            where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+
+        Returns:
+            dict with success=True and affected=number of rows updated
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected", "affected": 0}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                set_clause = ", ".join(f"[{c}] = {self._format_dao_value(v)}" for c, v in set_dict.items())
+                sql = f"UPDATE [{table_name}] SET {set_clause}"
+                if where_dict is not None:
+                    if isinstance(where_dict, str):
+                        sql += f" WHERE {where_dict}"
+                    else:
+                        where_clause = " AND ".join(f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items())
+                        sql += f" WHERE {where_clause}"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True, "affected": db.RecordsAffected}
+            except Exception as e:
+                return {"success": False, "error": str(e), "affected": 0}
+
+        return self._dispatcher.call(_do)
+
+    def delete_data(self, table_name: str, where_dict: dict | str | None = None) -> dict:
+        """Delete rows from a table via DAO SQL.
+
+        Args:
+            table_name: Name of the table
+            where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
+
+        Returns:
+            dict with success=True and affected=number of rows deleted
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected", "affected": 0}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                sql = f"DELETE FROM [{table_name}]"
+                if where_dict is not None:
+                    if isinstance(where_dict, str):
+                        sql += f" WHERE {where_dict}"
+                    else:
+                        where_clause = " AND ".join(f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items())
+                        sql += f" WHERE {where_clause}"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True, "affected": db.RecordsAffected}
+            except Exception as e:
+                return {"success": False, "error": str(e), "affected": 0}
+
+        return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # DAO CRUD — Query Operations
+    # ========================================================================
+
+    def create_query(self, name: str, sql: str) -> dict:
+        """Create a saved QueryDef via DAO.
+
+        Args:
+            name: Name of the query
+            sql: SQL statement for the query
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                db.CreateQueryDef(name, sql)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def set_query_sql(self, name: str, sql: str) -> dict:
+        """Update an existing QueryDef's SQL via DAO.
+
+        Args:
+            name: Name of the existing query
+            sql: New SQL statement
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                qdef = db.QueryDefs(name)
+                qdef.SQL = sql
+                qdef.Close()
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_query(self, name: str) -> dict:
+        """Delete a saved QueryDef via DAO.
+
+        Args:
+            name: Name of the query to delete
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                db.QueryDefs.Delete(name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    # ========================================================================
+    # DAO CRUD — Table Operations
+    # ========================================================================
+
+    def create_table(self, table_name: str, columns: list[dict]) -> dict:
+        """Create a table via DAO DDL.
+
+        Args:
+            table_name: Name of the table to create
+            columns: List of dicts with keys: name, type, size, required, is_autoincrement
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                col_defs: list[str] = []
+                pk_col: str | None = None
+                for col in columns:
+                    col_name = col["name"]
+                    col_type = col.get("type", "Text")
+                    col_size = col.get("size", 255)
+                    required = col.get("required", False)
+                    is_autoincrement = col.get("is_autoincrement", False)
+                    is_pk = col.get("primary_key", False)
+
+                    type_sql = self._access_sql_type(col_type, col_size)
+                    col_def = f"[{col_name}] {type_sql}"
+                    if is_autoincrement or is_pk:
+                        col_def += " NOT NULL"
+                        if is_autoincrement:
+                            pk_col = col_name
+                    elif required:
+                        col_def += " NOT NULL"
+                    col_defs.append(col_def)
+
+                if pk_col:
+                    col_defs.append(f"PRIMARY KEY ([{pk_col}])")
+
+                sql = f"CREATE TABLE [{table_name}] ({', '.join(col_defs)})"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_table(self, table_name: str) -> dict:
+        """Drop a table via DAO DDL.
+
+        Args:
+            table_name: Name of the table to delete
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                db.Execute(f"DROP TABLE [{table_name}]", DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    @staticmethod
+    def _access_sql_type(access_type: str, size: int = 255) -> str:
+        """Map Access type name to SQL type string.
+
+        Args:
+            access_type: Access type name (e.g. "Text", "Long Integer", "Currency")
+            size: Size for VARCHAR types (default 255)
+
+        Returns:
+            SQL type string for DDL
+        """
+        type_map = {
+            "Text": f"VARCHAR({size})",
+            "Long Integer": "INTEGER",
+            "Integer": "SMALLINT",
+            "Byte": "BYTE",
+            "Currency": "MONEY",
+            "Single": "SINGLE",
+            "Double": "DOUBLE",
+            "Date/Time": "DATETIME",
+            "Memo": "MEMO",
+            "Boolean": "BIT",
+            "Binary": "BINARY",
+            "GUID": "GUID",
+            "Big Integer": "BIGINT",
+            "Unsigned Byte": "BYTE",
+            "Unsigned Integer": "INTEGER",
+            "Unsigned Long Integer": "INTEGER",
+            "Decimal": "DECIMAL",
+            "Counter": "COUNTER",
+            "AutoNumber": "COUNTER",
+        }
+        return type_map.get(access_type, f"VARCHAR({size})")
+
+    # Delegated to VbaOperations
+    def vba_list_procedures(self, module_name: str) -> list[dict]:
+        return self._vba.vba_list_procedures(module_name)
+
+    def vba_get_procedure(self, module_name: str, procedure_name: str) -> dict:
+        return self._vba.vba_get_procedure(module_name, procedure_name)
+
+    def vba_replace_procedure(self, module_name: str, procedure_name: str, new_code: str) -> bool:
+        return self._vba.vba_replace_procedure(module_name, procedure_name, new_code)
