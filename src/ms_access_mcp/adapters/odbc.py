@@ -373,6 +373,10 @@ class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
         """Execute SQL script — not available via ODBC."""
         raise NotImplementedError("execute_sql_script requires COM (WinComAdapter)")
 
+    def execute_raw_sql(self, sql: str) -> int:
+        """Execute raw SQL — not available via ODBC (requires WinComAdapter)."""
+        raise NotImplementedError("execute_raw_sql requires COM automation (WinComAdapter)")
+
     # ========================================================================
     # Query CRUD (ISchemaAdapter)
     # ========================================================================

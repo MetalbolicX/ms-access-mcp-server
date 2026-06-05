@@ -175,3 +175,7 @@ class ComOnlyAdapterMixin:
     def execute_sql_script(self, script_path: str) -> dict:
         """Execute a SQL script file — requires COM automation."""
         raise NotImplementedError("execute_sql_script requires COM automation (WinComAdapter)")
+
+    def execute_raw_sql(self, sql: str) -> int:
+        """Execute raw SQL via COM — requires WinComAdapter."""
+        raise NotImplementedError("execute_raw_sql requires COM automation (WinComAdapter)")

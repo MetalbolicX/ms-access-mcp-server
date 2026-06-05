@@ -80,28 +80,28 @@ class WinComAdapter(AccessAdapter):
         def _do_connect() -> bool:
             import win32com.client
             try:
-                self._dispatcher.access_app = win32com.client.Dispatch("Access.Application")
+                self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
 
-                self._dispatcher.access_app.Visible = False
+                self._dispatcher._access_app.Visible = False
 
                 # Open via DAO FIRST with readwrite so _current_db is writable.
                 # Using Exclusive=False so external file copy (shutil, etc.) can
                 # still access the database without triggering exclusive lock errors.
                 # OpenCurrentDatabase on its own opens in read-only mode for COM automation.
-                dbe = self._dispatcher.access_app.DBEngine
-                self._dispatcher.current_db = dbe.OpenDatabase(db_path, False, False)
+                dbe = self._dispatcher._access_app.DBEngine
+                self._dispatcher._current_db = dbe.OpenDatabase(db_path, False, False)
 
                 # Now OpenCurrentDatabase — the underlying DAO handle is already writable,
                 # so CurrentDb inherits the writable state.
-                self._dispatcher.access_app.OpenCurrentDatabase(db_path, False)
+                self._dispatcher._access_app.OpenCurrentDatabase(db_path, False)
 
                 # Suppress Access dialogs after DB is open (VBA module naming, etc.)
                 try:
-                    self._dispatcher.access_app.DoCmd.SetWarnings(False)
+                    self._dispatcher._access_app.DoCmd.SetWarnings(False)
                 except Exception:
                     pass
 
-                self._dispatcher.ado_conn = self._dispatcher.access_app.CurrentProject.Connection
+                self._dispatcher._ado_conn = self._dispatcher._access_app.CurrentProject.Connection
 
                 # Dismiss any Access dialog that appeared after OpenCurrentDatabase
                 # (VBA module naming prompts, compile errors, etc.) — must be called
@@ -113,8 +113,10 @@ class WinComAdapter(AccessAdapter):
                 self._dispatcher._dismiss_access_dialogs()
 
                 return True
-            except Exception:
+            except Exception as _ex:
                 self._dispatcher._release_com_safe()
+                import sys
+                print(f"[WinComAdapter] _do_connect FAILED: {_ex}", file=sys.stderr)
                 return False
 
         return self._dispatcher.call(_do_connect)
@@ -638,8 +640,24 @@ class WinComAdapter(AccessAdapter):
 
     def _execute_raw(self, sql: str) -> int:
         """Run arbitrary SQL through the Access engine (IISAM, DDL, etc.)."""
-        self.db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
-        return self.db.RecordsAffected
+        return self._dispatcher.call(self._execute_raw_on_current_db, sql)
+
+    def _execute_raw_on_current_db(self, sql: str) -> int:
+        """Execute SQL against the current DAO database on the STA thread."""
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return db.RecordsAffected
+
+    def execute_raw_sql(self, sql: str) -> int:
+        """Execute raw SQL statement via COM dispatcher. Returns rows affected.
+
+        Args:
+            sql: Raw SQL string to execute against the Access DAO engine.
+
+        Returns:
+            int: Number of records affected by the execution.
+        """
+        return self._dispatcher.call(self._execute_raw_on_current_db, sql)
 
     @staticmethod
     def _strip_sql_comments(sql: str) -> str:
@@ -729,11 +747,11 @@ class WinComAdapter(AccessAdapter):
                     "access_error_message": None,
                 }
 
-            db = self._dispatcher.current_db
+            ado = self._dispatcher.ado_conn
             executed = 0
             for entry in parse["statements"]:
                 try:
-                    db.Execute(entry["text"], DAO_DB_FAIL_ON_ERROR)
+                    ado.Execute(entry["text"])
                     executed += 1
                 except Exception as e:
                     err = self._extract_com_error(e)

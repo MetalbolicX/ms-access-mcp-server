@@ -1,4 +1,5 @@
 from typing import Any
+import os
 import psycopg2
 from .base import TargetConnector, ConnectorCapabilities
 from ..services.schema_mapper import SchemaMapper
@@ -17,9 +18,11 @@ class PostgresConnector(TargetConnector):
     def connect(self, connection_string: str) -> bool:
         try:
             self._conn = psycopg2.connect(connection_string)
+            self._connection_string = connection_string
             return True
         except Exception:
             self._conn = None
+            self._connection_string = None
             return False
 
     def disconnect(self) -> None:
@@ -89,10 +92,61 @@ class PostgresConnector(TargetConnector):
     def get_capabilities(self) -> ConnectorCapabilities:
         return ConnectorCapabilities(
             supports_linked_insert_select=False,
+            supports_passthrough_insert_select=True,
             supports_checksum=True,
             supports_sampling=True,
             preferred_batch_size=1000,
         )
+
+    def get_odbc_connection_string(self) -> str:
+        """Convert libpq DSN (host=... port=... dbname=... user=... password=...) to ODBC format.
+
+        Returns:
+            ODBC connection string: DRIVER={PostgreSQL Unicode};SERVER=host;PORT=port;DATABASE=dbname;UID=user;PWD=pass
+        """
+        if not hasattr(self, "_connection_string") or not self._connection_string:
+            raise RuntimeError("PostgresConnector not connected or connection string not available")
+
+        dsn = self._connection_string
+        parts = self._parse_dsn(dsn)
+
+        host = parts.get("host", "localhost")
+        port = parts.get("port", "5432")
+        dbname = parts.get("dbname", parts.get("database", ""))
+        user = parts.get("user", "")
+        password = parts.get("password", "")
+
+        # Try environment variable for password if not in DSN
+        if not password:
+            password = os.environ.get("PGPASSWORD", "")
+
+        odbc_parts = [
+            "DRIVER={PostgreSQL Unicode}",
+            f"SERVER={host}",
+            f"PORT={port}",
+            f"DATABASE={dbname}",
+        ]
+        if user:
+            odbc_parts.append(f"UID={user}")
+        if password:
+            odbc_parts.append(f"PWD={password}")
+
+        return ";".join(odbc_parts)
+
+    def _parse_dsn(self, dsn: str) -> dict[str, str]:
+        """Parse libpq DSN string into component key-value pairs.
+
+        Supports both space-separated (key=value key2=value2) and
+        URL-style (host=localhost port=5432) formats.
+        """
+        result: dict[str, str] = {}
+        # Split on spaces, then parse each key=value pair
+        tokens = dsn.split()
+        for token in tokens:
+            if "=" in token:
+                key, val = token.split("=", 1)
+                result[key.strip()] = val.strip()
+        return result
 
     def get_row_count(self, table: str) -> int:
         if not self.is_connected():
