@@ -93,9 +93,16 @@ def transfer_data(
     """
     from ..models.migration import ExtractedSchema, TableTransferConfig
 
-    adapter = WinComAdapter()
-    if not adapter.connect(database_path):
-        return {"success": False, "error": "Failed to connect to Access database"}
+    # Reuse existing connection if available (avoids COM "database already open" error)
+    conn_name, state = _find_connection_by_path(database_path)
+    owns_connection = False
+    if state is not None and connection_service.is_connected(conn_name):
+        adapter = state.adapter
+    else:
+        adapter = WinComAdapter()
+        if not adapter.connect(database_path):
+            return {"success": False, "error": "Failed to connect to Access database"}
+        owns_connection = True
 
     if schema_json:
         schema = ExtractedSchema(**schema_json)
@@ -116,7 +123,8 @@ def transfer_data(
         table_overrides=deserialized_overrides,
         odbc_connection_string=odbc_connection_string,
     )
-    adapter.disconnect()
+    if owns_connection:
+        adapter.disconnect()
     return result
 
 
