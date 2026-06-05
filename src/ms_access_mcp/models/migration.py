@@ -17,7 +17,7 @@ class TableResult(BaseModel):
     duration_ms: int = 0
     success: bool = True
     error: str | None = None
-    strategy_used: Literal["batch", "linked", "unknown"] = "unknown"
+    strategy_used: Literal["batch", "linked", "passthrough", "unknown"] = "unknown"
     strategy_fallback_reason: str | None = None
     verification: "VerificationResult | None" = None
 

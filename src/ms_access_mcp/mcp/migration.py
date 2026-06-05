@@ -71,6 +71,7 @@ def transfer_data(
     transfer_mode: str = "auto",
     verification_mode: str = "full",
     table_overrides: dict | None = None,
+    odbc_connection_string: str | None = None,
 ) -> dict:
     """
     Transfer data from Access to target database.
@@ -86,6 +87,9 @@ def transfer_data(
             Dict keyed by table name; each value is a TableTransferConfig dict:
             {"columns": ["col1", "col2"], "where": "col>0", "order_by": ["col1"]}.
             All fields optional — missing fields default to full-table transfer.
+        odbc_connection_string: Optional ODBC connection string override for passthrough.
+            When provided, uses this string instead of deriving from the target connector's
+            get_odbc_connection_string(). Format: "DRIVER={...};SERVER=...;PORT=...;DATABASE=...;UID=...;PWD=..."
     """
     from ..models.migration import ExtractedSchema, TableTransferConfig
 
@@ -110,6 +114,7 @@ def transfer_data(
         transfer_mode=transfer_mode,
         verification_mode=verification_mode,
         table_overrides=deserialized_overrides,
+        odbc_connection_string=odbc_connection_string,
     )
     adapter.disconnect()
     return result

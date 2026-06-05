@@ -481,3 +481,113 @@ class TestSourceSnapshotConnector:
         )
         sampled = connector.sample_rows("ignored", ["a"], limit=2, offset=0)
         assert len(sampled) == 2
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# MigrationService — execute_raw_sql (passthrough path)
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestExecuteRawSql:
+    def test_execute_raw_sql_success(self):
+        """execute_raw_sql delegates to adapter's execute_raw_sql and returns rows affected."""
+        class _FakeAdapterWithExecuteRaw:
+            def __init__(self):
+                self.calls: list[str] = []
+
+            def get_table_schema_plan(self):
+                return ([], None)
+
+            def execute_raw_sql(self, sql: str) -> int:
+                self.calls.append(sql)
+                return 42
+
+        adapter = _FakeAdapterWithExecuteRaw()
+        svc = MigrationService()
+
+        result = svc.execute_raw_sql("INSERT INTO [ODBC;...].[T] SELECT * FROM [T]", adapter)
+
+        assert result["success"] is True
+        assert result["rows_affected"] == 42
+        assert adapter.calls[0] == "INSERT INTO [ODBC;...].[T] SELECT * FROM [T]"
+
+    def test_execute_raw_sql_empty_sql_rejected(self):
+        """execute_raw_sql rejects empty SQL string."""
+        class _FakeAdapterWithExecuteRaw:
+            def execute_raw_sql(self, sql: str) -> int:
+                return 0
+
+        adapter = _FakeAdapterWithExecuteRaw()
+        svc = MigrationService()
+
+        result = svc.execute_raw_sql("", adapter)
+        assert result["success"] is False
+        assert "empty" in result["error"].lower()
+
+    def test_execute_raw_sql_none_sql_rejected(self):
+        """execute_raw_sql rejects None SQL."""
+        class _FakeAdapterWithExecuteRaw:
+            def execute_raw_sql(self, sql: str) -> int:
+                return 0
+
+        adapter = _FakeAdapterWithExecuteRaw()
+        svc = MigrationService()
+
+        result = svc.execute_raw_sql(None, adapter)
+        assert result["success"] is False
+
+    def test_execute_raw_sql_adapter_not_implemented(self):
+        """execute_raw_sql returns error when adapter lacks the method."""
+        class _FakeAdapterNoMethod:
+            def get_table_schema_plan(self):
+                return ([], None)
+
+        adapter = _FakeAdapterNoMethod()
+        svc = MigrationService()
+
+        result = svc.execute_raw_sql("SELECT 1", adapter)
+        assert result["success"] is False
+        assert "execute_raw_sql" in result["error"]
+
+    def test_execute_raw_sql_passthrough_uses_adapter_directly(self):
+        """The passthrough SQL goes directly to adapter.execute_raw_sql without transformation."""
+        class _FakeAdapterDirectCall:
+            def __init__(self):
+                self.received_sql: str | None = None
+
+            def get_table_schema_plan(self):
+                return ([], None)
+
+            def execute_raw_sql(self, sql: str) -> int:
+                self.received_sql = sql
+                return 7
+
+        adapter = _FakeAdapterDirectCall()
+        svc = MigrationService()
+
+        passthrough_sql = (
+            "INSERT INTO [ODBC;DRIVER={PostgreSQL Unicode};SERVER=localhost;PORT=5432;"
+            "DATABASE=test;UID=u;PWD=p].[Customers] SELECT [ID], [Name] FROM [Customers]"
+        )
+        result = svc.execute_raw_sql(passthrough_sql, adapter)
+
+        assert result["success"] is True
+        assert result["rows_affected"] == 7
+        assert adapter.received_sql == passthrough_sql
+
+    def test_execute_raw_sql_records_affected_from_execute_raw_sql(self):
+        """execute_raw_sql returns the rows_affected count from adapter.execute_raw_sql."""
+        class _FakeAdapterReturnsCount:
+            def __init__(self, count: int):
+                self._count = count
+
+            def get_table_schema_plan(self):
+                return ([], None)
+
+            def execute_raw_sql(self, sql: str) -> int:
+                return self._count
+
+        for expected in [0, 1, 100, 5000]:
+            adapter = _FakeAdapterReturnsCount(expected)
+            svc = MigrationService()
+            result = svc.execute_raw_sql("SELECT 1", adapter)
+            assert result["rows_affected"] == expected, f"Expected {expected}, got {result['rows_affected']}"
