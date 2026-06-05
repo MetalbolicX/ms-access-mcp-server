@@ -352,6 +352,39 @@ class TestOdbcAdapterConnectedQueryCrud(ConnectedAdapterTestBase):
         assert "DROP VIEW" in sql
 
 
+class TestOdbcAdapterConnectedExecuteRawSql(ConnectedAdapterTestBase):
+    """Test execute_raw_sql with mocked cursor."""
+
+    def test_execute_raw_sql_returns_rowcount_for_update(self):
+        """execute_raw_sql returns cursor.rowcount for UPDATE statement."""
+        self.mock_cursor.rowcount = 5
+        result = self.adapter.execute_raw_sql("UPDATE T SET x=1 WHERE id=2")
+        assert result == 5
+        self.mock_cursor.execute.assert_called_once_with("UPDATE T SET x=1 WHERE id=2")
+        self.mock_cursor.close.assert_called_once()
+
+    def test_execute_raw_sql_returns_rowcount_for_delete(self):
+        """execute_raw_sql returns cursor.rowcount for DELETE statement."""
+        self.mock_cursor.rowcount = 3
+        result = self.adapter.execute_raw_sql("DELETE FROM T WHERE id=5")
+        assert result == 3
+        self.mock_cursor.execute.assert_called_once_with("DELETE FROM T WHERE id=5")
+        self.mock_cursor.close.assert_called_once()
+
+    def test_execute_raw_sql_not_connected_raises_runtime_error(self):
+        """execute_raw_sql when not connected raises RuntimeError."""
+        self.adapter._conn = None
+        with pytest.raises(RuntimeError, match="Not connected"):
+            self.adapter.execute_raw_sql("UPDATE T SET x=1")
+
+    def test_execute_raw_sql_cursor_always_closed(self):
+        """execute_raw_sql closes cursor even if execute raises."""
+        self.mock_cursor.execute.side_effect = Exception("DB error")
+        with pytest.raises(Exception):
+            self.adapter.execute_raw_sql("BAD SQL")
+        self.mock_cursor.close.assert_called()
+
+
 class TestOdbcAdapterConnectedTableDdl(ConnectedAdapterTestBase):
     """Test table DDL: create_table and delete_table."""
 

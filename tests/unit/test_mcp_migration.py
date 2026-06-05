@@ -37,6 +37,7 @@ class _FakeMigrationService:
         transfer_mode: str = "auto",
         verification_mode: str = "full",
         table_overrides: dict[str, TableTransferConfig] | None = None,
+        odbc_connection_string: str | None = None,
     ):
         self.transfer_calls.append(
             {
@@ -46,6 +47,7 @@ class _FakeMigrationService:
                 "transfer_mode": transfer_mode,
                 "verification_mode": verification_mode,
                 "table_overrides": table_overrides,
+                "odbc_connection_string": odbc_connection_string,
             }
         )
         _ = schema
@@ -104,3 +106,35 @@ def test_mcp_transfer_data_forwards_explicit_modes(monkeypatch):
     assert len(fake_service.transfer_calls) == 1
     assert fake_service.transfer_calls[0]["transfer_mode"] == "batch"
     assert fake_service.transfer_calls[0]["verification_mode"] == "count-only"
+
+
+def test_mcp_transfer_data_forwards_odbc_connection_string(monkeypatch):
+    """MCP transfer_data forwards odbc_connection_string to migration service unchanged."""
+    fake_service = _FakeMigrationService()
+    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+
+    odbc_conn_str = "DRIVER={PostgreSQL Unicode};SERVER=test;PORT=5432;DATABASE=test;UID=u;PWD=p"
+    result = transfer_data_tool(
+        "postgres",
+        "conn",
+        "source.accdb",
+        odbc_connection_string=odbc_conn_str,
+    )
+
+    assert result["success"] is True
+    assert len(fake_service.transfer_calls) == 1
+    assert fake_service.transfer_calls[0]["odbc_connection_string"] == odbc_conn_str
+
+
+def test_mcp_transfer_data_omitting_odbc_connection_string_records_none(monkeypatch):
+    """MCP transfer_data with no odbc_connection_string passes None to service."""
+    fake_service = _FakeMigrationService()
+    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+
+    result = transfer_data_tool("postgres", "conn", "source.accdb")
+
+    assert result["success"] is True
+    assert len(fake_service.transfer_calls) == 1
+    assert fake_service.transfer_calls[0]["odbc_connection_string"] is None
