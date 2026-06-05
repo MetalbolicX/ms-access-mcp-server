@@ -1,4 +1,12 @@
 from typing import Optional, Any
+
+# Load .env file before any config initialization (optional dependency)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastmcp import FastMCP
 from ..services.connection import ConnectionPool
 
