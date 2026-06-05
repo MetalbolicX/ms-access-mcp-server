@@ -11,6 +11,7 @@ from ..models.database import (
     FieldInfo,
     RelationshipInfo,
     ForeignKeyInfo,
+    QueryInfo,
 )
 from ..models.migration import (
     TableSchema,
@@ -144,6 +145,48 @@ class SchemaInspector:
         return self._dispatcher.call(_do)
 
     # ------------------------------------------------------------------ #
+    # get_queries
+    # ------------------------------------------------------------------ #
+
+    def get_queries(self) -> list[QueryInfo]:
+        """Get all saved queries (QueryDefs) from the connected database.
+
+        Excludes system queries (names starting with '~' or 'MSys').
+        Returns list of QueryInfo with name, sql, and type.
+        """
+        if not self._dispatcher.is_connected():
+            return []
+
+        def _do() -> list[QueryInfo]:
+            queries: list[QueryInfo] = []
+            try:
+                db = self._dispatcher.current_db
+                for i in range(db.QueryDefs.Count):
+                    qdef = db.QueryDefs(i)
+                    name = qdef.Name
+                    if name.startswith("~") or name.startswith("MSys"):
+                        continue
+                    sql = ""
+                    try:
+                        sql = qdef.SQL
+                    except Exception:
+                        pass
+                    qtype = "select"
+                    try:
+                        if qdef.Type == 32:  # dbQProcedure
+                            qtype = "action"
+                        elif qdef.Type == 80:  # dbQDDL
+                            qtype = "ddl"
+                    except Exception:
+                        pass
+                    queries.append(QueryInfo(name=name, sql=sql, type=qtype))
+            except Exception:
+                pass
+            return queries
+
+        return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------ #
     # _get_table_indexes
     # ------------------------------------------------------------------ #
 
@@ -262,11 +305,11 @@ class SchemaInspector:
 
                         fk = ForeignKeySchema(
                             name=rel.Name,
-                            columns=child_columns,
-                            referenced_table=rel.ForeignTable,
-                            referenced_columns=parent_columns,
+                            columns=parent_columns,
+                            referenced_table=rel.Table,
+                            referenced_columns=child_columns,
                         )
-                        relationships_by_table.setdefault(rel.Table, []).append(fk)
+                        relationships_by_table.setdefault(rel.ForeignTable, []).append(fk)
                 except Exception:
                     unknown.foreign_keys = True
 

@@ -141,6 +141,53 @@ class WinComAdapter(AccessAdapter):
         except Exception:
             return False
 
+    def execute_query(self, sql: str, params: list | None = None) -> dict:
+        """Execute SQL query via DAO and return results as dict.
+
+        Args:
+            sql: SQL query string (SELECT statements).
+            params: Not used for DAO — kept for protocol compatibility.
+
+        Returns:
+            dict with success, rows (list[dict]), count, columns.
+        """
+        _ = params
+        if not self.is_connected():
+            return {"success": False, "rows": [], "count": 0, "columns": [], "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                rs = db.OpenRecordset(sql)
+                if rs.EOF:
+                    rs.Close()
+                    return {"success": True, "rows": [], "count": 0, "columns": []}
+
+                # Read column names
+                columns = []
+                for i in range(rs.Fields.Count):
+                    columns.append(rs.Fields(i).Name)
+
+                # Read all rows
+                results = []
+                while not rs.EOF:
+                    row = {}
+                    for i, col in enumerate(columns):
+                        val = rs.Fields(i).Value
+                        if val is not None and hasattr(val, 'strftime'):
+                            val = val.isoformat()
+                        row[col] = val
+                    results.append(row)
+                    rs.MoveNext()
+
+                rs.Close()
+                return {"success": True, "rows": results, "count": len(results), "columns": columns}
+
+            except Exception as e:
+                return {"success": False, "rows": [], "count": 0, "columns": [], "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
     def get_tables(self) -> list[TableInfo]:
         """Get all user tables from the connected database."""
         return self._schema.get_tables()
@@ -369,6 +416,10 @@ class WinComAdapter(AccessAdapter):
     def _get_relationship_columns(self) -> list[ForeignKeyInfo]:
         """Read Relations collection and build ForeignKeyInfo list."""
         return self._schema._get_relationship_columns()
+
+    def get_queries(self) -> list[QueryInfo]:
+        """Get all saved queries (QueryDefs) via SchemaInspector."""
+        return self._schema.get_queries()
 
     def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]:
         """Extract table schema fidelity metadata from Access DAO collections.

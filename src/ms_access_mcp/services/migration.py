@@ -240,7 +240,11 @@ class MigrationService:
         return verification
 
     def upload_schema(self, target_type: str, connection_string: str, schema: ExtractedSchema) -> dict:
-        """Create tables in target database."""
+        """Create tables in target database.
+
+        Two-phase creation: tables first (without FK constraints), then FKs.
+        This avoids circular dependency issues when tables reference each other.
+        """
         try:
             connector_cls = self._connector_registry.get(target_type)
         except KeyError:
@@ -253,7 +257,41 @@ class MigrationService:
         created = []
         failed = []
 
-        for table in schema.tables:
+        # Phase 1: Create tables without FK constraints
+        from copy import deepcopy
+
+        # Topological sort: parent tables (referenced by FK) before children
+        tables_by_name = {t.name: t for t in schema.tables}
+        fk_refs: dict[str, set[str]] = {}  # table -> set of referenced tables
+        for t in schema.tables:
+            refs = set()
+            for fk in t.foreign_keys:
+                if fk.referenced_table in tables_by_name:
+                    refs.add(fk.referenced_table)
+            fk_refs[t.name] = refs
+
+        sorted_names: list[str] = []
+        visited: set[str] = set()
+        def _visit(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+            for dep in fk_refs.get(name, set()):
+                _visit(dep)
+            sorted_names.append(name)
+
+        for t in schema.tables:
+            _visit(t.name)
+
+        tables_clean = deepcopy([tables_by_name[n] for n in sorted_names])
+        fk_by_table: dict[str, list] = {}
+
+        for table in tables_clean:
+            # Save and remove FKs for phase 1
+            fk_by_table[table.name] = table.foreign_keys
+            table.foreign_keys = []
+
+        for table in tables_clean:
             if connector.table_exists(table.name):
                 failed.append(table.name)
                 continue
@@ -261,6 +299,29 @@ class MigrationService:
                 created.append(table.name)
             else:
                 failed.append(table.name)
+
+        # Phase 2: Add FK constraints via ALTER TABLE
+        from ..models.migration import ForeignKeySchema
+        import psycopg2
+
+        for table in tables_clean:
+            if table.name not in fk_by_table or not fk_by_table[table.name]:
+                continue
+            for fk in fk_by_table[table.name]:
+                if not fk.columns or not fk.referenced_columns:
+                    continue
+                child_cols = ", ".join(f'"{c}"' for c in fk.columns)
+                parent_cols = ", ".join(f'"{c}"' for c in fk.referenced_columns)
+                ddl = (
+                    f'ALTER TABLE "{table.name}" ADD CONSTRAINT "{fk.name}" '
+                    f'FOREIGN KEY ({child_cols}) REFERENCES "{fk.referenced_table}" ({parent_cols})'
+                )
+                try:
+                    with connector._conn.cursor() as cur:
+                        cur.execute(ddl)
+                    connector._conn.commit()
+                except Exception:
+                    connector._conn.rollback()
 
         connector.disconnect()
         return {"success": True, "tables_created": created, "tables_failed": failed}
