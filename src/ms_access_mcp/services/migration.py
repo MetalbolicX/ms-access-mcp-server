@@ -180,6 +180,7 @@ class MigrationService:
             def get_capabilities(self) -> ConnectorCapabilities:
                 return ConnectorCapabilities(
                     supports_linked_insert_select=False,
+                    supports_passthrough_insert_select=False,
                     supports_checksum=supports_checksum,
                     supports_sampling=supports_sampling,
                     preferred_batch_size=1000,
@@ -275,8 +276,14 @@ class MigrationService:
         transfer_mode: str = "auto",
         verification_mode: str = "full",
         table_overrides: dict[str, TableTransferConfig] | None = None,
+        odbc_connection_string: str | None = None,
     ) -> dict:
-        """Transfer data from Access to target database."""
+        """Transfer data from Access to target database.
+
+        Args:
+            odbc_connection_string: Optional ODBC connection string override for passthrough.
+                When provided, this is used instead of calling connector.get_odbc_connection_string().
+        """
         if job_id is None:
             job_id = str(uuid.uuid4())
 
@@ -320,6 +327,10 @@ class MigrationService:
                             target_connector=connector,
                             source_rows=rows,
                             allow_linked=transfer_mode != "batch",
+                            columns=effective_columns,
+                            where_clause=where,
+                            order_by_columns=order_by,
+                            odbc_connection_string=odbc_connection_string,
                         )
                     )
                     verification = self._verify_table_result(
@@ -372,3 +383,23 @@ class MigrationService:
         if not job:
             return {"success": False, "error": f"Job {job_id} not found"}
         return {"success": True, "job": job.model_dump()}
+
+    def execute_raw_sql(self, sql: str, adapter: AccessAdapter) -> dict:
+        """Execute a raw SQL statement via the adapter (passthrough path).
+
+        Args:
+            sql: Raw SQL string (e.g., INSERT INTO [ODBC;...].[table] SELECT ...)
+            adapter: Source adapter (must have execute_raw_sql method)
+
+        Returns:
+            dict with success=True and rows_affected (int), or success=False and error.
+        """
+        if not sql or sql.strip() == "":
+            return {"success": False, "error": "SQL string cannot be empty"}
+        if not hasattr(adapter, "execute_raw_sql"):
+            return {"success": False, "error": "Adapter does not implement execute_raw_sql (requires WinComAdapter)"}
+        try:
+            rows_affected = adapter.execute_raw_sql(sql)
+            return {"success": True, "rows_affected": rows_affected}
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
