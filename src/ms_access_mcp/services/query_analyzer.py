@@ -338,11 +338,13 @@ def generate_recommendations(parse_result: SQLParseResult, schema: dict, executi
         )
 
     # Aggregates on large table
-    if parse_result.has_aggregates and execution and execution.get("rows_total", 0) > 100000:
-        recommendations.append(
-            f"Aggregate functions on large table ({tables[0] if tables else 'unknown'}, "
-            f"{execution['rows_total']} rows) — consider filters"
-        )
+    if parse_result.has_aggregates and execution:
+        rows_total = execution.get("rows_total")
+        if rows_total is not None and rows_total > 100000:
+            recommendations.append(
+                f"Aggregate functions on large table ({tables[0] if tables else 'unknown'}, "
+                f"{execution['rows_total']} rows) — consider filters"
+            )
 
     # Clean query
     if not recommendations:
