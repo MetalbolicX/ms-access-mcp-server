@@ -26,72 +26,35 @@ class TestLinkedTableProtocol:
 
 
 class TestGetLinkedTablesOdbcStub:
-    def test_returns_error_not_connected(self):
-        """OdbcAdapter.get_linked_tables returns error when not connected."""
+    def test_raises_not_implemented_error(self):
+        """OdbcAdapter.get_linked_tables raises NotImplementedError."""
         adapter = OdbcAdapter()
-        result = adapter.get_linked_tables()
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
-
-    def test_returns_error_connected(self):
-        """OdbcAdapter.get_linked_tables returns error even when connected."""
-        adapter = OdbcAdapter()
-        adapter._conn = MagicMock()
-        adapter._db_path = "test.accdb"
-        result = adapter.get_linked_tables()
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
+        with pytest.raises(NotImplementedError):
+            adapter.get_linked_tables()
 
 
 class TestCreateLinkedTableOdbcStub:
-    def test_returns_error_not_connected(self):
-        """OdbcAdapter.create_linked_table returns error when not connected."""
+    def test_raises_not_implemented_error(self):
+        """OdbcAdapter.create_linked_table raises NotImplementedError."""
         adapter = OdbcAdapter()
-        result = adapter.create_linked_table("name", "source", "connect")
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
-
-    def test_returns_error_connected(self):
-        """OdbcAdapter.create_linked_table returns error even when connected."""
-        adapter = OdbcAdapter()
-        adapter._conn = MagicMock()
-        result = adapter.create_linked_table("name", "source", "connect")
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
+        with pytest.raises(NotImplementedError):
+            adapter.create_linked_table("name", "source", "connect")
 
 
 class TestRefreshLinkedTableOdbcStub:
-    def test_returns_error_not_connected(self):
-        """OdbcAdapter.refresh_linked_table returns error when not connected."""
+    def test_raises_not_implemented_error(self):
+        """OdbcAdapter.refresh_linked_table raises NotImplementedError."""
         adapter = OdbcAdapter()
-        result = adapter.refresh_linked_table("name")
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
-
-    def test_returns_error_connected(self):
-        """OdbcAdapter.refresh_linked_table returns error even when connected."""
-        adapter = OdbcAdapter()
-        adapter._conn = MagicMock()
-        result = adapter.refresh_linked_table("name")
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
+        with pytest.raises(NotImplementedError):
+            adapter.refresh_linked_table("name")
 
 
 class TestUnlinkTableOdbcStub:
-    def test_returns_error_not_connected(self):
-        """OdbcAdapter.unlink_table returns error when not connected."""
+    def test_raises_not_implemented_error(self):
+        """OdbcAdapter.unlink_table raises NotImplementedError."""
         adapter = OdbcAdapter()
-        result = adapter.unlink_table("name")
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
-
-    def test_returns_error_connected(self):
-        """OdbcAdapter.unlink_table returns error even when connected."""
-        adapter = OdbcAdapter()
-        adapter._conn = MagicMock()
-        result = adapter.unlink_table("name")
-        assert result["success"] is False
-        assert "Not available via ODBC" in result["error"]
+        with pytest.raises(NotImplementedError):
+            adapter.unlink_table("name")
 
 
 class TestWinComLinkedTablesReturnTypes:

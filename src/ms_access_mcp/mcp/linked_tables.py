@@ -34,6 +34,8 @@ def get_linked_tables(connection_name: str = "default") -> dict:
     try:
         result = adapter.get_linked_tables()
         return result
+    except NotImplementedError as e:
+        return {"success": False, "error": f"This operation requires COM automation ({e}). Use connect_access with use_com=True on Windows."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -57,6 +59,8 @@ def create_linked_table(name: str, source_table: str, connect_string: str, conne
     try:
         result = adapter.create_linked_table(name, source_table, connect_string)
         return result
+    except NotImplementedError as e:
+        return {"success": False, "error": f"This operation requires COM automation ({e}). Use connect_access with use_com=True on Windows."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -80,6 +84,8 @@ def refresh_linked_table(name: str, connection_name: str = "default") -> dict:
     try:
         result = adapter.refresh_linked_table(name)
         return result
+    except NotImplementedError as e:
+        return {"success": False, "error": f"This operation requires COM automation ({e}). Use connect_access with use_com=True on Windows."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -104,5 +110,7 @@ def unlink_table(name: str, connection_name: str = "default") -> dict:
     try:
         result = adapter.unlink_table(name)
         return result
+    except NotImplementedError as e:
+        return {"success": False, "error": f"This operation requires COM automation ({e}). Use connect_access with use_com=True on Windows."}
     except Exception as e:
         return {"success": False, "error": str(e)}

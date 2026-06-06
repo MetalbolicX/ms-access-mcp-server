@@ -112,3 +112,75 @@ class TestUnlinkTable:
             result = server.unlink_table("lnkName")
             assert result["success"] is True
             mock_conn.adapter.unlink_table.assert_called_once_with("lnkName")
+
+
+class TestLinkedTablesComOnlyError:
+    """Tests that ODBC adapter raises NotImplementedError for COM-only operations.
+
+    These tests verify the MCP tool layer properly catches NotImplementedError
+    raised by the ODBC adapter and returns a user-friendly COM-only error message.
+    """
+
+    def test_get_linked_tables_returns_com_only_error_with_odbc_adapter(self):
+        """get_linked_tables returns COM-only error when adapter raises NotImplementedError."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_adapter.get_linked_tables.side_effect = NotImplementedError(
+            "get_linked_tables requires COM automation (WinComAdapter)"
+        )
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.get_linked_tables.__globals__, connection_service=mock_conn):
+            result = server.get_linked_tables()
+            assert result["success"] is False
+            assert "COM automation" in result["error"]
+            assert "WinComAdapter" in result["error"]
+            assert "use_com=True" in result["error"]
+
+    def test_create_linked_table_returns_com_only_error_with_odbc_adapter(self):
+        """create_linked_table returns COM-only error when adapter raises NotImplementedError."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_adapter.create_linked_table.side_effect = NotImplementedError(
+            "create_linked_table requires COM automation (WinComAdapter)"
+        )
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.create_linked_table.__globals__, connection_service=mock_conn):
+            result = server.create_linked_table("lnk", "RemoteT", "ODBC;DSN=test")
+            assert result["success"] is False
+            assert "COM automation" in result["error"]
+            assert "WinComAdapter" in result["error"]
+            assert "use_com=True" in result["error"]
+
+    def test_refresh_linked_table_returns_com_only_error_with_odbc_adapter(self):
+        """refresh_linked_table returns COM-only error when adapter raises NotImplementedError."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_adapter.refresh_linked_table.side_effect = NotImplementedError(
+            "refresh_linked_table requires COM automation (WinComAdapter)"
+        )
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.refresh_linked_table.__globals__, connection_service=mock_conn):
+            result = server.refresh_linked_table("lnk")
+            assert result["success"] is False
+            assert "COM automation" in result["error"]
+            assert "WinComAdapter" in result["error"]
+            assert "use_com=True" in result["error"]
+
+    def test_unlink_table_returns_com_only_error_with_odbc_adapter(self):
+        """unlink_table returns COM-only error when adapter raises NotImplementedError."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_adapter.unlink_table.side_effect = NotImplementedError(
+            "unlink_table requires COM automation (WinComAdapter)"
+        )
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.dict(server.unlink_table.__globals__, connection_service=mock_conn):
+            result = server.unlink_table("lnk")
+            assert result["success"] is False
+            assert "COM automation" in result["error"]
+            assert "WinComAdapter" in result["error"]
+            assert "use_com=True" in result["error"]

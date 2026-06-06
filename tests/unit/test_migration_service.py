@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 from unittest.mock import MagicMock, patch
-from ms_access_mcp.services.migration import MigrationService, JobTracker
+from ms_access_mcp.services.migration import MigrationService
+from ms_access_mcp.services.job_tracker import JobTracker
 from ms_access_mcp.models.migration import (
     ExtractedSchema,
     TableSchema,
@@ -115,51 +116,6 @@ class FakeConnector:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# JobTracker
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestJobTracker:
-    """JobTracker persistence to JSON file."""
-
-    def test_create_and_get_job(self, tmp_path):
-        state = tmp_path / "jobs.json"
-        tracker = JobTracker(str(state))
-        job = tracker.create_job("job-1", "postgres")
-        assert job.id == "job-1"
-        assert job.status == "pending"
-        assert job.phase == "extract"
-
-    def test_get_job_not_found(self, tmp_path):
-        tracker = JobTracker(str(tmp_path / "nonexistent.json"))
-        assert tracker.get_job("nonexistent") is None
-
-    def test_update_job(self, tmp_path):
-        tracker = JobTracker(str(tmp_path / "jobs.json"))
-        tracker.create_job("job-1", "postgres")
-        tracker.update_job("job-1", status="running", progress=0.5)
-        job = tracker.get_job("job-1")
-        assert job.status == "running"
-        assert job.progress == 0.5
-
-    def test_add_result(self, tmp_path):
-        tracker = JobTracker(str(tmp_path / "jobs.json"))
-        tracker.create_job("job-1", "postgres")
-        result = TableResult(table="t1", source_rows=10, rows_transferred=10,
-                             duration_ms=100, success=True)
-        tracker.add_result("job-1", result)
-        job = tracker.get_job("job-1")
-        assert len(job.results) == 1
-        assert job.results[0].table == "t1"
-
-    def test_persistence_across_instances(self, tmp_path):
-        state = tmp_path / "jobs.json"
-        t1 = JobTracker(str(state))
-        t1.create_job("job-1", "mysql")
-        t2 = JobTracker(str(state))
-        assert t2.get_job("job-1") is not None
-
-
-# ═══════════════════════════════════════════════════════════════════════
 # MigrationService — extract_schema
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -208,52 +164,6 @@ class TestExtractSchema:
 # ═══════════════════════════════════════════════════════════════════════
 # MigrationService — _build_select
 # ═══════════════════════════════════════════════════════════════════════
-
-class TestBuildSelect:
-    def test_select_star(self):
-        sql = MigrationService._build_select("orders", None, None, None)
-        assert sql == "SELECT * FROM [orders]"
-
-    def test_select_columns(self):
-        sql = MigrationService._build_select("orders", ["id", "total"], None, None)
-        assert sql == "SELECT id, total FROM [orders]"
-
-    def test_select_with_where(self):
-        sql = MigrationService._build_select("orders", None, "status='active'", None)
-        assert sql == "SELECT * FROM [orders] WHERE status='active'"
-
-    def test_select_with_order_by(self):
-        sql = MigrationService._build_select("orders", None, None, ["id", "name"])
-        assert sql == "SELECT * FROM [orders] ORDER BY id, name"
-
-    def test_select_full(self):
-        sql = MigrationService._build_select("orders", ["id", "total"], "status='active'", ["id"])
-        assert sql == "SELECT id, total FROM [orders] WHERE status='active' ORDER BY id"
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# MigrationService — _resolve_override
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestResolveOverride:
-    def test_no_overrides(self):
-        cols, where, order = MigrationService._resolve_override("t", None, ["a", "b"])
-        assert (cols, where, order) == (None, None, None)
-
-    def test_unknown_table(self):
-        from ms_access_mcp.models.migration import TableTransferConfig
-        overrides = {"other": TableTransferConfig(columns=["a"])}
-        cols, where, order = MigrationService._resolve_override("t", overrides, ["a", "b"])
-        assert (cols, where, order) == (None, None, None)
-
-    def test_partial_override(self):
-        from ms_access_mcp.models.migration import TableTransferConfig
-        overrides = {"t": TableTransferConfig(where="id>10")}
-        cols, where, order = MigrationService._resolve_override("t", overrides, ["a", "b"])
-        assert cols is None
-        assert where == "id>10"
-        assert order is None
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # MigrationService — upload_schema
@@ -354,8 +264,8 @@ class TestTransferData:
 
     def test_transfer_creates_job(self, tmp_path, monkeypatch):
         """transfer_data should create a job in the tracker."""
-        svc = MigrationService()
-        svc._tracker = JobTracker()  # reset tracker
+        tracker = JobTracker(str(tmp_path / "jobs.json"))
+        svc = MigrationService(job_tracker=tracker)
 
         from ms_access_mcp.models.database import TableInfo, FieldInfo
         fields = [FieldInfo(name="ID", type="Long Integer", size=4,
@@ -431,20 +341,6 @@ class TestTransferData:
         result = svc.get_job_status("nonexistent-job")
         assert result["success"] is False
         assert "not found" in result["error"]
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# MigrationService — column validation
-# ═══════════════════════════════════════════════════════════════════════
-
-class TestValidateColumns:
-    def test_valid_columns(self):
-        MigrationService._validate_columns(["a", "b"], ["a", "b", "c"])
-
-    def test_invalid_column_raises(self):
-        with pytest.raises(ValueError) as exc:
-            MigrationService._validate_columns(["a", "z"], ["a", "b"])
-        assert "z" in str(exc.value)
 
 
 # ═══════════════════════════════════════════════════════════════════════

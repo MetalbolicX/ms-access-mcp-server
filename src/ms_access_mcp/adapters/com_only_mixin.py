@@ -7,7 +7,6 @@ Methods that OdbcAdapter implements itself (ODBC data operations) are NOT in thi
 - execute_query, insert_data, update_data, delete_data
 - export_data
 - get_tables, get_queries, create_query, set_query_sql, delete_query, create_table, delete_table
-- get_linked_tables, create_linked_table, refresh_linked_table, unlink_table
 - export_schema_ddl
 - compact_repair (returns error dict), copy_database (returns False)
 """
@@ -179,3 +178,23 @@ class ComOnlyAdapterMixin:
     def execute_raw_sql(self, sql: str) -> int:
         """Execute raw SQL via COM — requires WinComAdapter."""
         raise NotImplementedError("execute_raw_sql requires COM automation (WinComAdapter)")
+
+    # ========================================================================
+    # Linked Tables (ISchemaAdapter — COM-only)
+    # ========================================================================
+
+    def get_linked_tables(self) -> dict:
+        """Get linked tables — requires COM automation."""
+        raise NotImplementedError("get_linked_tables requires COM automation (WinComAdapter)")
+
+    def create_linked_table(self, name: str, source_table: str, connect_string: str) -> dict:
+        """Create a linked table — requires COM automation."""
+        raise NotImplementedError("create_linked_table requires COM automation (WinComAdapter)")
+
+    def refresh_linked_table(self, name: str) -> dict:
+        """Refresh a linked table — requires COM automation."""
+        raise NotImplementedError("refresh_linked_table requires COM automation (WinComAdapter)")
+
+    def unlink_table(self, name: str) -> dict:
+        """Unlink a table — requires COM automation."""
+        raise NotImplementedError("unlink_table requires COM automation (WinComAdapter)")

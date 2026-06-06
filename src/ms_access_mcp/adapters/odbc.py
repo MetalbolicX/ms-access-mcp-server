@@ -547,23 +547,9 @@ class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
 
     # ========================================================================
     # Linked Tables (ISchemaAdapter)
+    # OdbcAdapter does not implement linked-table operations — delegated to
+    # ComOnlyAdapterMixin via MRO. All four raise NotImplementedError.
     # ========================================================================
-
-    def get_linked_tables(self) -> dict:
-        """Get linked tables — not available via ODBC."""
-        return {"success": False, "error": "Not available via ODBC"}
-
-    def create_linked_table(self, name: str, source_table: str, connect_string: str) -> dict:
-        """Create linked table — not available via ODBC."""
-        return {"success": False, "error": "Not available via ODBC"}
-
-    def refresh_linked_table(self, name: str) -> dict:
-        """Refresh linked table — not available via ODBC."""
-        return {"success": False, "error": "Not available via ODBC"}
-
-    def unlink_table(self, name: str) -> dict:
-        """Unlink table — not available via ODBC."""
-        return {"success": False, "error": "Not available via ODBC"}
 
     # ========================================================================
     # Schema DDL Export (ISchemaAdapter)
@@ -627,10 +613,10 @@ class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
     # ========================================================================
 
     def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
-        """Compact or repair database — not available via ODBC."""
+        """Compact or repair database — requires COM automation."""
         if action not in ("compact", "repair"):
-            return {"success": False, "error": f"Invalid action '{action}'. Must be 'compact' or 'repair'."}
-        return {"success": False, "error": "Not available via ODBC"}
+            raise ValueError(f"Invalid action '{action}'. Must be 'compact' or 'repair'.")
+        raise NotImplementedError("compact_repair requires COM automation (WinComAdapter)")
 
     def copy_database(self, source: str, dest: str) -> bool:
         """Copy database file via file system copy (not COM)."""

@@ -54,6 +54,8 @@ def compact_repair(action: str, source_path: str, dest_path: str, keep_original:
     try:
         result = adapter.compact_repair(action, source_path, dest_path, keep_original)
         return result
+    except NotImplementedError as e:
+        return {"success": False, "error": f"This operation requires COM automation ({e}). Use connect_access with use_com=True on Windows."}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

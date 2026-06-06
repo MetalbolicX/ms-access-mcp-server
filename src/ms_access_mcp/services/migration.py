@@ -7,163 +7,37 @@ from typing import Optional
 
 from ..models.migration import MigrationJob, ExtractedSchema, TableResult, TableSchema, ColumnSchema, TableTransferConfig
 from ..adapters.base import AccessAdapter
+from .job_tracker import JobTracker
 from .schema_mapper import SchemaMapper
 from .verification import VerificationService
 from ..connectors.base import ConnectorCapabilities
 from .transfer_strategy import TransferContext, TransferStrategySelector
 from ..connectors.registry import ConnectorRegistry, _default_registry
-
-
-class JobTracker:
-    """Tracks migration job state to JSON file."""
-
-    def __init__(self, state_file: str | None = None):
-        self._state_file = state_file or os.path.join(os.environ.get("TEMP", "/tmp"), ".migration_jobs.json")
-        self._jobs: dict[str, MigrationJob] = {}
-        self._load()
-
-    def _load(self) -> None:
-        if os.path.exists(self._state_file):
-            try:
-                with open(self._state_file, "r") as f:
-                    data = json.load(f)
-                    for job_data in data.values():
-                        self._jobs[job_data["id"]] = MigrationJob(**job_data)
-            except Exception:
-                pass
-
-    def _save(self) -> None:
-        try:
-            with open(self._state_file, "w") as f:
-                json.dump({k: v.model_dump() for k, v in self._jobs.items()}, f, indent=2)
-        except Exception:
-            pass
-
-    def create_job(self, job_id: str, target_type: str) -> MigrationJob:
-        job = MigrationJob(id=job_id, status="pending", phase="extract")
-        self._jobs[job_id] = job
-        self._save()
-        return job
-
-    def get_job(self, job_id: str) -> Optional[MigrationJob]:
-        return self._jobs.get(job_id)
-
-    def update_job(self, job_id: str, **kwargs) -> None:
-        if job_id in self._jobs:
-            for k, v in kwargs.items():
-                setattr(self._jobs[job_id], k, v)
-            self._save()
-
-    def add_result(self, job_id: str, result: TableResult) -> None:
-        if job_id in self._jobs:
-            self._jobs[job_id].results.append(result)
-            self._save()
-
-    def update_progress(self, job_id: str, progress: float, current_table: str | None = None) -> None:
-        self.update_job(job_id, progress=progress, current_table=current_table)
+from .sql_builder import build_select, resolve_override, validate_columns, extract_rows
+from .topological_sorter import sort_tables_by_fk
+from .schema_extractor import SchemaExtractor
 
 
 class MigrationService:
     """Orchestrates schema extraction, upload, and data transfer."""
 
-    def __init__(self, connector_registry: ConnectorRegistry | None = None):
-        self._tracker = JobTracker()
+    def __init__(self, connector_registry: ConnectorRegistry | None = None, job_tracker: JobTracker | None = None):
+        self._tracker = job_tracker or JobTracker()
+        self._schema_extractor = SchemaExtractor()
         self._schema_mapper = SchemaMapper()
         self._transfer_selector = TransferStrategySelector()
         self._verification = VerificationService()
         self._connector_registry = connector_registry or _default_registry
 
-    @staticmethod
-    def _build_select(
-        table_name: str,
-        columns: list[str] | None,
-        where: str | None,
-        order_by: list[str] | None,
-    ) -> str:
-        """Build SELECT statement with optional column list, WHERE, ORDER BY.
-
-        columns=None → SELECT *
-        columns=[] → invalid (should not reach here)
-        columns=[...] → SELECT col, col, ...
-        """
-        cols = "*" if columns is None else ", ".join(columns)
-        sql = f"SELECT {cols} FROM [{table_name}]"
-        if where:
-            sql += f" WHERE {where}"
-        if order_by:
-            sql += f" ORDER BY {', '.join(order_by)}"
-        return sql
-
-    @staticmethod
-    def _resolve_override(
-        table_name: str,
-        overrides: dict[str, "TableTransferConfig"] | None,
-        schema_columns: list[str],
-    ) -> tuple[list[str] | None, str | None, list[str] | None]:
-        """Return (effective_columns, where, order_by) for a table.
-
-        Returns (None, None, None) when table has no override entry or all override
-        fields are None — signaling to _build_select to use SELECT *.
-        Returns (list, str, list) when at least one override field is set.
-        """
-        if overrides is None:
-            return None, None, None
-        cfg = overrides.get(table_name)
-        if cfg is None:
-            return None, None, None
-        effective_cols = cfg.columns if cfg.columns else None
-        return effective_cols, cfg.where, cfg.order_by
-
-    @staticmethod
-    def _validate_columns(requested: list[str], available: list[str]) -> None:
-        """Raise ValueError if any requested column not in available."""
-        available_set = set(available)
-        for col in requested:
-            if col not in available_set:
-                raise ValueError(f"Invalid column '{col}' not found in table schema")
-
-    @staticmethod
-    def _extract_rows_from_query_result(query_result: dict | list) -> list[dict]:
-        if isinstance(query_result, dict):
-            return query_result.get("rows", []) if query_result.get("success", False) else []
-        return query_result
-
     def extract_schema(self, adapter: AccessAdapter, source_path: str) -> ExtractedSchema:
         """Extract schema from Access database via adapter."""
-        unknown_metadata_payload = None
-        if hasattr(adapter, "get_table_schema_plan"):
-            schema_tables, unknown_metadata_payload = adapter.get_table_schema_plan()
-        else:
-            tables = adapter.get_tables()
-            schema_tables = []
-            for t in tables:
-                cols = []
-                for f in t.fields:
-                    cols.append(ColumnSchema(
-                        name=f.name,
-                        source_type=f.type,
-                        max_length=f.size if f.size > 0 else None,
-                        allow_null=not f.required,
-                        is_autoincrement=False,
-                    ))
-                schema_tables.append(TableSchema(name=t.name, columns=cols))
-        query_names = {q.name for q in adapter.get_queries()}
-        schema_tables = [t for t in schema_tables if t.name not in query_names]
-
-        payload = {
-            "source": source_path,
-            "version": "1.0",
-            "extracted_at": datetime.now(UTC).isoformat(),
-            "tables": schema_tables,
-        }
-        if unknown_metadata_payload is not None:
-            payload["unknown_metadata"] = unknown_metadata_payload
-
-        return ExtractedSchema(**payload)
+        return self._schema_extractor.extract(adapter, source_path)
 
     @staticmethod
     def _normalize_value(value) -> str:
-        return "<NULL>" if value is None else str(value)
+        """Normalize a value for checksum computation (delegates to sql_builder)."""
+        from .sql_builder import normalize_value
+        return normalize_value(value)
 
     def _build_source_snapshot_connector(
         self,
@@ -239,40 +113,6 @@ class MigrationService:
 
         return verification
 
-    @staticmethod
-    def _topological_sort(tables: list) -> list:
-        """Sort tables so parent tables (referenced by FK) are created before children.
-
-        Handles M:N via junction tables: two 1:N relationships are resolved
-        independently, so the junction table naturally comes after both parents.
-        """
-        from copy import deepcopy
-
-        tables_by_name = {t.name: t for t in tables}
-        fk_refs: dict[str, set[str]] = {}
-        for t in tables:
-            refs = set()
-            for fk in t.foreign_keys:
-                if fk.referenced_table in tables_by_name:
-                    refs.add(fk.referenced_table)
-            fk_refs[t.name] = refs
-
-        sorted_names: list[str] = []
-        visited: set[str] = set()
-
-        def _visit(name: str) -> None:
-            if name in visited:
-                return
-            visited.add(name)
-            for dep in fk_refs.get(name, set()):
-                _visit(dep)
-            sorted_names.append(name)
-
-        for t in tables:
-            _visit(t.name)
-
-        return [deepcopy(tables_by_name[n]) for n in sorted_names]
-
     def upload_schema(self, target_type: str, connection_string: str, schema: ExtractedSchema) -> dict:
         """Create tables in target database.
 
@@ -292,7 +132,7 @@ class MigrationService:
         created = []
         failed = []
 
-        tables_sorted = self._topological_sort(schema.tables)
+        tables_sorted = sort_tables_by_fk(schema.tables)
         for table in tables_sorted:
             if connector.table_exists(table.name):
                 failed.append(table.name)
@@ -345,14 +185,14 @@ class MigrationService:
 
             try:
                 table_columns = [column.name for column in table.columns]
-                effective_columns, where, order_by = self._resolve_override(
+                effective_columns, where, order_by = resolve_override(
                     table.name, table_overrides, table_columns
                 )
                 if effective_columns is not None:
-                    self._validate_columns(effective_columns, table_columns)
-                select_sql = self._build_select(table.name, effective_columns, where, order_by)
+                    validate_columns(effective_columns, table_columns)
+                select_sql = build_select(table.name, effective_columns, where, order_by)
                 query_result = adapter.execute_query(select_sql)
-                rows = self._extract_rows_from_query_result(query_result)
+                rows = extract_rows(query_result)
                 source_count = len(rows)
 
                 columns_for_verification = effective_columns if effective_columns is not None else table_columns

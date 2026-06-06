@@ -165,24 +165,20 @@ class TestOdbcAdapterConnectedGetTables(ConnectedAdapterTestBase):
 
     def test_get_tables_returns_tableinfo_list(self):
         """get_tables returns TableInfo list for each user table."""
+        # Mock cursor.tables() — ODBC SQLTables enumeration
         table_row = MagicMock()
-        table_row.__getitem__ = lambda self, i: "Table1" if i == 0 else None
-        table_row[0] = "Table1"
-
+        table_row.table_name = "Table1"
+        table_row.table_type = "TABLE"
+        # Mock cursor.columns() — ODBC SQLColumns
         col_row = MagicMock()
-        col_row.name = "ID"
-        col_row.type = "Long Integer"
-        col_row.size = 0
-        col_row.nullable = "NO"
+        col_row.column_name = "ID"
+        col_row.type_name = "Long Integer"
+        col_row.column_size = 0
+        col_row.nullable = 0  # SQL_NO_NULLS
 
-        count_row = (5,)
-
-        self.mock_cursor.fetchall.side_effect = [
-            [table_row],
-            [col_row],
-            [count_row],
-        ]
-        self.mock_cursor.fetchone.return_value = count_row
+        self.mock_cursor.tables.return_value = [table_row]
+        self.mock_cursor.columns.return_value = [col_row]
+        self.mock_cursor.fetchone.return_value = (5,)
 
         tables = self.adapter.get_tables()
         assert len(tables) >= 1
@@ -544,3 +540,22 @@ class TestOdbcAdapterConnectedExportSchemaDdl(ConnectedAdapterTestBase):
         result = self.adapter.export_schema_ddl("D:/tmp/export")
         assert result["success"] is False
         assert "error" in result
+
+
+class TestOdbcAdapterCompactRepair(ConnectedAdapterTestBase):
+    """Test compact_repair action validation and NotImplementedError."""
+
+    def test_compact_repair_invalid_action_raises_value_error(self):
+        """compact_repair with invalid action raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid action"):
+            self.adapter.compact_repair("invalid", "src.accdb", "dst.accdb")
+
+    def test_compact_repair_valid_action_raises_not_implemented_error(self):
+        """compact_repair with valid action raises NotImplementedError."""
+        with pytest.raises(NotImplementedError):
+            self.adapter.compact_repair("compact", "src.accdb", "dst.accdb")
+
+    def test_compact_repair_repair_action_raises_not_implemented_error(self):
+        """compact_repair with repair action raises NotImplementedError."""
+        with pytest.raises(NotImplementedError):
+            self.adapter.compact_repair("repair", "src.accdb", "dst.accdb")

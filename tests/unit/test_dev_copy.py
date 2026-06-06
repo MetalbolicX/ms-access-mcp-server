@@ -62,6 +62,32 @@ class TestCompactRepair:
             assert result["success"] is False
             assert "File in use" in result["error"]
 
+    def test_compact_repair_returns_com_only_error_on_not_implemented(self):
+        """compact_repair should return COM-only error dict when adapter raises NotImplementedError."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.compact_repair.side_effect = NotImplementedError("Jet SQL cannot compact")
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
+            result = server.compact_repair("compact", "/src.accdb", "/dst.accdb", True)
+            assert result["success"] is False
+            assert "COM automation" in result["error"]
+            assert "use_com=True" in result["error"]
+
+    def test_compact_repair_value_error_wrapped_normally(self):
+        """compact_repair should wrap ValueError normally via str(e)."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.compact_repair.side_effect = ValueError("Invalid action 'bad'")
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
+            result = server.compact_repair("bad", "/src.accdb", "/dst.accdb", True)
+            assert result["success"] is False
+            assert "Invalid action" in result["error"]
+            assert "bad" in result["error"]
+
 
 class TestCopyDatabase:
     """Tests for copy_database tool."""
