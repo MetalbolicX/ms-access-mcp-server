@@ -55,11 +55,21 @@ class _FakeMigrationService:
         return {"success": True, "job_id": "job-123"}
 
 
+def _make_fake_selector(adapter):
+    """Return a BackendSelector mock that returns the given adapter."""
+    from unittest.mock import MagicMock
+    selector = MagicMock()
+    selector.get_adapter.return_value = adapter
+    return selector
+
+
 def test_mcp_transfer_data_forwards_table_overrides(monkeypatch):
     """MCP transfer_data forwards table_overrides dict to service as TableTransferConfig instances."""
     fake_service = _FakeMigrationService()
+    fake_adapter = _FakeAdapter()
+    fake_selector = _make_fake_selector(fake_adapter)
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
     result = transfer_data_tool(
         "postgres",
@@ -78,8 +88,10 @@ def test_mcp_transfer_data_forwards_table_overrides(monkeypatch):
 
 def test_mcp_transfer_data_defaults_to_backward_compatible_modes(monkeypatch):
     fake_service = _FakeMigrationService()
+    fake_adapter = _FakeAdapter()
+    fake_selector = _make_fake_selector(fake_adapter)
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
     result = transfer_data_tool("postgres", "conn", "source.accdb")
 
@@ -91,8 +103,10 @@ def test_mcp_transfer_data_defaults_to_backward_compatible_modes(monkeypatch):
 
 def test_mcp_transfer_data_forwards_explicit_modes(monkeypatch):
     fake_service = _FakeMigrationService()
+    fake_adapter = _FakeAdapter()
+    fake_selector = _make_fake_selector(fake_adapter)
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
     result = transfer_data_tool(
         "postgres",
@@ -111,8 +125,10 @@ def test_mcp_transfer_data_forwards_explicit_modes(monkeypatch):
 def test_mcp_transfer_data_forwards_odbc_connection_string(monkeypatch):
     """MCP transfer_data forwards odbc_connection_string to migration service unchanged."""
     fake_service = _FakeMigrationService()
+    fake_adapter = _FakeAdapter()
+    fake_selector = _make_fake_selector(fake_adapter)
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
     odbc_conn_str = "DRIVER={PostgreSQL Unicode};SERVER=test;PORT=5432;DATABASE=test;UID=u;PWD=p"
     result = transfer_data_tool(
@@ -130,8 +146,10 @@ def test_mcp_transfer_data_forwards_odbc_connection_string(monkeypatch):
 def test_mcp_transfer_data_omitting_odbc_connection_string_records_none(monkeypatch):
     """MCP transfer_data with no odbc_connection_string passes None to service."""
     fake_service = _FakeMigrationService()
+    fake_adapter = _FakeAdapter()
+    fake_selector = _make_fake_selector(fake_adapter)
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
     result = transfer_data_tool("postgres", "conn", "source.accdb")
 

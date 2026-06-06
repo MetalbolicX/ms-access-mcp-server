@@ -190,9 +190,9 @@ class BackendSelector:
                     )
             from ms_access_mcp.adapters.wincom import WinComAdapter
 
-            return WinComAdapter()  # type: ignore[reportAbstractUsage]
+            return WinComAdapter(db_path=db_path)  # type: ignore[reportAbstractUsage]
 
         # ODBC path
         from ms_access_mcp.adapters.odbc import OdbcAdapter
 
-        return OdbcAdapter()
+        return OdbcAdapter(db_path=db_path)

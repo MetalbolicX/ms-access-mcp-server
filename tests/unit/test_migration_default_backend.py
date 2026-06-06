@@ -1,9 +1,9 @@
-"""Verify migration tools use OdbcAdapter by default (cross-platform support).
+"""Verify migration tools route through BackendSelector with correct capabilities.
 
-These tests ensure the extract_schema and transfer_data MCP tools instantiate
-OdbcAdapter rather than WinComAdapter when no existing pooled connection is
-available.  The migration service itself is stubbed — we only assert the
-adapter class that gets wired in.
+These tests ensure the extract_schema and transfer_data MCP tools use
+BackendSelector.get_adapter() with SCHEMA_CAPS / DATA_READ_CAPS when no
+pooled connection is available.  The migration service itself is stubbed —
+we only assert the selector call arguments.
 
 Note: we import through ms_access_mcp.mcp.server (not .migration directly)
 to avoid a circular import triggered during module initialization.
@@ -19,9 +19,10 @@ class _FakeAdapter:
         pass
 
 
-def test_extract_schema_uses_odbc_when_no_pooled_connection(monkeypatch):
-    """extract_schema falls back to OdbcAdapter, not WinComAdapter, when no pool hit."""
+def test_extract_schema_uses_selector_with_schema_caps(monkeypatch):
+    """extract_schema calls BackendSelector.get_adapter with SCHEMA_CAPS when no pool hit."""
     from ms_access_mcp.mcp.server import extract_schema as extract_schema_tool
+    from ms_access_mcp.services.backend_selector import SCHEMA_CAPS
 
     # Stub connection_service to return no pooled connection
     fake_connection_service = MagicMock()
@@ -39,18 +40,38 @@ def test_extract_schema_uses_odbc_when_no_pooled_connection(monkeypatch):
     fake_migration_service.extract_schema.return_value = _FakeSchema()
     monkeypatch.setitem(extract_schema_tool.__globals__, "migration_service", fake_migration_service)
 
-    # Patch OdbcAdapter so we can track calls
-    monkeypatch.setitem(extract_schema_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    # Capture selector calls
+    selector_calls = []
+
+    def _spy_selector(db_path, backend=None, capabilities=None):
+        selector_calls.append({
+            "db_path": db_path,
+            "backend": backend,
+            "capabilities": capabilities,
+        })
+        adapter = _FakeAdapter()
+        return adapter
+
+    monkeypatch.setitem(
+        extract_schema_tool.__globals__,
+        "BackendSelector",
+        MagicMock(get_adapter=_spy_selector)
+    )
 
     result = extract_schema_tool("/tmp/test.accdb")
 
     assert result["success"] is True
     assert result["reused_connection"] is False
+    assert len(selector_calls) == 1, "BackendSelector.get_adapter should be called once"
+    assert selector_calls[0]["capabilities"] == SCHEMA_CAPS, (
+        f"extract_schema should use SCHEMA_CAPS, got {selector_calls[0]['capabilities']}"
+    )
 
 
-def test_transfer_data_uses_odbc_when_no_pooled_connection(monkeypatch):
-    """transfer_data falls back to OdbcAdapter, not WinComAdapter, when no pool hit."""
+def test_transfer_data_uses_selector_with_data_read_caps(monkeypatch):
+    """transfer_data calls BackendSelector.get_adapter with DATA_READ_CAPS when no pool hit."""
     from ms_access_mcp.mcp.server import transfer_data as transfer_data_tool
+    from ms_access_mcp.services.backend_selector import DATA_READ_CAPS
 
     # Stub connection_service
     fake_connection_service = MagicMock()
@@ -69,8 +90,22 @@ def test_transfer_data_uses_odbc_when_no_pooled_connection(monkeypatch):
     fake_migration_service.transfer_data.return_value = {"success": True, "job_id": "test-job"}
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_migration_service)
 
-    # Patch OdbcAdapter
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
+    # Capture selector calls
+    selector_calls = []
+
+    def _spy_selector(db_path, backend=None, capabilities=None):
+        selector_calls.append({
+            "db_path": db_path,
+            "backend": backend,
+            "capabilities": capabilities,
+        })
+        return _FakeAdapter()
+
+    monkeypatch.setitem(
+        transfer_data_tool.__globals__,
+        "BackendSelector",
+        MagicMock(get_adapter=_spy_selector)
+    )
 
     result = transfer_data_tool(
         "postgres",
@@ -79,11 +114,14 @@ def test_transfer_data_uses_odbc_when_no_pooled_connection(monkeypatch):
     )
 
     assert result["success"] is True
-    fake_migration_service.transfer_data.assert_called_once()
+    assert len(selector_calls) == 1, "BackendSelector.get_adapter should be called once"
+    assert selector_calls[0]["capabilities"] == DATA_READ_CAPS, (
+        f"transfer_data should use DATA_READ_CAPS, got {selector_calls[0]['capabilities']}"
+    )
 
 
 def test_extract_schema_reuses_pooled_adapter(monkeypatch):
-    """extract_schema reuses an existing pooled adapter instead of creating a new one."""
+    """extract_schema reuses an existing pooled adapter instead of calling selector."""
     from ms_access_mcp.mcp.server import extract_schema as extract_schema_tool
 
     pooled_adapter = MagicMock()
@@ -107,24 +145,28 @@ def test_extract_schema_reuses_pooled_adapter(monkeypatch):
     fake_migration_service.extract_schema.return_value = _FakeSchema()
     monkeypatch.setitem(extract_schema_tool.__globals__, "migration_service", fake_migration_service)
 
-    # Track whether OdbcAdapter is called
-    calls = []
+    # Track whether BackendSelector is called
+    selector_called = []
 
-    def _track_odbc():
-        calls.append("called")
+    def _track_selector(db_path, backend=None, capabilities=None):
+        selector_called.append("called")
         return _FakeAdapter()
 
-    monkeypatch.setitem(extract_schema_tool.__globals__, "OdbcAdapter", _track_odbc)
+    monkeypatch.setitem(
+        extract_schema_tool.__globals__,
+        "BackendSelector",
+        MagicMock(get_adapter=_track_selector)
+    )
 
     result = extract_schema_tool("/tmp/test.accdb")
 
     assert result["success"] is True
     assert result["reused_connection"] is True
-    assert calls == [], "OdbcAdapter should not be called when pooled connection exists"
+    assert selector_called == [], "BackendSelector should NOT be called when pooled connection exists"
 
 
 def test_transfer_data_reuses_pooled_adapter(monkeypatch):
-    """transfer_data reuses an existing pooled adapter instead of creating a new one."""
+    """transfer_data reuses an existing pooled adapter instead of calling selector."""
     from ms_access_mcp.mcp.server import transfer_data as transfer_data_tool
 
     pooled_adapter = MagicMock()
@@ -149,14 +191,18 @@ def test_transfer_data_reuses_pooled_adapter(monkeypatch):
     fake_migration_service.transfer_data.return_value = {"success": True, "job_id": "test-job"}
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_migration_service)
 
-    # Track whether OdbcAdapter is called
-    calls = []
+    # Track whether BackendSelector is called
+    selector_called = []
 
-    def _track_odbc():
-        calls.append("called")
+    def _track_selector(db_path, backend=None, capabilities=None):
+        selector_called.append("called")
         return _FakeAdapter()
 
-    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _track_odbc)
+    monkeypatch.setitem(
+        transfer_data_tool.__globals__,
+        "BackendSelector",
+        MagicMock(get_adapter=_track_selector)
+    )
 
     result = transfer_data_tool(
         "postgres",
@@ -165,4 +211,4 @@ def test_transfer_data_reuses_pooled_adapter(monkeypatch):
     )
 
     assert result["success"] is True
-    assert calls == [], "OdbcAdapter should not be called when pooled connection exists"
+    assert selector_called == [], "BackendSelector should NOT be called when pooled connection exists"

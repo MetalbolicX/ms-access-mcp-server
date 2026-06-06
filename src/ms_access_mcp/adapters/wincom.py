@@ -39,9 +39,10 @@ class WinComAdapter(AccessAdapter):
     different async workers.
     """
 
-    def __init__(self, strategy_selector: Any | None = None) -> None:
+    def __init__(self, db_path: str | None = None, strategy_selector: Any | None = None) -> None:
         from .export.strategies import ExportStrategySelector
 
+        self._db_path: str | None = db_path
         self._dispatcher = ComDispatcher()
         self._vba = VbaOperations(self._dispatcher)
         self._ui = UiOperations(self._dispatcher)
@@ -57,7 +58,6 @@ class WinComAdapter(AccessAdapter):
         # Wire VbaOperations to UiOperations for shared _load_object_from_text (acModule=5 path)
         self._vba.set_load_text(self._ui._load_object_from_text)
         # State mirrors what dispatcher holds for query purposes
-        self._db_path: Optional[str] = None
         self._ado_conn: Optional[Any] = None
         # Export strategy registry (injectable for testing)
         self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()

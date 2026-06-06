@@ -351,3 +351,43 @@ class TestCapabilityBundles:
         from ms_access_mcp.services.backend_selector import VBA_CAPS
 
         assert VBA_CAPS is not None
+
+
+class TestBackendSelectorDbPathPassthrough:
+    """Verify BackendSelector passes db_path to adapter constructors.
+
+    PR #1 verify report noted db_path was accepted but not passed to
+    OdbcAdapter/WinComAdapter constructors. PR #2 fixes this.
+    """
+
+    def test_odbc_adapter_constructor_accepts_db_path(self):
+        """OdbcAdapter.__init__ stores the db_path parameter."""
+        from ms_access_mcp.adapters.odbc import OdbcAdapter
+
+        adapter = OdbcAdapter(db_path="/tmp/test.accdb")
+        assert adapter._db_path == "/tmp/test.accdb"
+
+    def test_wincom_adapter_constructor_accepts_db_path(self, monkeypatch):
+        """WinComAdapter.__init__ stores the db_path parameter."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+
+        adapter = WinComAdapter(db_path="/tmp/test.accdb")
+        assert adapter._db_path == "/tmp/test.accdb"
+
+    def test_selector_passes_db_path_to_odbc_adapter(self, monkeypatch):
+        """BackendSelector.get_adapter passes db_path to OdbcAdapter."""
+        monkeypatch.delenv("ACCESS_MCP_BACKEND", raising=False)
+        from ms_access_mcp.services.backend_selector import BackendSelector
+
+        adapter = BackendSelector.get_adapter("/tmp/test.accdb", backend="odbc")
+        assert adapter._db_path == "/tmp/test.accdb"
+
+    def test_selector_passes_db_path_to_wincom_adapter(self, monkeypatch):
+        """BackendSelector.get_adapter passes db_path to WinComAdapter."""
+        monkeypatch.delenv("ACCESS_MCP_BACKEND", raising=False)
+        monkeypatch.setattr(sys, "platform", "win32")
+        from ms_access_mcp.services.backend_selector import BackendSelector
+
+        adapter = BackendSelector.get_adapter("/tmp/test.accdb", backend="com")
+        assert adapter._db_path == "/tmp/test.accdb"

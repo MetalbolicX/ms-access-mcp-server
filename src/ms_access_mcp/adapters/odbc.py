@@ -26,11 +26,11 @@ class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
     Implements IDataAdapter + ISchemaAdapter (via AccessAdapter protocol).
     """
 
-    def __init__(self, strategy_selector: Any | None = None) -> None:
+    def __init__(self, db_path: str | None = None, strategy_selector: Any | None = None) -> None:
         from .export.strategies import ExportStrategySelector
 
         self._conn: Optional[pyodbc.Connection] = None
-        self._db_path: Optional[str] = None
+        self._db_path: Optional[str] = db_path
         self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
 
     def connect(self, db_path: str) -> bool:

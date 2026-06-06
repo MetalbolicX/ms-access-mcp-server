@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 
 from .server import mcp, connection_service, migration_service
-from ..adapters.odbc import OdbcAdapter
+from ..services.backend_selector import BackendSelector, SCHEMA_CAPS, DATA_READ_CAPS
 
 
 def _find_connection_by_path(database_path: str):
@@ -37,8 +37,12 @@ def extract_schema(database_path: str) -> dict:
         schema = migration_service.extract_schema(state.adapter, database_path)
         return {"success": True, "schema": schema.model_dump(), "reused_connection": True, "connection_name": conn_name}
 
-    # Create a new adapter and connection (ODBC by default for cross-platform support)
-    adapter = OdbcAdapter()
+    # Route through BackendSelector to get an adapter with schema introspection capabilities
+    adapter = BackendSelector.get_adapter(
+        db_path=database_path,
+        backend="odbc",
+        capabilities=SCHEMA_CAPS,
+    )
     if not adapter.connect(database_path):
         return {"success": False, "error": "Failed to connect to database"}
     schema = migration_service.extract_schema(adapter, database_path)
@@ -83,7 +87,7 @@ def transfer_data(
         schema_json: Optional ExtractedSchema dict (will extract if not provided)
         transfer_mode: Transfer strategy mode (auto, batch, linked)
         verification_mode: Verification mode (full, count-only)
-        table_overrides: Per-table column/WHERE/ORDER BY overrides for flexible transfer.
+        table_overrides: Per-table column/WHERE/ORDER_BY overrides for flexible transfer.
             Dict keyed by table name; each value is a TableTransferConfig dict:
             {"columns": ["col1", "col2"], "where": "col>0", "order_by": ["col1"]}.
             All fields optional — missing fields default to full-table transfer.
@@ -99,7 +103,11 @@ def transfer_data(
     if state is not None and connection_service.is_connected(conn_name):
         adapter = state.adapter
     else:
-        adapter = OdbcAdapter()
+        adapter = BackendSelector.get_adapter(
+            db_path=database_path,
+            backend="odbc",
+            capabilities=DATA_READ_CAPS,
+        )
         if not adapter.connect(database_path):
             return {"success": False, "error": "Failed to connect to Access database"}
         owns_connection = True
