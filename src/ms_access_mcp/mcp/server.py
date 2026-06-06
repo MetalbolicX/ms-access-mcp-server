@@ -46,7 +46,7 @@ def _init_http_config() -> None:
 
 
 # Import tool modules to register their @mcp.tool() decorators
-from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy  # noqa: E402, F811
+from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
@@ -95,6 +95,7 @@ from .dev_copy import (  # noqa: E402
     export_report_backup, import_report_from_file, restore_report_backup,
     create_dev_copy, deploy_dev_copy, discard_dev_copy, get_dev_copy_status,
 )
+from .analysis import analyze_query  # noqa: E402
 
 
 def get_asgi_app(transport: str = "http"):
