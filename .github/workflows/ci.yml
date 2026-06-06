@@ -1,0 +1,43 @@
+# Cross-platform CI for ms-access-mcp-server
+# Verifies ODBC adapter works on Linux (with mdbtools) and Windows,
+# and that the BackendSelector correctly routes operations.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Install mdbtools (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mdbtools odbc-mdbtools unixodbc-dev
+
+      - name: Run unit tests
+        run: uv run pytest tests/unit -q
