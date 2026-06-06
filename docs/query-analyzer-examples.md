@@ -10,16 +10,16 @@
 
 | # | Query | Complexity | Score | Duration | Rows | Anti-patterns |
 |---|-------|------------|-------|----------|------|---------------|
-| 1 | Simple SELECT — Baseline | simple | 0 | 163.7ms | ⚠️ error | — |
-| 2 | Leading Wildcard LIKE — Anti-pattern | simple | 10 | 237.0ms | ⚠️ error | Wildcard |
-| 3 | Aggregate with Unindexed WHERE — Missing Index | simple | 3 | 28.6ms | ⚠️ error | Agg |
-| 4 | Single JOIN with Unindexed WHERE — Missing Index | simple | 10 | 164.0ms | ⚠️ error | JOIN(1) |
-| 5 | Multi-JOIN with Unindexed Email — Complex | moderate | 30 | 2.1ms | ⚠️ error | JOIN(3) |
-| 6 | Function in WHERE — Index Prevention | simple | 8 | 33.4ms | ⚠️ error | FuncWHERE |
-| 7 | Subquery in WHERE — Moderate Complexity | moderate | 28 | 32.4ms | ⚠️ error | SubQ, FuncWHERE |
-| 8 | NOT IN Subquery — Classic Anti-pattern | moderate | 31 | 32.7ms | ⚠️ error | SubQ, FuncWHERE, NOT IN |
-| 9 | GROUP BY + HAVING + ORDER BY — Moderate | moderate | 21 | 3.0ms | ⚠️ error | JOIN(1), Agg, GROUP BY, ORDER BY |
-| 10 | Cartesian Join — Heavy Anti-pattern | simple | 15 | 31.9ms | ⚠️ error | Cartesian |
+| 1 | Simple SELECT — Baseline | simple | 0 | 32.5ms | 1 | — |
+| 2 | Leading Wildcard LIKE — Anti-pattern | simple | 10 | 40.1ms | 0 | Wildcard |
+| 3 | Aggregate with Unindexed WHERE — Missing Index | simple | 3 | 34.1ms | 1 | Agg |
+| 4 | Single JOIN with Unindexed WHERE — Missing Index | simple | 10 | 33.2ms | 3 | JOIN(1) |
+| 5 | Multi-JOIN with Unindexed Email — Complex | moderate | 30 | 1.9ms | 0 | JOIN(3) |
+| 6 | Function in WHERE — Index Prevention | simple | 8 | 35.1ms | 4 | FuncWHERE |
+| 7 | Subquery in WHERE — Moderate Complexity | moderate | 28 | 34.1ms | 1 | SubQ, FuncWHERE |
+| 8 | NOT IN Subquery — Classic Anti-pattern | moderate | 31 | 32.3ms | 0 | SubQ, FuncWHERE, NOT IN |
+| 9 | GROUP BY + HAVING + ORDER BY — Moderate | moderate | 21 | 4.6ms | 0 | JOIN(1), Agg, GROUP BY, ORDER BY |
+| 10 | Cartesian Join — Heavy Anti-pattern | simple | 15 | 33.8ms | 21 | Cartesian |
 
 ---
 
@@ -53,16 +53,37 @@ SELECT * FROM customers WHERE customer_id = 1
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 32.54ms
+
+**Rows (COUNT):** 1
+
+**Sample rows:**
+
+```json
+[
+  {
+    "customer_id": 1,
+    "customer_name": "Alice Johnson",
+    "customer_email": "alice@email.com",
+    "customer_phone": "555-0101",
+    "customer_created_at": "2026-06-04T18:50:44+00:00"
+  }
+]
+```
 
 ### Schema Analysis
 
 **Tables analyzed:** 1
-**Index info available:** ✗
+**Index info available:** ✓
+
+| Table | Indexed columns |
+|-------|-----------------|
+| `customers` | customer_id |
 
 ### Recommendations
 
-- Missing index on customers.customer_id — column used in WHERE/JOIN but not indexed
+- No significant performance issues detected
+- Query returns 1 rows from table(s) — consider pagination if too large
 
 ### Full Result
 
@@ -74,11 +95,19 @@ SELECT * FROM customers WHERE customer_id = 1
   "success": true,
   "query": "SELECT * FROM customers WHERE customer_id = 1",
   "execution": {
-    "duration_ms": 163.70119999965027,
-    "rows_total": null,
+    "duration_ms": 32.54030000061903,
+    "rows_total": 1,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [
+      {
+        "customer_id": 1,
+        "customer_name": "Alice Johnson",
+        "customer_email": "alice@email.com",
+        "customer_phone": "555-0101",
+        "customer_created_at": "2026-06-04T18:50:44+00:00"
+      }
+    ],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -103,11 +132,16 @@ SELECT * FROM customers WHERE customer_id = 1
   "schema_analysis": {
     "success": true,
     "table_count": 1,
-    "indexed_columns": {},
-    "index_info_available": false
+    "indexed_columns": {
+      "customers": [
+        "customer_id"
+      ]
+    },
+    "index_info_available": true
   },
   "recommendations": [
-    "Missing index on customers.customer_id \u2014 column used in WHERE/JOIN but not indexed"
+    "No significant performance issues detected",
+    "Query returns 1 rows from table(s) \u2014 consider pagination if too large"
   ]
 }
 ```
@@ -146,7 +180,9 @@ SELECT * FROM products WHERE product_name LIKE '%Mouse%'
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 40.12ms
+
+**Rows (COUNT):** N/A
 
 ### Schema Analysis
 
@@ -155,7 +191,7 @@ SELECT * FROM products WHERE product_name LIKE '%Mouse%'
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `products` | product_category_id |
+| `products` | product_category_id, product_id |
 
 ### Recommendations
 
@@ -172,11 +208,11 @@ SELECT * FROM products WHERE product_name LIKE '%Mouse%'
   "success": true,
   "query": "SELECT * FROM products WHERE product_name LIKE '%Mouse%'",
   "execution": {
-    "duration_ms": 236.96990000007645,
-    "rows_total": null,
+    "duration_ms": 40.12239999974554,
+    "rows_total": 0,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -203,6 +239,7 @@ SELECT * FROM products WHERE product_name LIKE '%Mouse%'
     "table_count": 1,
     "indexed_columns": {
       "products": [
+        "product_id",
         "product_category_id"
       ]
     },
@@ -249,7 +286,19 @@ SELECT COUNT(*) AS n FROM orders WHERE order_status = 'shipped'
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 34.14ms
+
+**Rows (COUNT):** 1
+
+**Sample rows:**
+
+```json
+[
+  {
+    "n": 1
+  }
+]
+```
 
 ### Schema Analysis
 
@@ -258,11 +307,12 @@ SELECT COUNT(*) AS n FROM orders WHERE order_status = 'shipped'
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `orders` | order_customer_id |
+| `orders` | order_customer_id, order_id |
 
 ### Recommendations
 
 - Missing index on orders.order_status — column used in WHERE/JOIN but not indexed
+- Query returns 1 rows from table(s) — consider pagination if too large
 
 ### Full Result
 
@@ -274,11 +324,15 @@ SELECT COUNT(*) AS n FROM orders WHERE order_status = 'shipped'
   "success": true,
   "query": "SELECT COUNT(*) AS n FROM orders WHERE order_status = 'shipped'",
   "execution": {
-    "duration_ms": 28.61140000004525,
-    "rows_total": null,
+    "duration_ms": 34.14009999960399,
+    "rows_total": 1,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [
+      {
+        "n": 1
+      }
+    ],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -305,13 +359,15 @@ SELECT COUNT(*) AS n FROM orders WHERE order_status = 'shipped'
     "table_count": 1,
     "indexed_columns": {
       "orders": [
+        "order_id",
         "order_customer_id"
       ]
     },
     "index_info_available": true
   },
   "recommendations": [
-    "Missing index on orders.order_status \u2014 column used in WHERE/JOIN but not indexed"
+    "Missing index on orders.order_status \u2014 column used in WHERE/JOIN but not indexed",
+    "Query returns 1 rows from table(s) \u2014 consider pagination if too large"
   ]
 }
 ```
@@ -350,7 +406,28 @@ SELECT c.customer_name, o.order_total FROM customers c INNER JOIN orders o ON c.
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 33.21ms
+
+**Rows (COUNT):** 3
+
+**Sample rows:**
+
+```json
+[
+  {
+    "customer_name": "Alice Johnson",
+    "order_total": "71.49"
+  },
+  {
+    "customer_name": "Bob Martinez",
+    "order_total": "89.99"
+  },
+  {
+    "customer_name": "David Silva",
+    "order_total": "110.48"
+  }
+]
+```
 
 ### Schema Analysis
 
@@ -359,12 +436,14 @@ SELECT c.customer_name, o.order_total FROM customers c INNER JOIN orders o ON c.
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `orders` | order_customer_id |
+| `customers` | customer_id |
+| `orders` | order_customer_id, order_id |
 
 ### Recommendations
 
 - Missing index on customers.order_total — column used in WHERE/JOIN but not indexed
 - Missing index on orders.order_total — column used in WHERE/JOIN but not indexed
+- Query returns 3 rows from table(s) — consider pagination if too large
 
 ### Full Result
 
@@ -376,11 +455,24 @@ SELECT c.customer_name, o.order_total FROM customers c INNER JOIN orders o ON c.
   "success": true,
   "query": "SELECT c.customer_name, o.order_total FROM customers c INNER JOIN orders o ON c.customer_id = o.order_customer_id WHERE o.order_total > 50",
   "execution": {
-    "duration_ms": 164.04330000023037,
-    "rows_total": null,
+    "duration_ms": 33.20510000048671,
+    "rows_total": 3,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [
+      {
+        "customer_name": "Alice Johnson",
+        "order_total": "71.49"
+      },
+      {
+        "customer_name": "Bob Martinez",
+        "order_total": "89.99"
+      },
+      {
+        "customer_name": "David Silva",
+        "order_total": "110.48"
+      }
+    ],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -407,7 +499,11 @@ SELECT c.customer_name, o.order_total FROM customers c INNER JOIN orders o ON c.
     "success": true,
     "table_count": 2,
     "indexed_columns": {
+      "customers": [
+        "customer_id"
+      ],
       "orders": [
+        "order_id",
         "order_customer_id"
       ]
     },
@@ -415,7 +511,8 @@ SELECT c.customer_name, o.order_total FROM customers c INNER JOIN orders o ON c.
   },
   "recommendations": [
     "Missing index on customers.order_total \u2014 column used in WHERE/JOIN but not indexed",
-    "Missing index on orders.order_total \u2014 column used in WHERE/JOIN but not indexed"
+    "Missing index on orders.order_total \u2014 column used in WHERE/JOIN but not indexed",
+    "Query returns 3 rows from table(s) \u2014 consider pagination if too large"
   ]
 }
 ```
@@ -454,7 +551,9 @@ SELECT c.customer_name, p.product_name, oi.order_item_quantity FROM customers c 
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 1.90ms
+
+**Rows (COUNT):** N/A
 
 ### Schema Analysis
 
@@ -463,9 +562,10 @@ SELECT c.customer_name, p.product_name, oi.order_item_quantity FROM customers c 
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `order_items` | order_item_order_id, order_item_product_id |
-| `orders` | order_customer_id |
-| `products` | product_category_id |
+| `customers` | customer_id |
+| `order_items` | order_item_id, order_item_order_id, order_item_product_id |
+| `orders` | order_customer_id, order_id |
+| `products` | product_category_id, product_id |
 
 ### Recommendations
 
@@ -484,11 +584,11 @@ SELECT c.customer_name, p.product_name, oi.order_item_quantity FROM customers c 
   "success": true,
   "query": "SELECT c.customer_name, p.product_name, oi.order_item_quantity FROM customers c INNER JOIN orders o ON c.customer_id = o.order_customer_id INNER JOIN order_items oi ON o.order_id = oi.order_item_order_id INNER JOIN products p ON oi.order_item_product_id = p.product_id WHERE c.customer_email = 'alice@email.com'",
   "execution": {
-    "duration_ms": 2.0985999999538762,
-    "rows_total": null,
+    "duration_ms": 1.8982000001415145,
+    "rows_total": 0,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -517,14 +617,20 @@ SELECT c.customer_name, p.product_name, oi.order_item_quantity FROM customers c 
     "success": true,
     "table_count": 4,
     "indexed_columns": {
+      "customers": [
+        "customer_id"
+      ],
       "order_items": [
+        "order_item_id",
         "order_item_order_id",
         "order_item_product_id"
       ],
       "orders": [
+        "order_id",
         "order_customer_id"
       ],
       "products": [
+        "product_id",
         "product_category_id"
       ]
     },
@@ -573,7 +679,37 @@ SELECT * FROM orders WHERE YEAR(order_date) = 2026
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 35.06ms
+
+**Rows (COUNT):** 4
+
+**Sample rows:**
+
+```json
+[
+  {
+    "order_id": 1,
+    "order_customer_id": 1,
+    "order_date": "2026-06-04T18:50:44+00:00",
+    "order_status": "shipped",
+    "order_total": "71.49"
+  },
+  {
+    "order_id": 2,
+    "order_customer_id": 2,
+    "order_date": "2026-06-04T18:50:44+00:00",
+    "order_status": "pending",
+    "order_total": "89.99"
+  },
+  {
+    "order_id": 3,
+    "order_customer_id": 3,
+    "order_date": "2026-06-04T18:50:44+00:00",
+    "order_status": "delivered",
+    "order_total": "42"
+  }
+]
+```
 
 ### Schema Analysis
 
@@ -582,11 +718,12 @@ SELECT * FROM orders WHERE YEAR(order_date) = 2026
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `orders` | order_customer_id |
+| `orders` | order_customer_id, order_id |
 
 ### Recommendations
 
 - Function YEAR() in WHERE clause prevents index usage on order_date
+- Query returns 4 rows from table(s) — consider pagination if too large
 
 ### Full Result
 
@@ -598,11 +735,33 @@ SELECT * FROM orders WHERE YEAR(order_date) = 2026
   "success": true,
   "query": "SELECT * FROM orders WHERE YEAR(order_date) = 2026",
   "execution": {
-    "duration_ms": 33.41880000016317,
-    "rows_total": null,
+    "duration_ms": 35.05609999956505,
+    "rows_total": 4,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [
+      {
+        "order_id": 1,
+        "order_customer_id": 1,
+        "order_date": "2026-06-04T18:50:44+00:00",
+        "order_status": "shipped",
+        "order_total": "71.49"
+      },
+      {
+        "order_id": 2,
+        "order_customer_id": 2,
+        "order_date": "2026-06-04T18:50:44+00:00",
+        "order_status": "pending",
+        "order_total": "89.99"
+      },
+      {
+        "order_id": 3,
+        "order_customer_id": 3,
+        "order_date": "2026-06-04T18:50:44+00:00",
+        "order_status": "delivered",
+        "order_total": "42"
+      }
+    ],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -629,13 +788,15 @@ SELECT * FROM orders WHERE YEAR(order_date) = 2026
     "table_count": 1,
     "indexed_columns": {
       "orders": [
+        "order_id",
         "order_customer_id"
       ]
     },
     "index_info_available": true
   },
   "recommendations": [
-    "Function YEAR() in WHERE clause prevents index usage on order_date"
+    "Function YEAR() in WHERE clause prevents index usage on order_date",
+    "Query returns 4 rows from table(s) \u2014 consider pagination if too large"
   ]
 }
 ```
@@ -674,7 +835,19 @@ SELECT product_name FROM products WHERE product_id IN (SELECT order_item_product
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 34.07ms
+
+**Rows (COUNT):** 1
+
+**Sample rows:**
+
+```json
+[
+  {
+    "product_name": "USB-C Hub"
+  }
+]
+```
 
 ### Schema Analysis
 
@@ -683,15 +856,16 @@ SELECT product_name FROM products WHERE product_id IN (SELECT order_item_product
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `order_items` | order_item_order_id, order_item_product_id |
-| `products` | product_category_id |
+| `order_items` | order_item_id, order_item_order_id, order_item_product_id |
+| `products` | product_category_id, product_id |
 
 ### Recommendations
 
-- Missing index on products.order_item_quantity — column used in WHERE/JOIN but not indexed
-- Missing index on order_items.order_item_quantity — column used in WHERE/JOIN but not indexed
+- Missing index on products.SELECT — column used in WHERE/JOIN but not indexed
+- Missing index on order_items.product_id — column used in WHERE/JOIN but not indexed
 - Correlated subquery detected — consider rewriting as JOIN for better performance
 - Function in WHERE clause prevents index usage on column(s)
+- Query returns 1 rows from table(s) — consider pagination if too large
 
 ### Full Result
 
@@ -703,11 +877,15 @@ SELECT product_name FROM products WHERE product_id IN (SELECT order_item_product
   "success": true,
   "query": "SELECT product_name FROM products WHERE product_id IN (SELECT order_item_product_id FROM order_items WHERE order_item_quantity > 1)",
   "execution": {
-    "duration_ms": 32.407599999714876,
-    "rows_total": null,
+    "duration_ms": 34.06930000073771,
+    "rows_total": 1,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [
+      {
+        "product_name": "USB-C Hub"
+      }
+    ],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -735,20 +913,23 @@ SELECT product_name FROM products WHERE product_id IN (SELECT order_item_product
     "table_count": 2,
     "indexed_columns": {
       "order_items": [
+        "order_item_id",
         "order_item_order_id",
         "order_item_product_id"
       ],
       "products": [
+        "product_id",
         "product_category_id"
       ]
     },
     "index_info_available": true
   },
   "recommendations": [
-    "Missing index on products.order_item_quantity \u2014 column used in WHERE/JOIN but not indexed",
-    "Missing index on order_items.order_item_quantity \u2014 column used in WHERE/JOIN but not indexed",
+    "Missing index on products.SELECT \u2014 column used in WHERE/JOIN but not indexed",
+    "Missing index on order_items.product_id \u2014 column used in WHERE/JOIN but not indexed",
     "Correlated subquery detected \u2014 consider rewriting as JOIN for better performance",
-    "Function in WHERE clause prevents index usage on column(s)"
+    "Function in WHERE clause prevents index usage on column(s)",
+    "Query returns 1 rows from table(s) \u2014 consider pagination if too large"
   ]
 }
 ```
@@ -787,7 +968,9 @@ SELECT c.customer_name FROM customers c WHERE c.customer_id NOT IN (SELECT order
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 32.29ms
+
+**Rows (COUNT):** N/A
 
 ### Schema Analysis
 
@@ -796,12 +979,13 @@ SELECT c.customer_name FROM customers c WHERE c.customer_id NOT IN (SELECT order
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `orders` | order_customer_id |
+| `customers` | customer_id |
+| `orders` | order_customer_id, order_id |
 
 ### Recommendations
 
-- Missing index on customers.SELECT — column used in WHERE/JOIN but not indexed
-- Missing index on orders.SELECT — column used in WHERE/JOIN but not indexed
+- Missing index on customers.FROM — column used in WHERE/JOIN but not indexed
+- Missing index on orders.FROM — column used in WHERE/JOIN but not indexed
 - NOT IN detected — consider NOT EXISTS or LEFT JOIN as alternative
 - Function in WHERE clause prevents index usage on column(s)
 
@@ -815,11 +999,11 @@ SELECT c.customer_name FROM customers c WHERE c.customer_id NOT IN (SELECT order
   "success": true,
   "query": "SELECT c.customer_name FROM customers c WHERE c.customer_id NOT IN (SELECT order_customer_id FROM orders)",
   "execution": {
-    "duration_ms": 32.74199999987104,
-    "rows_total": null,
+    "duration_ms": 32.290199999806646,
+    "rows_total": 0,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -846,15 +1030,19 @@ SELECT c.customer_name FROM customers c WHERE c.customer_id NOT IN (SELECT order
     "success": true,
     "table_count": 2,
     "indexed_columns": {
+      "customers": [
+        "customer_id"
+      ],
       "orders": [
+        "order_id",
         "order_customer_id"
       ]
     },
     "index_info_available": true
   },
   "recommendations": [
-    "Missing index on customers.SELECT \u2014 column used in WHERE/JOIN but not indexed",
-    "Missing index on orders.SELECT \u2014 column used in WHERE/JOIN but not indexed",
+    "Missing index on customers.FROM \u2014 column used in WHERE/JOIN but not indexed",
+    "Missing index on orders.FROM \u2014 column used in WHERE/JOIN but not indexed",
     "NOT IN detected \u2014 consider NOT EXISTS or LEFT JOIN as alternative",
     "Function in WHERE clause prevents index usage on column(s)"
   ]
@@ -895,7 +1083,9 @@ SELECT c.category_name, COUNT(p.product_id) AS cnt, AVG(p.product_price) AS avg_
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 4.64ms
+
+**Rows (COUNT):** N/A
 
 ### Schema Analysis
 
@@ -904,7 +1094,8 @@ SELECT c.category_name, COUNT(p.product_id) AS cnt, AVG(p.product_price) AS avg_
 
 | Table | Indexed columns |
 |-------|-----------------|
-| `products` | product_category_id |
+| `categories` | category_id |
+| `products` | product_category_id, product_id |
 
 ### Recommendations
 
@@ -920,11 +1111,11 @@ SELECT c.category_name, COUNT(p.product_id) AS cnt, AVG(p.product_price) AS avg_
   "success": true,
   "query": "SELECT c.category_name, COUNT(p.product_id) AS cnt, AVG(p.product_price) AS avg_price FROM products p INNER JOIN categories c ON p.product_category_id = c.category_id GROUP BY c.category_name HAVING COUNT(p.product_id) > 1 ORDER BY cnt DESC",
   "execution": {
-    "duration_ms": 3.0264999995779363,
-    "rows_total": null,
+    "duration_ms": 4.636700000446581,
+    "rows_total": 0,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -951,7 +1142,11 @@ SELECT c.category_name, COUNT(p.product_id) AS cnt, AVG(p.product_price) AS avg_
     "success": true,
     "table_count": 2,
     "indexed_columns": {
+      "categories": [
+        "category_id"
+      ],
       "products": [
+        "product_id",
         "product_category_id"
       ]
     },
@@ -997,16 +1192,66 @@ SELECT * FROM categories, products
 
 ### Execution
 
-⚠️ **Execution error:** COUNT execution failed: string indices must be integers, not 'str'
+**Duration:** 33.78ms
+
+**Rows (COUNT):** 21
+
+**Sample rows:**
+
+```json
+[
+  {
+    "category_id": 1,
+    "category_name": "Electronics",
+    "category_description": "Gadgets, devices, and accessories",
+    "product_id": 1,
+    "product_category_id": 1,
+    "product_name": "Wireless Mouse",
+    "product_sku": "ELE-MOU-001",
+    "product_price": "25.99",
+    "product_stock": 150,
+    "product_created_at": "2026-06-04T18:50:44+00:00"
+  },
+  {
+    "category_id": 2,
+    "category_name": "Clothing",
+    "category_description": "Apparel and fashion items",
+    "product_id": 1,
+    "product_category_id": 1,
+    "product_name": "Wireless Mouse",
+    "product_sku": "ELE-MOU-001",
+    "product_price": "25.99",
+    "product_stock": 150,
+    "product_created_at": "2026-06-04T18:50:44+00:00"
+  },
+  {
+    "category_id": 3,
+    "category_name": "Books",
+    "category_description": "Physical and digital books",
+    "product_id": 1,
+    "product_category_id": 1,
+    "product_name": "Wireless Mouse",
+    "product_sku": "ELE-MOU-001",
+    "product_price": "25.99",
+    "product_stock": 150,
+    "product_created_at": "2026-06-04T18:50:44+00:00"
+  }
+]
+```
 
 ### Schema Analysis
 
 **Tables analyzed:** 1
-**Index info available:** ✗
+**Index info available:** ✓
+
+| Table | Indexed columns |
+|-------|-----------------|
+| `categories` | category_id |
 
 ### Recommendations
 
 - Cartesian join detected between ['categories'] — missing JOIN condition?
+- Query returns 21 rows from table(s) — consider pagination if too large
 
 ### Full Result
 
@@ -1018,11 +1263,48 @@ SELECT * FROM categories, products
   "success": true,
   "query": "SELECT * FROM categories, products",
   "execution": {
-    "duration_ms": 31.934999999975844,
-    "rows_total": null,
+    "duration_ms": 33.77530000034312,
+    "rows_total": 21,
     "sample_size": 3,
-    "sampled_data": null,
-    "error": "COUNT execution failed: string indices must be integers, not 'str'"
+    "sampled_data": [
+      {
+        "category_id": 1,
+        "category_name": "Electronics",
+        "category_description": "Gadgets, devices, and accessories",
+        "product_id": 1,
+        "product_category_id": 1,
+        "product_name": "Wireless Mouse",
+        "product_sku": "ELE-MOU-001",
+        "product_price": "25.99",
+        "product_stock": 150,
+        "product_created_at": "2026-06-04T18:50:44+00:00"
+      },
+      {
+        "category_id": 2,
+        "category_name": "Clothing",
+        "category_description": "Apparel and fashion items",
+        "product_id": 1,
+        "product_category_id": 1,
+        "product_name": "Wireless Mouse",
+        "product_sku": "ELE-MOU-001",
+        "product_price": "25.99",
+        "product_stock": 150,
+        "product_created_at": "2026-06-04T18:50:44+00:00"
+      },
+      {
+        "category_id": 3,
+        "category_name": "Books",
+        "category_description": "Physical and digital books",
+        "product_id": 1,
+        "product_category_id": 1,
+        "product_name": "Wireless Mouse",
+        "product_sku": "ELE-MOU-001",
+        "product_price": "25.99",
+        "product_stock": 150,
+        "product_created_at": "2026-06-04T18:50:44+00:00"
+      }
+    ],
+    "error": null
   },
   "complexity": {
     "tables_involved": [
@@ -1047,11 +1329,16 @@ SELECT * FROM categories, products
   "schema_analysis": {
     "success": true,
     "table_count": 1,
-    "indexed_columns": {},
-    "index_info_available": false
+    "indexed_columns": {
+      "categories": [
+        "category_id"
+      ]
+    },
+    "index_info_available": true
   },
   "recommendations": [
-    "Cartesian join detected between ['categories'] \u2014 missing JOIN condition?"
+    "Cartesian join detected between ['categories'] \u2014 missing JOIN condition?",
+    "Query returns 21 rows from table(s) \u2014 consider pagination if too large"
   ]
 }
 ```

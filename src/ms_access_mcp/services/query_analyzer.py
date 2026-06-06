@@ -242,6 +242,12 @@ class SchemaAnalyzer:
             indexed_columns = {}
             for schema in schema_plan:
                 if schema.name in table_names:
+                    # Include primary key columns (stored separately from indexes)
+                    if schema.primary_key:
+                        if schema.name not in indexed_columns:
+                            indexed_columns[schema.name] = []
+                        indexed_columns[schema.name].extend(schema.primary_key)
+                    # Include non-PK indexes
                     for index in schema.indexes:
                         for col in index.columns:
                             if schema.name not in indexed_columns:
@@ -514,7 +520,10 @@ class QueryAnalyzerService:
             start_time = time.perf_counter()
             try:
                 count_result = adapter.execute_query(count_sql, params)
-                rows_data = list(count_result)
+                if isinstance(count_result, dict):
+                    rows_data = count_result.get("rows", [])
+                else:
+                    rows_data = list(count_result)
                 end_time = time.perf_counter()
                 result["execution"]["duration_ms"] = (end_time - start_time) * 1000
                 result["execution"]["rows_total"] = rows_data[0]["_cnt"] if rows_data else 0
@@ -526,7 +535,10 @@ class QueryAnalyzerService:
                 sample_sql = f"SELECT TOP {sample_size} * FROM ({sql}) AS _s"
                 try:
                     sample_result = adapter.execute_query(sample_sql, params)
-                    result["execution"]["sampled_data"] = list(sample_result)
+                    if isinstance(sample_result, dict):
+                        result["execution"]["sampled_data"] = sample_result.get("rows", [])
+                    else:
+                        result["execution"]["sampled_data"] = list(sample_result)
                 except Exception as e:
                     if result["execution"]["error"]:
                         result["execution"]["error"] += f"; Sample failed: {str(e)}"

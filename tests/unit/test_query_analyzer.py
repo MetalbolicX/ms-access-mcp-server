@@ -169,7 +169,7 @@ class TestSchemaAnalyzer:
         assert "Customers" in result["indexed_columns"]
 
     def test_schema_analyzer_with_odbc_adapter(self):
-        """1.3 RED: SchemaAnalyzer with mock OdbcAdapter → returns index_info not available."""
+        """SchemaAnalyzer with mock OdbcAdapter → includes PK columns in indexed_columns."""
         mock_adapter = MagicMock()
         mock_table = MagicMock()
         mock_table.name = "Customers"
@@ -182,7 +182,7 @@ class TestSchemaAnalyzer:
         mock_schema.columns = []
         mock_schema.primary_key = ["ID"]
         mock_schema.foreign_keys = []
-        mock_schema.indexes = []  # ODBC may not return indexes
+        mock_schema.indexes = []  # ODBC may not return non-PK indexes
 
         mock_adapter.get_tables.return_value = [mock_table]
         mock_adapter.get_table_schema_plan.return_value = ([mock_schema], MagicMock())
@@ -191,7 +191,10 @@ class TestSchemaAnalyzer:
 
         assert result["success"] is True
         assert "index_info_available" in result
-        assert result["index_info_available"] is False
+        assert result["index_info_available"] is True
+        assert "indexed_columns" in result
+        assert "Customers" in result["indexed_columns"]
+        assert "ID" in result["indexed_columns"]["Customers"]
 
     def test_schema_analyzer_with_empty_table_list(self):
         """1.3 RED: SchemaAnalyzer with empty table list → empty result."""
