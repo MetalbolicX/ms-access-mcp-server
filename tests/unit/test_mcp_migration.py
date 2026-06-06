@@ -59,7 +59,7 @@ def test_mcp_transfer_data_forwards_table_overrides(monkeypatch):
     """MCP transfer_data forwards table_overrides dict to service as TableTransferConfig instances."""
     fake_service = _FakeMigrationService()
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
 
     result = transfer_data_tool(
         "postgres",
@@ -79,7 +79,7 @@ def test_mcp_transfer_data_forwards_table_overrides(monkeypatch):
 def test_mcp_transfer_data_defaults_to_backward_compatible_modes(monkeypatch):
     fake_service = _FakeMigrationService()
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
 
     result = transfer_data_tool("postgres", "conn", "source.accdb")
 
@@ -92,7 +92,7 @@ def test_mcp_transfer_data_defaults_to_backward_compatible_modes(monkeypatch):
 def test_mcp_transfer_data_forwards_explicit_modes(monkeypatch):
     fake_service = _FakeMigrationService()
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
 
     result = transfer_data_tool(
         "postgres",
@@ -112,7 +112,7 @@ def test_mcp_transfer_data_forwards_odbc_connection_string(monkeypatch):
     """MCP transfer_data forwards odbc_connection_string to migration service unchanged."""
     fake_service = _FakeMigrationService()
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
 
     odbc_conn_str = "DRIVER={PostgreSQL Unicode};SERVER=test;PORT=5432;DATABASE=test;UID=u;PWD=p"
     result = transfer_data_tool(
@@ -131,7 +131,7 @@ def test_mcp_transfer_data_omitting_odbc_connection_string_records_none(monkeypa
     """MCP transfer_data with no odbc_connection_string passes None to service."""
     fake_service = _FakeMigrationService()
     monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "WinComAdapter", _FakeAdapter)
+    monkeypatch.setitem(transfer_data_tool.__globals__, "OdbcAdapter", _FakeAdapter)
 
     result = transfer_data_tool("postgres", "conn", "source.accdb")
 

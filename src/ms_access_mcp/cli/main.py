@@ -6,11 +6,18 @@ from typing import Optional
 app = typer.Typer(help="MS Access versioning CLI")
 
 
+BACKEND_OPT = typer.Option("odbc", "--backend", "-b", help="Adapter backend: 'odbc' (cross-platform, default) or 'com' (Windows only, for VBA/forms)")
+
+
 # Global adapter init helper — called by most commands
-def _get_adapter(db_path: str):
-    """Create and connect a WinComAdapter."""
-    from ms_access_mcp.adapters.wincom import WinComAdapter
-    adapter = WinComAdapter()
+def _get_adapter(db_path: str, backend: str = "odbc"):
+    """Create and connect an adapter. backend = 'odbc' (default) or 'com'."""
+    if backend == "com":
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        adapter = WinComAdapter()
+    else:
+        from ms_access_mcp.adapters.odbc import OdbcAdapter
+        adapter = OdbcAdapter()
     if not adapter.connect(db_path):
         raise typer.Exit(code=1)
     return adapter
@@ -32,10 +39,11 @@ def export_all(
     dedup: bool = typer.Option(True, "--dedup/--no-dedup", help="Skip unchanged files"),
     module_ext: str = typer.Option(".bas", "--module-ext", help="Module file extension"),
     db_path: str = typer.Option(..., "--db", help="Path to .accdb file"),
+    backend: str = BACKEND_OPT,
 ):
     """Export all objects to text files for version control."""
     from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-    adapter = _get_adapter(db_path)
+    adapter = _get_adapter(db_path, backend)
     orch = VersioningOrchestrator()
     result = orch.export_all(directory, adapter, dedup=dedup, module_ext=module_ext)
     adapter.disconnect()
@@ -46,10 +54,11 @@ def export_all(
 def compare_versioning(
     directory: str = typer.Option(..., "--dir", help="Export directory"),
     db_path: str = typer.Option(..., "--db", help="Path to .accdb file"),
+    backend: str = BACKEND_OPT,
 ):
     """Compare database state against export directory."""
     from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-    adapter = _get_adapter(db_path)
+    adapter = _get_adapter(db_path, backend)
     orch = VersioningOrchestrator()
     result = orch.compare(directory, adapter)
     adapter.disconnect()
@@ -89,11 +98,12 @@ def export_vba(
     module_name: str,
     db_path: str = typer.Option(..., "--db", help="Path to .accdb file"),
     output: Optional[Path] = None,
+    backend: str = BACKEND_OPT,
 ):
-    """Export a VBA module to a .bas file."""
+    """Export a VBA module to a .bas file. Requires --backend com (Windows only)."""
     output_path = output or Path(f"{module_name}.bas")
     typer.echo(f"Exporting module '{module_name}' to {output_path}")
-    adapter = _get_adapter(db_path)
+    adapter = _get_adapter(db_path, backend)
     code = adapter.export_module_to_text(module_name)
     output_path.write_text(code or "", encoding="utf-8")
     adapter.disconnect()

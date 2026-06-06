@@ -53,6 +53,65 @@ python -m ms_access_mcp.cli.main serve --host 0.0.0.0 --port 8000 --api-key <key
 }
 ```
 
+## Linux Server Setup (data-only)
+
+On Linux, the server runs with ODBC only. COM-dependent operations
+(VBA editing, forms, reports, macros, compact/repair) are unavailable.
+
+### 1. Install system dependencies
+
+```bash
+sudo apt install unixodbc mdbtools mdbtools-odbc
+```
+
+### 2. Register the ODBC driver
+
+```bash
+# /etc/odbcinst.ini
+cat <<'EOF' | sudo tee -a /etc/odbcinst.ini
+[MDBTools]
+Description = MDB Tools ODBC driver
+Driver      = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbc.so
+Setup       = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbcS.so
+EOF
+```
+
+OdbcAdapter tries Windows driver names first. Create a matching alias:
+
+```bash
+cat <<'EOF' | sudo tee /etc/odbc.ini
+[Microsoft Access Driver (*.mdb, *.accdb)]
+Description = MDB Tools driver
+Driver      = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbc.so
+Setup       = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbcS.so
+EOF
+```
+
+### 3. Install Python dependencies
+
+```bash
+uv sync   # pywin32 not needed on Linux
+```
+
+### 4. Configure and start
+
+```bash
+export ACCESS_MCP_API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+export ACCESS_MCP_ALLOWED_DIRS=/path/to/databases
+
+python -m ms_access_mcp.mcp.server
+```
+
+### Limitations on Linux
+
+- No VBA operations (`get_vba_code`, `set_vba_code`, `compile_vba`)
+- No form/report UI automation (`open_form`, `close_form`, etc.)
+- No compact/repair (`compact_repair`)
+- No linked table management (`create_linked_table`, etc.)
+- `get_relationships` returns empty (ODBC cannot expose Access relationship metadata)
+
+Use `--backend com` on Windows to access COM-dependent operations.
+
 ## Security
 
 ### Firewall

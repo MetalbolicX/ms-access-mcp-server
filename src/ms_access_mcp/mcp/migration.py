@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 
 from .server import mcp, connection_service, migration_service
-from ..adapters.wincom import WinComAdapter
+from ..adapters.odbc import OdbcAdapter
 
 
 def _find_connection_by_path(database_path: str):
@@ -37,8 +37,8 @@ def extract_schema(database_path: str) -> dict:
         schema = migration_service.extract_schema(state.adapter, database_path)
         return {"success": True, "schema": schema.model_dump(), "reused_connection": True, "connection_name": conn_name}
 
-    # Create a new adapter and connection
-    adapter = WinComAdapter()
+    # Create a new adapter and connection (ODBC by default for cross-platform support)
+    adapter = OdbcAdapter()
     if not adapter.connect(database_path):
         return {"success": False, "error": "Failed to connect to database"}
     schema = migration_service.extract_schema(adapter, database_path)
@@ -93,13 +93,13 @@ def transfer_data(
     """
     from ..models.migration import ExtractedSchema, TableTransferConfig
 
-    # Reuse existing connection if available (avoids COM "database already open" error)
+    # Reuse existing connection if available
     conn_name, state = _find_connection_by_path(database_path)
     owns_connection = False
     if state is not None and connection_service.is_connected(conn_name):
         adapter = state.adapter
     else:
-        adapter = WinComAdapter()
+        adapter = OdbcAdapter()
         if not adapter.connect(database_path):
             return {"success": False, "error": "Failed to connect to Access database"}
         owns_connection = True

@@ -62,8 +62,45 @@ A Model Context Protocol (MCP) server for Microsoft Access that enables AI assis
 
 ```bash
 cd ms-access-mcp-server
-uv sync --extra windows  # Install with Windows dependencies
+uv sync --extra windows  # Install with Windows dependencies (pywin32)
 ```
+
+### Linux Server (data-only, no COM)
+
+On Linux you can run the server with ODBC only. COM-dependent operations
+(VBA editing, forms, reports, macros, compact/repair) are unavailable.
+
+```bash
+# Install system dependencies (Debian/Ubuntu)
+sudo apt install unixodbc mdbtools mdbtools-odbc
+
+# Register the mdbtools driver in unixODBC
+# (create /etc/odbcinst.ini or add the section below)
+cat <<'EOF' | sudo tee -a /etc/odbcinst.ini
+[MDBTools]
+Description = MDB Tools ODBC driver
+Driver      = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbc.so
+Setup       = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbcS.so
+EOF
+
+# Register the driver alias that OdbcAdapter expects
+# (OdbcAdapter uses the Windows driver name; create a matching alias)
+cat <<'EOF' | sudo tee /etc/odbc.ini
+[Microsoft Access Driver (*.mdb, *.accdb)]
+Description = MDB Tools driver
+Driver      = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbc.so
+Setup       = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbcS.so
+EOF
+
+# Install Python deps (no --extra windows needed)
+uv sync
+
+# Run the server
+uv run python -m ms_access_mcp.mcp.server
+```
+
+On Linux, `export_vba`, `export_all`, and other VBA/form operations will
+raise `NotImplementedError`. Use `--backend com` on Windows for those.
 
 ### Running the MCP Server
 
