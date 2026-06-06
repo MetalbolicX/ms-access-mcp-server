@@ -26,12 +26,19 @@ class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
     Implements IDataAdapter + ISchemaAdapter (via AccessAdapter protocol).
     """
 
+    # Default driver string — used when ACCESS_MCP_ODBC_DRIVER is not set
+    DEFAULT_DRIVER = "{Microsoft Access Driver (*.mdb, *.accdb)}"
+
     def __init__(self, db_path: str | None = None, strategy_selector: Any | None = None) -> None:
         from .export.strategies import ExportStrategySelector
 
         self._conn: Optional[pyodbc.Connection] = None
         self._db_path: Optional[str] = db_path
         self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
+        self._driver_name: str = (
+            os.environ.get("ACCESS_MCP_ODBC_DRIVER", self.DEFAULT_DRIVER).strip()
+            or self.DEFAULT_DRIVER
+        )
 
     def connect(self, db_path: str) -> bool:
         """Connect to an Access database via ODBC."""
@@ -45,11 +52,11 @@ class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
             candidates = [
                 f"Provider={ACE_OLEDB_16};Data Source={db_path};",
                 f"Provider={ACE_OLEDB_12};Data Source={db_path};",
-                f"Driver={ACCESS_DRIVER};DBQ={db_path};",
+                f"Driver={self._driver_name};DBQ={db_path};",
             ]
         else:
             candidates = [
-                f"Driver={ACCESS_DRIVER};DBQ={db_path};",
+                f"Driver={self._driver_name};DBQ={db_path};",
                 f"Provider={ACE_OLEDB_12};Data Source={db_path};",
                 f"Provider={ACE_OLEDB_16};Data Source={db_path};",
             ]
