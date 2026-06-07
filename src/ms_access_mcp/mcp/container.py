@@ -43,9 +43,10 @@ def get_container() -> ServiceContainer:
     """
     global _container
     if _container is None:
+        connection_pool = ConnectionPool(backend_selector=BackendSelector())
         _container = ServiceContainer(
-            connection_pool=ConnectionPool(backend_selector=BackendSelector()),
-            com_automation=COMAutomationService(),
+            connection_pool=connection_pool,
+            com_automation=COMAutomationService(connection_pool=connection_pool),
             migration=MigrationService(connector_registry=_default_registry),
             dev_copy=DevCopyService(),
             connector_registry=_default_registry,

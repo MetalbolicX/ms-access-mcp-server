@@ -15,13 +15,64 @@ class TestCOMAutomationServiceInit:
         service = COMAutomationService(adapter=mock_adapter)
         assert service._adapter is mock_adapter
 
+    def test_initialization_with_connection_pool(self):
+        """COMAutomationService should accept connection_pool parameter."""
+        mock_pool = MagicMock()
+        service = COMAutomationService(connection_pool=mock_pool)
+        assert service._pool is mock_pool
+        assert service._adapter is None
 
-class TestSetAdapter:
-    def test_set_adapter(self):
-        service = COMAutomationService()
+    def test_initialization_with_both_adapter_and_pool(self):
+        """COMAutomationService should store both adapter and pool when both provided."""
         mock_adapter = MagicMock()
-        service.set_adapter(mock_adapter)
+        mock_pool = MagicMock()
+        service = COMAutomationService(adapter=mock_adapter, connection_pool=mock_pool)
         assert service._adapter is mock_adapter
+        assert service._pool is mock_pool
+
+
+class TestGetAdapter:
+    """Tests for _get_adapter() method."""
+
+    def test_get_adapter_returns_pool_adapter_when_available(self):
+        """_get_adapter should return adapter from pool when pool is set and has adapter."""
+        mock_adapter = MagicMock()
+        mock_pool = MagicMock()
+        mock_pool.get_adapter.return_value = mock_adapter
+        service = COMAutomationService(connection_pool=mock_pool)
+        result = service._get_adapter()
+        assert result is mock_adapter
+        mock_pool.get_adapter.assert_called_once()
+
+    def test_get_adapter_falls_back_to_constructor_adapter_when_pool_fails(self):
+        """_get_adapter should fall back to _adapter when pool lookup raises KeyError."""
+        mock_adapter = MagicMock()
+        mock_pool = MagicMock()
+        mock_pool.get_adapter.side_effect = KeyError("not found")
+        service = COMAutomationService(adapter=mock_adapter, connection_pool=mock_pool)
+        result = service._get_adapter()
+        assert result is mock_adapter
+
+    def test_get_adapter_falls_back_to_constructor_adapter_when_pool_is_none(self):
+        """_get_adapter should fall back to _adapter when no pool is set."""
+        mock_adapter = MagicMock()
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service._get_adapter()
+        assert result is mock_adapter
+
+    def test_get_adapter_returns_none_when_no_pool_no_adapter(self):
+        """_get_adapter should return None when neither pool nor adapter is set."""
+        service = COMAutomationService()
+        result = service._get_adapter()
+        assert result is None
+
+    def test_get_adapter_returns_none_when_pool_raises_keyerror_and_no_adapter(self):
+        """_get_adapter should return None when pool fails and no fallback adapter."""
+        mock_pool = MagicMock()
+        mock_pool.get_adapter.side_effect = KeyError("not found")
+        service = COMAutomationService(connection_pool=mock_pool)
+        result = service._get_adapter()
+        assert result is None
 
 
 class TestLaunchAccess:

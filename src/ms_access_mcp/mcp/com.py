@@ -205,7 +205,6 @@ def get_control_properties(form_name: str, control_name: str, connection_name: s
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    _com().set_adapter(adapter)
     props = _com().get_control_properties(form_name, control_name)
     if not props:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
@@ -232,7 +231,6 @@ def set_control_property(form_name: str, control_name: str, property_name: str, 
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    _com().set_adapter(adapter)
     result = _com().set_control_property(form_name, control_name, property_name, value)
     return {"success": result, "form": form_name, "control": control_name, "property": property_name, "value": value}
 
@@ -257,7 +255,6 @@ def set_control_properties(form_name: str, control_name: str, properties: dict[s
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    _com().set_adapter(adapter)
     result = _com().set_control_properties(form_name, control_name, properties)
     if not result:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
@@ -285,7 +282,6 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    _com().set_adapter(adapter)
     procedures = _com().get_control_event_procedures(form_name, control_name)
     if procedures is None:
         return {"success": False, "error": f"Form module 'Form_{form_name}' not found"}

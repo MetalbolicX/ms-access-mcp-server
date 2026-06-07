@@ -49,7 +49,6 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
         # Use backward-compatible 2-arg API for the actual connection
         result = _pool().connect(database_path, adapter)
         if result:
-            _com().set_adapter(adapter)
             return {"success": result, "connected": result, "database": database_path, "name": name}
         else:
             return {"success": False, "connected": False, "database": database_path, "name": name,
