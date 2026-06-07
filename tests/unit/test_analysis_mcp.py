@@ -1,7 +1,11 @@
 """Tests for analysis MCP tool — Phase 4.3."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+# Import server first to resolve circular dependency
+from ms_access_mcp.mcp import server  # noqa: F401
+from ms_access_mcp.mcp import analysis as analysis_module
 
 
 class TestAnalyzeQueryToolRegistration:
@@ -38,22 +42,23 @@ class TestAnalyzeQueryTool:
     def test_analyze_query_dry_run(self):
         """4.1 RED: dry_run=True → no execution, structure only."""
         from ms_access_mcp.mcp.analysis import analyze_query
-        from ms_access_mcp.mcp.server import connection_service
 
         # Mock a connected adapter
         mock_adapter = MagicMock()
         mock_adapter.get_tables.return_value = []
         mock_adapter.get_table_schema_plan.return_value = ([], MagicMock())
 
-        # Set up a connection
-        connection_service.get_adapter = MagicMock(return_value=mock_adapter)
-        connection_service.is_connected = MagicMock(return_value=True)
+        # Set up a connection pool mock
+        mock_pool = MagicMock()
+        mock_pool.is_connected.return_value = True
+        mock_pool.get_adapter.return_value = mock_adapter
 
-        result = analyze_query(
-            sql="SELECT * FROM Customers",
-            connection_name="test_conn",
-            dry_run=True,
-        )
+        with patch.object(analysis_module, '_pool', return_value=mock_pool):
+            result = analyze_query(
+                sql="SELECT * FROM Customers",
+                connection_name="test_conn",
+                dry_run=True,
+            )
 
         # Dry run should not call execute_query
         mock_adapter.execute_query.assert_not_called()
@@ -62,21 +67,22 @@ class TestAnalyzeQueryTool:
     def test_analyze_query_with_execution(self):
         """4.1 RED: With connected adapter and dry_run=False → executes query."""
         from ms_access_mcp.mcp.analysis import analyze_query
-        from ms_access_mcp.mcp.server import connection_service
 
         mock_adapter = MagicMock()
         mock_adapter.get_tables.return_value = []
         mock_adapter.get_table_schema_plan.return_value = ([], MagicMock())
         mock_adapter.execute_query.return_value = iter([{"_cnt": 5}])
 
-        connection_service.get_adapter = MagicMock(return_value=mock_adapter)
-        connection_service.is_connected = MagicMock(return_value=True)
+        mock_pool = MagicMock()
+        mock_pool.is_connected.return_value = True
+        mock_pool.get_adapter.return_value = mock_adapter
 
-        result = analyze_query(
-            sql="SELECT * FROM Customers",
-            connection_name="test_conn",
-            dry_run=False,
-        )
+        with patch.object(analysis_module, '_pool', return_value=mock_pool):
+            result = analyze_query(
+                sql="SELECT * FROM Customers",
+                connection_name="test_conn",
+                dry_run=False,
+            )
 
         assert result.get("success") is True
         assert "complexity" in result
@@ -86,7 +92,6 @@ class TestAnalyzeQueryTool:
     def test_analyze_query_sample_size(self):
         """4.1 RED: sample_size > 0 → samples data."""
         from ms_access_mcp.mcp.analysis import analyze_query
-        from ms_access_mcp.mcp.server import connection_service
 
         mock_adapter = MagicMock()
         mock_adapter.get_tables.return_value = []
@@ -96,15 +101,17 @@ class TestAnalyzeQueryTool:
             iter([{"ID": 1}, {"ID": 2}]),
         ]
 
-        connection_service.get_adapter = MagicMock(return_value=mock_adapter)
-        connection_service.is_connected = MagicMock(return_value=True)
+        mock_pool = MagicMock()
+        mock_pool.is_connected.return_value = True
+        mock_pool.get_adapter.return_value = mock_adapter
 
-        result = analyze_query(
-            sql="SELECT * FROM Customers",
-            connection_name="test_conn",
-            dry_run=False,
-            sample_size=5,
-        )
+        with patch.object(analysis_module, '_pool', return_value=mock_pool):
+            result = analyze_query(
+                sql="SELECT * FROM Customers",
+                connection_name="test_conn",
+                dry_run=False,
+                sample_size=5,
+            )
 
         assert result.get("execution", {}).get("sample_size") == 5
         assert "sampled_data" in result.get("execution", {})

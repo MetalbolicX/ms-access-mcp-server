@@ -2,7 +2,13 @@
 
 import platform
 import sys
-from .server import mcp, connection_service
+from .server import mcp
+
+
+def _pool():
+    """Lazy accessor for connection pool (avoids circular import at module level)."""
+    from .container import get_container
+    return get_container().connection_pool
 
 
 @mcp.tool()
@@ -16,7 +22,7 @@ def recover_access() -> dict:
     Returns:
         dict with success status, reconnected connection names, and any errors
     """
-    return connection_service.recover_access()
+    return _pool().recover_access()
 
 
 @mcp.tool()

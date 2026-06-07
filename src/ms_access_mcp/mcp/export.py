@@ -4,20 +4,26 @@ Replaces the old ``export_table_csv`` / ``export_query_json`` with a single
 ``export_data`` tool that accepts a ``format`` parameter (``csv``, ``json``,
 ``excel``).
 """
-from .server import mcp, connection_service
+from .server import mcp
+
+
+def _pool():
+    """Lazy accessor for connection pool (avoids circular import at module level)."""
+    from .container import get_container
+    return get_container().connection_pool
 
 
 def _get_adapter(connection_name: str = "default"):
     """Get adapter for a named connection, or return None if not found."""
     try:
-        return connection_service.get_adapter(connection_name)
+        return _pool().get_adapter(connection_name)
     except KeyError:
         return None
 
 
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
-    return connection_service.is_connected(connection_name)
+    return _pool().is_connected(connection_name)
 
 
 @mcp.tool()
