@@ -1,18 +1,27 @@
 """VBA Extensibility tools for MS Access database — Phase 1 SDD."""
-from .server import mcp, connection_service, dev_copy_service
+from .server import mcp
+from .container import get_container
+
+
+def _pool():
+    return get_container().connection_pool
+
+
+def _dev_copy():
+    return get_container().dev_copy
 
 
 def _get_adapter(connection_name: str = "default"):
     """Get adapter for a named connection, or return None if not found."""
     try:
-        return connection_service.get_adapter(connection_name)
+        return _pool().get_adapter(connection_name)
     except KeyError:
         return None
 
 
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
-    return connection_service.is_connected(connection_name)
+    return _pool().is_connected(connection_name)
 
 
 @mcp.tool()
@@ -72,7 +81,7 @@ def set_vba_code(module_name: str, code: str, connection_name: str = "default") 
         return {"success": False, "error": "No adapter available"}
 
     # Compile with retry
-    compile_result = dev_copy_service.compile_with_retry(adapter, module_name, code)
+    compile_result = _dev_copy().compile_with_retry(adapter, module_name, code)
     return {
         "success": compile_result.get("success", False),
         "module": module_name,
@@ -104,7 +113,7 @@ def add_vba_procedure(module_name: str, procedure_name: str, code: str, connecti
         return {"success": False, "module": module_name, "procedure": procedure_name}
 
     # Compile with retry
-    compile_result = dev_copy_service.compile_with_retry(adapter, module_name, code)
+    compile_result = _dev_copy().compile_with_retry(adapter, module_name, code)
     return {
         "success": compile_result.get("success", False),
         "module": module_name,

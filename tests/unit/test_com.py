@@ -2,7 +2,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from ms_access_mcp.mcp import server
+from ms_access_mcp.mcp import server  # noqa: F401
+from ms_access_mcp.mcp import com as com_module
 
 
 class TestComToolsConnectionGuards:
@@ -23,7 +24,7 @@ class TestComToolsConnectionGuards:
         """Each COM tool should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(tool_func.__globals__, connection_service=mock_conn):
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = tool_func(*args)
             assert result["success"] is False
             assert "Not connected" in result["error"]
@@ -37,7 +38,7 @@ class TestLaunchAccess:
         mock_com = MagicMock()
         mock_com.launch_access.return_value = True
         mock_com.is_access_running.return_value = True
-        with patch.dict(server.launch_access.__globals__, com_automation_service=mock_com):
+        with patch.object(com_module, '_com', return_value=mock_com):
             result = server.launch_access(visible=True)
             assert result["success"] is True
             assert result["access_running"] is True
@@ -52,7 +53,7 @@ class TestCloseAccess:
         mock_com = MagicMock()
         mock_com.close_access.return_value = True
         mock_com.is_access_running.return_value = False
-        with patch.dict(server.close_access.__globals__, com_automation_service=mock_com):
+        with patch.object(com_module, '_com', return_value=mock_com):
             result = server.close_access()
             assert result["success"] is True
             assert result["access_running"] is False
@@ -70,7 +71,7 @@ class TestFormDiscoveryTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_forms.__globals__, connection_service=mock_conn):
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_forms()
             assert result["success"] is True
             assert result["count"] == 1
@@ -85,7 +86,7 @@ class TestFormDiscoveryTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_reports.__globals__, connection_service=mock_conn):
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_reports()
             assert result["success"] is True
             assert result["count"] == 1
@@ -99,7 +100,7 @@ class TestFormDiscoveryTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_macros.__globals__, connection_service=mock_conn):
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_macros()
             assert result["success"] is True
             assert result["count"] == 1
@@ -113,7 +114,7 @@ class TestFormDiscoveryTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_modules.__globals__, connection_service=mock_conn):
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_modules()
             assert result["success"] is True
             assert result["count"] == 1
@@ -128,7 +129,8 @@ class TestControlTools:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.open_form.return_value = True
-        with patch.dict(server.open_form.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.open_form("TestForm")
             assert result["success"] is True
             assert result["form"] == "TestForm"
@@ -140,7 +142,8 @@ class TestControlTools:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.get_control_properties.return_value = {}
-        with patch.dict(server.get_control_properties.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.get_control_properties("TestForm", "NonExistent")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -151,7 +154,8 @@ class TestControlTools:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.get_control_properties.return_value = {"Name":"txtName","BackColor":16777215}
-        with patch.dict(server.get_control_properties.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.get_control_properties("TestForm", "txtName")
             assert result["success"] is True
             assert result["control"] == "txtName"
@@ -163,7 +167,8 @@ class TestControlTools:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.set_control_property.return_value = True
-        with patch.dict(server.set_control_property.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.set_control_property("TestForm", "txtName", "BackColor", "16777215")
             assert result["success"] is True
             assert result["property"] == "BackColor"
@@ -175,7 +180,7 @@ class TestControlTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.form_exists.__globals__, connection_service=mock_conn):
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.form_exists("TestForm")
             assert result["success"] is True
             assert result["exists"] is True
@@ -190,7 +195,8 @@ class TestSetControlProperties:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.set_control_properties.return_value = {"Visible": True, "Width": False}
-        with patch.dict(server.set_control_properties.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.set_control_properties("TestForm", "txtName", {"Visible": "True", "Width": "200"})
             assert result["success"] is True
             assert "properties" in result
@@ -202,7 +208,8 @@ class TestSetControlProperties:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.set_control_properties.return_value = {}
-        with patch.dict(server.set_control_properties.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.set_control_properties("TestForm", "NonExistent", {"Width": "200"})
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -220,7 +227,8 @@ class TestGetControlEventProcedures:
             {"procedure_name": "cmdSave_Click", "event_name": "Click", "code": "Sub cmdSave_Click()\nEnd Sub", "start_line": 1},
             {"procedure_name": "cmdSave_Enter", "event_name": "Enter", "code": "Sub cmdSave_Enter()\nEnd Sub", "start_line": 7},
         ]
-        with patch.dict(server.get_control_event_procedures.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.get_control_event_procedures("TestForm", "")
             assert result["success"] is True
             assert result["count"] == 2
@@ -234,7 +242,8 @@ class TestGetControlEventProcedures:
         mock_com.get_control_event_procedures.return_value = [
             {"procedure_name": "cmdSave_Click", "event_name": "Click", "code": "Sub cmdSave_Click()\nEnd Sub", "start_line": 1},
         ]
-        with patch.dict(server.get_control_event_procedures.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.get_control_event_procedures("TestForm", "cmdSave")
             assert result["success"] is True
             assert result["control"] == "cmdSave"
@@ -246,7 +255,8 @@ class TestGetControlEventProcedures:
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
         mock_com.get_control_event_procedures.return_value = None
-        with patch.dict(server.get_control_event_procedures.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
             result = server.get_control_event_procedures("NonExistentForm", "")
             assert result["success"] is False
             assert "not found" in result["error"].lower()

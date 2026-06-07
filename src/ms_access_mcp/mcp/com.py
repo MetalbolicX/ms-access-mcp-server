@@ -1,18 +1,27 @@
 """COM Automation and form/report discovery tools for MS Access — Phase 1 SDD."""
-from .server import mcp, connection_service, com_automation_service
+from .server import mcp
+from .container import get_container
+
+
+def _pool():
+    return get_container().connection_pool
+
+
+def _com():
+    return get_container().com_automation
 
 
 def _get_adapter(connection_name: str = "default"):
     """Get adapter for a named connection, or return None if not found."""
     try:
-        return connection_service.get_adapter(connection_name)
+        return _pool().get_adapter(connection_name)
     except KeyError:
         return None
 
 
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
-    return connection_service.is_connected(connection_name)
+    return _pool().is_connected(connection_name)
 
 
 # ============================================================================
@@ -28,15 +37,15 @@ def launch_access(visible: bool = False) -> dict:
     Args:
         visible: Whether to show Access window (default False)
     """
-    result = com_automation_service.launch_access(visible)
-    return {"success": result, "access_running": com_automation_service.is_access_running()}
+    result = _com().launch_access(visible)
+    return {"success": result, "access_running": _com().is_access_running()}
 
 
 @mcp.tool()
 def close_access() -> dict:
     """Close Microsoft Access application."""
-    result = com_automation_service.close_access()
-    return {"success": result, "access_running": com_automation_service.is_access_running()}
+    result = _com().close_access()
+    return {"success": result, "access_running": _com().is_access_running()}
 
 
 @mcp.tool()
@@ -118,7 +127,7 @@ def open_form(form_name: str, connection_name: str = "default") -> dict:
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    result = com_automation_service.open_form(form_name)
+    result = _com().open_form(form_name)
     return {"success": result, "form": form_name, "message": "Form opened" if result else "Failed to open form"}
 
 
@@ -133,7 +142,7 @@ def close_form(form_name: str, connection_name: str = "default") -> dict:
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    result = com_automation_service.close_form(form_name)
+    result = _com().close_form(form_name)
     return {"success": result, "form": form_name, "message": "Form closed" if result else "Failed to close form"}
 
 
@@ -196,8 +205,8 @@ def get_control_properties(form_name: str, control_name: str, connection_name: s
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    com_automation_service.set_adapter(adapter)
-    props = com_automation_service.get_control_properties(form_name, control_name)
+    _com().set_adapter(adapter)
+    props = _com().get_control_properties(form_name, control_name)
     if not props:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
     return {"success": True, "form": form_name, "control": control_name, "properties": props}
@@ -223,8 +232,8 @@ def set_control_property(form_name: str, control_name: str, property_name: str, 
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    com_automation_service.set_adapter(adapter)
-    result = com_automation_service.set_control_property(form_name, control_name, property_name, value)
+    _com().set_adapter(adapter)
+    result = _com().set_control_property(form_name, control_name, property_name, value)
     return {"success": result, "form": form_name, "control": control_name, "property": property_name, "value": value}
 
 
@@ -248,8 +257,8 @@ def set_control_properties(form_name: str, control_name: str, properties: dict[s
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    com_automation_service.set_adapter(adapter)
-    result = com_automation_service.set_control_properties(form_name, control_name, properties)
+    _com().set_adapter(adapter)
+    result = _com().set_control_properties(form_name, control_name, properties)
     if not result:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
     return {"success": True, "form": form_name, "control": control_name, "properties": result}
@@ -276,8 +285,8 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    com_automation_service.set_adapter(adapter)
-    procedures = com_automation_service.get_control_event_procedures(form_name, control_name)
+    _com().set_adapter(adapter)
+    procedures = _com().get_control_event_procedures(form_name, control_name)
     if procedures is None:
         return {"success": False, "error": f"Form module 'Form_{form_name}' not found"}
     return {
