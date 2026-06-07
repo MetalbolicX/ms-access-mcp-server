@@ -9,11 +9,11 @@ except ImportError:
 
 from fastmcp import FastMCP
 from ..services.connection import ConnectionPool
-
 from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
 from ..services.dev_copy_service import DevCopyService
 from ..connectors.registry import _default_registry
+from .container import get_container
 from ..config import ServerConfig
 from ..auth import ApiKeyMiddleware
 from ..path_guard import PathGuard
@@ -22,7 +22,7 @@ import uvicorn
 # Create FastMCP server
 mcp = FastMCP("MS Access MCP Server")
 
-# Initialize services
+# Initialize services (kept as module-level for backward compatibility with tool modules)
 connection_service = ConnectionPool()
 com_automation_service = COMAutomationService()
 migration_service = MigrationService(connector_registry=_default_registry)
@@ -129,3 +129,16 @@ def run_http(
     if app is None:
         app = get_asgi_app(transport=transport)
     uvicorn.run(app, host=host, port=port)
+
+
+def __getattr__(name):
+    """Resolve legacy module-level service names to container properties (PEP 562)."""
+    _mapping = {
+        "connection_service": "connection_pool",
+        "com_automation_service": "com_automation",
+        "migration_service": "migration",
+        "dev_copy_service": "dev_copy",
+    }
+    if name in _mapping:
+        return getattr(get_container(), _mapping[name])
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

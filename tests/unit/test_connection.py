@@ -1,8 +1,9 @@
 """Tests for mcp/connection.py tool bindings."""
 import pytest
 from unittest.mock import patch, MagicMock
-
-from ms_access_mcp.mcp import server
+# Import server first to resolve circular dependency
+from ms_access_mcp.mcp import server  # noqa: F401
+from ms_access_mcp.mcp import connection as conn_module
 
 
 class TestConnectAccess:
@@ -14,8 +15,8 @@ class TestConnectAccess:
         mock_conn.is_connected.return_value = False
         mock_conn.connect.return_value = True
         mock_conn.current_database = "test.accdb"
-        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn):
-            result = server.connect_access("test.accdb")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.connect_access("test.accdb")
             assert result["success"] is True
             assert result["connected"] is True
             mock_conn.connect.assert_called_once()
@@ -25,8 +26,8 @@ class TestConnectAccess:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
         mock_conn.connect.return_value = False
-        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn):
-            result = server.connect_access("test.accdb")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.connect_access("test.accdb")
             assert result["success"] is False
             assert result["connected"] is False
 
@@ -36,8 +37,11 @@ class TestConnectAccess:
         mock_conn.is_connected.return_value = False
         mock_conn.connect.return_value = True
         mock_com = MagicMock()
-        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn, com_automation_service=mock_com):
-            result = server.connect_access("test.accdb", use_com=True)
+        with (
+            patch.object(conn_module, '_pool', return_value=mock_conn),
+            patch.object(conn_module, '_com', return_value=mock_com),
+        ):
+            result = conn_module.connect_access("test.accdb", use_com=True)
             assert result["success"] is True
             mock_com.set_adapter.assert_called_once()
 
@@ -49,8 +53,8 @@ class TestDisconnectAccess:
         """disconnect_access should always return success."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(server.disconnect_access.__globals__, connection_service=mock_conn):
-            result = server.disconnect_access()
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.disconnect_access()
             assert result["success"] is True
             mock_conn.disconnect.assert_called_once()
 
@@ -63,8 +67,8 @@ class TestIsConnected:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.current_database = "/path/to/db.accdb"
-        with patch.dict(server.is_connected.__globals__, connection_service=mock_conn):
-            result = server.is_connected()
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.is_connected()
             assert result["connected"] is True
             assert result["database"] == "/path/to/db.accdb"
 
@@ -73,8 +77,8 @@ class TestIsConnected:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
         mock_conn.current_database = None
-        with patch.dict(server.is_connected.__globals__, connection_service=mock_conn):
-            result = server.is_connected()
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.is_connected()
             assert result["connected"] is False
 
 
@@ -86,10 +90,12 @@ class TestConnectAccessWithName:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
         mock_conn.connect.return_value = True
-        mock_schema = MagicMock()
         mock_com = MagicMock()
-        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn, schema_service=mock_schema, com_automation_service=mock_com):
-            result = server.connect_access("test.accdb", use_com=False, name="prod")
+        with (
+            patch.object(conn_module, '_pool', return_value=mock_conn),
+            patch.object(conn_module, '_com', return_value=mock_com),
+        ):
+            result = conn_module.connect_access("test.accdb", use_com=False, name="prod")
             assert result["name"] == "prod"
 
     def test_connect_access_name_in_response(self):
@@ -97,8 +103,8 @@ class TestConnectAccessWithName:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
         mock_conn.connect.return_value = True
-        with patch.dict(server.connect_access.__globals__, connection_service=mock_conn):
-            result = server.connect_access("test.accdb", name="prod")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.connect_access("test.accdb", name="prod")
             assert "name" in result
 
 
@@ -108,8 +114,8 @@ class TestDisconnectAccessWithName:
     def test_disconnect_access_with_name_param(self):
         """disconnect_access should call disconnect with the given name."""
         mock_conn = MagicMock()
-        with patch.dict(server.disconnect_access.__globals__, connection_service=mock_conn):
-            result = server.disconnect_access("prod")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.disconnect_access("prod")
             mock_conn.disconnect.assert_called_once_with("prod")
             assert result["success"] is True
 
@@ -117,8 +123,8 @@ class TestDisconnectAccessWithName:
         """disconnect_access with unknown name should return error."""
         mock_conn = MagicMock()
         mock_conn.disconnect.side_effect = KeyError("not found")
-        with patch.dict(server.disconnect_access.__globals__, connection_service=mock_conn):
-            result = server.disconnect_access("unknown")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.disconnect_access("unknown")
             assert result["success"] is False
 
 
@@ -134,16 +140,16 @@ class TestNewConnectionTools:
         mock_state.adapter.is_connected.return_value = True
         mock_conn.list.return_value = {"default": mock_state}
         mock_conn.get_active.return_value = "default"
-        with patch.dict(server.list_connections.__globals__, connection_service=mock_conn):
-            result = server.list_connections()
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.list_connections()
             assert "connections" in result
             assert "success" in result
 
     def test_set_active_connection_calls_service(self):
         """set_active_connection should call connection_service.set_active."""
         mock_conn = MagicMock()
-        with patch.dict(server.set_active_connection.__globals__, connection_service=mock_conn):
-            result = server.set_active_connection("prod")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.set_active_connection("prod")
             mock_conn.set_active.assert_called_once_with("prod")
             assert result["success"] is True
 
@@ -151,16 +157,16 @@ class TestNewConnectionTools:
         """set_active_connection with unknown name should return error."""
         mock_conn = MagicMock()
         mock_conn.set_active.side_effect = KeyError("not found")
-        with patch.dict(server.set_active_connection.__globals__, connection_service=mock_conn):
-            result = server.set_active_connection("unknown")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.set_active_connection("unknown")
             assert result["success"] is False
 
     def test_get_active_connection_returns_name(self):
         """get_active_connection should return the active connection name."""
         mock_conn = MagicMock()
         mock_conn.get_active.return_value = "default"
-        with patch.dict(server.get_active_connection.__globals__, connection_service=mock_conn):
-            result = server.get_active_connection()
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.get_active_connection()
             assert result["active"] == "default"
 
     def test_is_connected_with_connection_name(self):
@@ -168,7 +174,7 @@ class TestNewConnectionTools:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.current_database = "/path/to/db.accdb"
-        with patch.dict(server.is_connected.__globals__, connection_service=mock_conn):
-            result = server.is_connected(connection_name="prod")
+        with patch.object(conn_module, '_pool', return_value=mock_conn):
+            result = conn_module.is_connected(connection_name="prod")
             mock_conn.is_connected.assert_called_once_with("prod")
             assert result["connected"] is True

@@ -8,9 +8,22 @@ Tools:
 - get_active_connection() → returns active connection name (NEW)
 - is_connected() → checks connection status
 """
-from .server import mcp, connection_service, com_automation_service, _path_guard
+from .server import mcp, _path_guard
+
 from ..adapters.wincom import WinComAdapter
 from ..adapters.odbc import OdbcAdapter
+
+
+def _pool():
+    """Lazy accessor for connection pool (avoids circular import at module level)."""
+    from .container import get_container
+    return get_container().connection_pool
+
+
+def _com():
+    """Lazy accessor for COM automation service (avoids circular import at module level)."""
+    from .container import get_container
+    return get_container().com_automation
 
 
 @mcp.tool()
@@ -34,9 +47,9 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
 
     try:
         # Use backward-compatible 2-arg API for the actual connection
-        result = connection_service.connect(database_path, adapter)
+        result = _pool().connect(database_path, adapter)
         if result:
-            com_automation_service.set_adapter(adapter)
+            _com().set_adapter(adapter)
             return {"success": result, "connected": result, "database": database_path, "name": name}
         else:
             return {"success": False, "connected": False, "database": database_path, "name": name,
@@ -56,7 +69,7 @@ def disconnect_access(name: str = "default") -> dict:
         name: Connection identifier to disconnect (defaults to "default")
     """
     try:
-        connection_service.disconnect(name)
+        _pool().disconnect(name)
         return {"success": True, "message": f"Disconnected '{name}'"}
     except KeyError as e:
         return {"success": False, "error": str(e)}
@@ -70,7 +83,7 @@ def list_connections() -> dict:
     Returns:
         dict with connection names and their details (db_path, adapter_type, status)
     """
-    connections = connection_service.list()
+    connections = _pool().list()
     result = {}
     for conn_name, state in connections.items():
         result[conn_name] = {
@@ -83,7 +96,7 @@ def list_connections() -> dict:
         "success": True,
         "connections": result,
         "count": len(connections),
-        "active": connection_service.get_active(),
+        "active": _pool().get_active(),
     }
 
 
@@ -96,7 +109,7 @@ def set_active_connection(name: str) -> dict:
         name: Connection identifier to make active
     """
     try:
-        connection_service.set_active(name)
+        _pool().set_active(name)
         return {"success": True, "active": name}
     except KeyError as e:
         return {"success": False, "error": str(e)}
@@ -109,7 +122,7 @@ def get_active_connection() -> dict:
     """
     return {
         "success": True,
-        "active": connection_service.get_active(),
+        "active": _pool().get_active(),
     }
 
 
@@ -121,8 +134,7 @@ def is_connected(connection_name: str = "default") -> dict:
     Args:
         connection_name: Connection identifier to check (defaults to "default")
     """
-    # Use the connection service's is_connected method for proper mocking support
-    connected = connection_service.is_connected(connection_name)
-    # Use current_database for backward compatibility
-    database = connection_service.current_database
+    pool = _pool()
+    connected = pool.is_connected(connection_name)
+    database = pool.current_database
     return {"connected": connected, "database": database, "name": connection_name}

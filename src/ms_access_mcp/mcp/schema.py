@@ -1,18 +1,24 @@
 """Schema and metadata tools for MS Access database — Phase 1 SDD."""
-from .server import mcp, connection_service, _path_guard
+from .server import mcp, _path_guard
+
+
+def _pool():
+    """Lazy accessor for connection pool (avoids circular import at module level)."""
+    from .container import get_container
+    return get_container().connection_pool
 
 
 def _get_adapter(connection_name: str = "default"):
     """Get adapter for a named connection, or return None if not found."""
     try:
-        return connection_service.get_adapter(connection_name)
+        return _pool().get_adapter(connection_name)
     except KeyError:
         return None
 
 
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
-    return connection_service.is_connected(connection_name)
+    return _pool().is_connected(connection_name)
 
 
 def _get_table_schema(adapter, table_name: str):

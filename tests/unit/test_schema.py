@@ -1,21 +1,22 @@
 """Tests for mcp/schema.py tool bindings."""
 import pytest
 from unittest.mock import patch, MagicMock
-
-from ms_access_mcp.mcp import server
+# Import server first to resolve circular dependency
+from ms_access_mcp.mcp import server  # noqa: F401
+from ms_access_mcp.mcp import schema as schema_module
 
 
 class TestSchemaConnectionGuards:
     """Tests for tools that guard connection state."""
 
     @pytest.mark.parametrize("tool_func,args", [
-        (server.generate_sql, ("/tmp/out.sql",)),
+        (schema_module.generate_sql, ("/tmp/out.sql",)),
     ])
     def test_schema_tools_return_error_when_not_connected(self, tool_func, args):
         """Schema tools should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(tool_func.__globals__, connection_service=mock_conn):
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
             result = tool_func(*args)
             assert result["success"] is False
             assert "Not connected" in result["error"]
@@ -28,10 +29,7 @@ class TestGetTables:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter or MagicMock()
-        return patch.dict(
-            server.get_tables.__globals__,
-            connection_service=mock_conn,
-        )
+        return patch.object(schema_module, '_pool', return_value=mock_conn)
 
     def test_get_tables_returns_table_list(self):
         """get_tables should return list of table dumps."""
@@ -40,7 +38,7 @@ class TestGetTables:
         mock_adapter = MagicMock()
         mock_adapter.get_tables.return_value = [mock_table]
         with self._patch_connected_adapter(mock_adapter):
-            result = server.get_tables()
+            result = schema_module.get_tables()
             assert result["success"] is True
             assert result["count"] == 1
             assert result["tables"][0]["name"] == "Customers"
@@ -52,8 +50,8 @@ class TestGetTables:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_tables.__globals__, connection_service=mock_conn):
-            result = server.get_tables()
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_tables()
             assert result["success"] is True
             assert result["count"] == 0
 
@@ -71,8 +69,8 @@ class TestGetTableSchema:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_table_schema.__globals__, connection_service=mock_conn):
-            result = server.get_table_schema("Customers")
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_table_schema("Customers")
             assert result["success"] is True
             assert result["table"]["name"] == "Customers"
 
@@ -83,8 +81,8 @@ class TestGetTableSchema:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_table_schema.__globals__, connection_service=mock_conn):
-            result = server.get_table_schema("NonExistent")
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_table_schema("NonExistent")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
 
@@ -101,8 +99,8 @@ class TestGetRelationships:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_relationships.__globals__, connection_service=mock_conn):
-            result = server.get_relationships()
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_relationships()
             assert result["success"] is True
             assert result["count"] == 1
             assert result["relationships"][0]["name"] == "FK_Orders_Customers"
@@ -118,8 +116,8 @@ class TestGenerateSql:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.generate_sql.return_value = {"success": True, "file_path": "/tmp/out.sql"}
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.generate_sql.__globals__, connection_service=mock_conn):
-            result = server.generate_sql("/tmp/out.sql")
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.generate_sql("/tmp/out.sql")
             assert result["success"] is True
             mock_conn.adapter.generate_sql.assert_called_once_with("/tmp/out.sql")
 
@@ -129,8 +127,8 @@ class TestGenerateSql:
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = None
         mock_conn.get_adapter.return_value = None
-        with patch.dict(server.generate_sql.__globals__, connection_service=mock_conn):
-            result = server.generate_sql("/tmp/out.sql")
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.generate_sql("/tmp/out.sql")
             assert result["success"] is False
             assert "No adapter" in result["error"]
 
@@ -154,8 +152,8 @@ class TestGetErDiagram:
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_er_diagram.__globals__, connection_service=mock_conn):
-            result = server.get_er_diagram()
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_er_diagram()
             assert result["success"] is True
             assert result["node_count"] == 1
             assert result["edge_count"] == 1
