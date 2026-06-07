@@ -38,7 +38,14 @@ class ConnectionPool:
     behavior.
     """
 
-    def __init__(self, adapter: AccessAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: AccessAdapter | None = None,
+        backend_selector: "BackendSelector | None" = None,
+    ) -> None:
+        from ..services.backend_selector import BackendSelector
+
+        self._backend_selector = backend_selector or BackendSelector()
         self._pool: dict[str, ConnectionState] = {}
         self._active: str = "default"
         if adapter is not None:
@@ -120,8 +127,16 @@ class ConnectionPool:
             return state
 
         # Standard new API: connect(name, db_path, adapter_type_string)
-        actual_adapter_type = cast(str, adapter) if isinstance(adapter, str) else (adapter_type or "odbc")
-        adapter_obj = WinComAdapter() if actual_adapter_type == "com" else OdbcAdapter()
+        if adapter in ("auto", None):
+            # Auto mode: delegate to BackendSelector for environment-aware selection
+            adapter_obj = self._backend_selector.get_adapter(db_path, backend="auto", capabilities=None)
+            # Infer adapter_type from the actual class returned
+            from ..adapters.wincom import WinComAdapter
+
+            actual_adapter_type = "com" if isinstance(adapter_obj, WinComAdapter) else "odbc"
+        else:
+            actual_adapter_type = cast(str, adapter) if isinstance(adapter, str) else (adapter_type or "odbc")
+            adapter_obj = WinComAdapter() if actual_adapter_type == "com" else OdbcAdapter()
         result = adapter_obj.connect(db_path)
         if not result:
             raise RuntimeError(f"Failed to connect to {db_path} with {actual_adapter_type} adapter")

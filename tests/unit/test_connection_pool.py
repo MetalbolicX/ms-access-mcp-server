@@ -74,6 +74,28 @@ class TestConnectionPoolInitialState:
             pool.get()
 
 
+class TestPoolBackendSelectorInjection:
+    """Test that ConnectionPool accepts and stores a backend_selector."""
+
+    def test_init_accepts_backend_selector_kwarg(self):
+        """ConnectionPool(backend_selector=some_selector) should not raise."""
+        mock_selector = MagicMock()
+        pool = ConnectionPool(backend_selector=mock_selector)  # type: ignore[arg-type]
+        assert pool._backend_selector is mock_selector
+
+    def test_init_creates_default_backend_selector_when_none_provided(self):
+        """ConnectionPool() should create a BackendSelector instance by default."""
+        pool = ConnectionPool()
+        from ms_access_mcp.services.backend_selector import BackendSelector
+        assert isinstance(pool._backend_selector, BackendSelector)
+
+    def test_init_does_not_store_pooled_adapter_when_using_backend_selector(self):
+        """Passing backend_selector without adapter should leave pool empty."""
+        mock_selector = MagicMock()
+        pool = ConnectionPool(backend_selector=mock_selector)  # type: ignore[arg-type]
+        assert pool.list() == {}
+
+
 # =============================================================================
 # connect() — named connection creation (mocked adapter)
 # =============================================================================
@@ -139,6 +161,66 @@ class TestPoolConnect:
         with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=adapter):
             with pytest.raises(RuntimeError, match="Failed to connect"):
                 pool.connect("prod", "/tmp/prod.accdb", "odbc")
+
+    def test_connect_auto_mode_calls_backend_selector_get_adapter(self):
+        """connect(name, db_path, 'auto') should delegate to BackendSelector."""
+        pool = ConnectionPool()
+        mock_selector = MagicMock()
+        mock_adapter = make_mock_adapter()
+        mock_selector.get_adapter.return_value = mock_adapter
+        pool._backend_selector = mock_selector  # inject test selector
+
+        with patch.object(mock_adapter, 'connect', return_value=True):
+            state = pool.connect("prod", "/tmp/prod.accdb", "auto")
+
+        mock_selector.get_adapter.assert_called_once_with(
+            "/tmp/prod.accdb",
+            backend="auto",
+            capabilities=None,
+        )
+        assert state is not None
+
+    def test_connect_auto_mode_infers_adapter_type_via_isinstance(self):
+        """Auto mode should use isinstance to set adapter_type to 'com' or 'odbc'."""
+        pool = ConnectionPool()
+        mock_selector = MagicMock()
+
+        # Return a real OdbcAdapter instance so isinstance works
+        from ms_access_mcp.adapters.odbc import OdbcAdapter
+        real_odbc = OdbcAdapter(db_path="/tmp/prod.accdb")
+        mock_selector.get_adapter.return_value = real_odbc
+        pool._backend_selector = mock_selector
+
+        with patch.object(real_odbc, 'connect', return_value=True):
+            state = pool.connect("prod", "/tmp/prod.accdb", "auto")
+
+        assert state.adapter_type == "odbc"
+
+    def test_connect_explicit_com_does_not_use_backend_selector(self):
+        """connect(name, db_path, 'com') should NOT call BackendSelector — direct instantiation."""
+        pool = ConnectionPool()
+        mock_selector = MagicMock()
+        mock_com_adapter = make_mock_adapter()
+        pool._backend_selector = mock_selector
+
+        with patch("ms_access_mcp.adapters.wincom.WinComAdapter", return_value=mock_com_adapter):
+            state = pool.connect("prod", "/tmp/prod.accdb", "com")
+
+        mock_selector.get_adapter.assert_not_called()
+        assert state.adapter_type == "com"
+
+    def test_connect_explicit_odbc_does_not_use_backend_selector(self):
+        """connect(name, db_path, 'odbc') should NOT call BackendSelector — direct instantiation."""
+        pool = ConnectionPool()
+        mock_selector = MagicMock()
+        mock_odbc_adapter = make_mock_adapter()
+        pool._backend_selector = mock_selector
+
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=mock_odbc_adapter):
+            state = pool.connect("prod", "/tmp/prod.accdb", "odbc")
+
+        mock_selector.get_adapter.assert_not_called()
+        assert state.adapter_type == "odbc"
 
 
 # =============================================================================

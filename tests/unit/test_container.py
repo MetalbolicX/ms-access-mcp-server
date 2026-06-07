@@ -53,3 +53,10 @@ class TestServiceContainer:
         """auth_middleware should be None (lazy, set only via HTTP mode)."""
         c = container.get_container()
         assert c.auth_middleware is None
+
+    def test_connection_pool_uses_backend_selector(self):
+        """get_container().connection_pool should be created with a BackendSelector instance."""
+        c = container.get_container()
+        from ms_access_mcp.services.backend_selector import BackendSelector
+
+        assert isinstance(c.connection_pool._backend_selector, BackendSelector)

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..services.connection import ConnectionPool
+from ..services.backend_selector import BackendSelector
 from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
 from ..services.dev_copy_service import DevCopyService
@@ -43,7 +44,7 @@ def get_container() -> ServiceContainer:
     global _container
     if _container is None:
         _container = ServiceContainer(
-            connection_pool=ConnectionPool(),
+            connection_pool=ConnectionPool(backend_selector=BackendSelector()),
             com_automation=COMAutomationService(),
             migration=MigrationService(connector_registry=_default_registry),
             dev_copy=DevCopyService(),
