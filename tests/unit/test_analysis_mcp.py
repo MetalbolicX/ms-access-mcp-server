@@ -1,5 +1,6 @@
 """Tests for analysis MCP tool — Phase 4.3."""
 
+import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -12,9 +13,10 @@ class TestAnalyzeQueryToolRegistration:
     """Verify analyze_query tool is registered with MCP server."""
 
     def test_analyze_query_tool_registered(self):
-        """4.3 RED: analyze_query tool must be registered in MCP tool manager."""
+        """4.3 RED: analyze_query tool must be registered in MCP server."""
+        import asyncio
         from ms_access_mcp.mcp.server import mcp
-        tool_names = [tool.name for tool in mcp._tool_manager.list_tools()]
+        tool_names = [tool.name for tool in asyncio.run(mcp.list_tools())]
         assert "analyze_query" in tool_names
 
 

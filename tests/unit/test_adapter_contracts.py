@@ -253,45 +253,40 @@ class TestNotConnectedDefaults:
         result = WinComAdapter().get_linked_tables()
         assert isinstance(result, dict)
 
-    def test_odbc_get_linked_tables_returns_error_dict(self):
-        result = OdbcAdapter().get_linked_tables()
-        assert isinstance(result, dict)
-        assert result["success"] is False
+    def test_odbc_get_linked_tables_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().get_linked_tables()
 
     def test_wincom_create_linked_table_returns_error_dict(self):
         result = WinComAdapter().create_linked_table("lnk", "src", "conn")
         assert isinstance(result, dict)
         assert "success" in result
 
-    def test_odbc_create_linked_table_returns_error_dict(self):
-        result = OdbcAdapter().create_linked_table("lnk", "src", "conn")
-        assert isinstance(result, dict)
-        assert result["success"] is False
+    def test_odbc_create_linked_table_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().create_linked_table("lnk", "src", "conn")
 
     def test_wincom_refresh_linked_table_returns_error_dict(self):
         result = WinComAdapter().refresh_linked_table("lnk")
         assert isinstance(result, dict)
         assert "success" in result
 
-    def test_odbc_refresh_linked_table_returns_error_dict(self):
-        result = OdbcAdapter().refresh_linked_table("lnk")
-        assert isinstance(result, dict)
-        assert result["success"] is False
+    def test_odbc_refresh_linked_table_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().refresh_linked_table("lnk")
 
     def test_wincom_unlink_table_returns_error_dict(self):
         result = WinComAdapter().unlink_table("lnk")
         assert isinstance(result, dict)
         assert "success" in result
 
-    def test_odbc_unlink_table_returns_error_dict(self):
-        result = OdbcAdapter().unlink_table("lnk")
-        assert isinstance(result, dict)
-        assert result["success"] is False
+    def test_odbc_unlink_table_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().unlink_table("lnk")
 
-    def test_odbc_compact_repair_returns_error_dict(self):
-        result = OdbcAdapter().compact_repair("compact", "src.accdb", "dst.accdb")
-        assert isinstance(result, dict)
-        assert result["success"] is False
+    def test_odbc_compact_repair_raises_not_implemented(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().compact_repair("compact", "src.accdb", "dst.accdb")
 
 
 # =============================================================================
@@ -479,10 +474,10 @@ class TestOdbcNotImplemented:
         with pytest.raises(NotImplementedError):
             OdbcAdapter().set_control_property("frm", "ctrl", "prop", "val")
 
-    def test_compact_repair_returns_error_dict(self):
+    def test_compact_repair_raises_not_implemented(self):
         # ODBC does not support compact/repair via COM
-        result = OdbcAdapter().compact_repair("compact", "s.accdb", "d.accdb")
-        assert result["success"] is False
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().compact_repair("compact", "s.accdb", "d.accdb")
 
     def test_copy_database_returns_false(self):
         assert OdbcAdapter().copy_database("s.accdb", "d.accdb") is False
