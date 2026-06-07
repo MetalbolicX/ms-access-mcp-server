@@ -2,7 +2,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from ms_access_mcp.mcp import server
+from ms_access_mcp.mcp import server  # noqa: F401
+from ms_access_mcp.mcp import dev_copy as dev_copy_module
 
 
 class TestDevopyConnectionGuards:
@@ -29,7 +30,7 @@ class TestDevopyConnectionGuards:
         """Each dev_copy tool should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(tool_func.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = tool_func(*args)
             assert result["success"] is False
             assert "Not connected" in result["error"]
@@ -45,7 +46,7 @@ class TestCompactRepair:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.compact_repair.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.compact_repair("compact", "/src.accdb", "/dst.accdb", True)
             assert result["success"] is True
             mock_conn.adapter.compact_repair.assert_called_once_with("compact", "/src.accdb", "/dst.accdb", True)
@@ -57,7 +58,7 @@ class TestCompactRepair:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.compact_repair.side_effect = RuntimeError("File in use")
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.compact_repair("compact", "/src.accdb", "/dst.accdb", True)
             assert result["success"] is False
             assert "File in use" in result["error"]
@@ -69,7 +70,7 @@ class TestCompactRepair:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.compact_repair.side_effect = NotImplementedError("Jet SQL cannot compact")
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.compact_repair("compact", "/src.accdb", "/dst.accdb", True)
             assert result["success"] is False
             assert "COM automation" in result["error"]
@@ -82,7 +83,7 @@ class TestCompactRepair:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.compact_repair.side_effect = ValueError("Invalid action 'bad'")
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.compact_repair.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.compact_repair("bad", "/src.accdb", "/dst.accdb", True)
             assert result["success"] is False
             assert "Invalid action" in result["error"]
@@ -99,7 +100,7 @@ class TestCopyDatabase:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.copy_database.return_value = True
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.copy_database.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.copy_database("/src.accdb", "/dst.accdb")
             assert result["success"] is True
             mock_conn.adapter.copy_database.assert_called_once_with("/src.accdb", "/dst.accdb")
@@ -117,7 +118,7 @@ class TestModuleBackupRestore:
         mock_orch = MagicMock()
         mock_orch.export_module_backup.return_value = {"success": True, "backup_path": "/tmp/bak/modTest.bas"}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.export_module_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_module_backup("modTest", None)
                 assert result["success"] is True
                 mock_orch.export_module_backup.assert_called_once()
@@ -134,7 +135,7 @@ class TestModuleBackupRestore:
         mock_orch = MagicMock()
         mock_orch.import_module_from_text.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.import_module_from_text.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_module_from_text("modTest", "/tmp/bak/modTest.bas")
                 assert result["success"] is True
                 mock_orch.import_module_from_text.assert_called_once()
@@ -152,7 +153,7 @@ class TestModuleBackupRestore:
         mock_orch = MagicMock()
         mock_orch.restore_module_backup.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.restore_module_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_module_backup("modTest", "/tmp/bak/modTest.bas")
                 assert result["success"] is True
                 mock_orch.restore_module_backup.assert_called_once()
@@ -174,7 +175,7 @@ class TestFormBackupRestore:
         mock_orch = MagicMock()
         mock_orch.export_form_backup.return_value = {"success": True, "backup_path": "/tmp/bak/frmTest.txt"}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.export_form_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_form_backup("frmTest", None)
                 assert result["success"] is True
                 mock_orch.export_form_backup.assert_called_once()
@@ -191,7 +192,7 @@ class TestFormBackupRestore:
         mock_orch = MagicMock()
         mock_orch.import_form_from_file.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.import_form_from_file.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_form_from_file("frmTest", "/tmp/bak/frmTest.txt")
                 assert result["success"] is True
                 mock_orch.import_form_from_file.assert_called_once()
@@ -209,7 +210,7 @@ class TestFormBackupRestore:
         mock_orch = MagicMock()
         mock_orch.restore_form_backup.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.restore_form_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_form_backup("frmTest", "/tmp/bak/frmTest.txt")
                 assert result["success"] is True
                 mock_orch.restore_form_backup.assert_called_once()
@@ -231,7 +232,7 @@ class TestReportBackupRestore:
         mock_orch = MagicMock()
         mock_orch.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/bak/rptTest.txt"}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.export_report_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_report_backup("rptTest", None)
                 assert result["success"] is True
                 mock_orch.export_report_backup.assert_called_once()
@@ -248,7 +249,7 @@ class TestReportBackupRestore:
         mock_orch = MagicMock()
         mock_orch.import_report_from_file.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.import_report_from_file.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_report_from_file("rptTest", "/tmp/bak/rptTest.txt")
                 assert result["success"] is True
                 mock_orch.import_report_from_file.assert_called_once()
@@ -266,7 +267,7 @@ class TestReportBackupRestore:
         mock_orch = MagicMock()
         mock_orch.restore_report_backup.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.restore_report_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_report_backup("rptTest", "/tmp/bak/rptTest.txt")
                 assert result["success"] is True
                 mock_orch.restore_report_backup.assert_called_once()
@@ -287,7 +288,8 @@ class TestDevCopyLifecycle:
         mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.create_dev_copy.return_value = {"success": True, "dev_path": "/tmp/dev.accdb"}
-        with patch.dict(server.create_dev_copy.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
             result = server.create_dev_copy(None)
             assert result["success"] is True
             mock_dev.create_dev_copy.assert_called_once()
@@ -300,7 +302,8 @@ class TestDevCopyLifecycle:
         mock_conn.get_adapter.return_value = mock_conn.adapter
         mock_dev = MagicMock()
         mock_dev.deploy_dev_copy.return_value = {"success": True}
-        with patch.dict(server.deploy_dev_copy.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
             result = server.deploy_dev_copy(None)
             assert result["success"] is True
             mock_dev.deploy_dev_copy.assert_called_once()
@@ -312,7 +315,8 @@ class TestDevCopyLifecycle:
         mock_conn.adapter = MagicMock()
         mock_dev = MagicMock()
         mock_dev.discard_dev_copy.return_value = {"success": True}
-        with patch.dict(server.discard_dev_copy.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
             result = server.discard_dev_copy(None)
             assert result["success"] is True
             mock_dev.discard_dev_copy.assert_called_once()
@@ -324,7 +328,8 @@ class TestDevCopyLifecycle:
         mock_conn.adapter = MagicMock()
         mock_dev = MagicMock()
         mock_dev.get_dev_copy_status.return_value = {"success": True, "exists": True}
-        with patch.dict(server.get_dev_copy_status.__globals__, connection_service=mock_conn, dev_copy_service=mock_dev):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
             result = server.get_dev_copy_status(None)
             assert result["success"] is True
             mock_dev.get_dev_copy_status.assert_called_once()

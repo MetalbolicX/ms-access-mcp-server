@@ -12,6 +12,7 @@ from ms_access_mcp.mcp import server  # noqa: F401
 from ms_access_mcp.mcp import system as system_module
 from ms_access_mcp.mcp import persistence as persistence_module
 from ms_access_mcp.mcp import recovery as recovery_module
+from ms_access_mcp.mcp import dev_copy as dev_copy_module
 
 
 def _patch_pool(module, mock_adapter=None):
@@ -389,8 +390,7 @@ class TestSystemToolSuccessPaths:
 class TestReportBackupTools:
     """Tests for export_report_backup, import_report_from_file, restore_report_backup.
 
-    These functions are in dev_copy.py (Batch 2), which still uses connection_service.
-    So we use the old patch.dict approach for now.
+    These functions are in dev_copy.py (Batch 2), now migrated to use _pool() accessor.
     """
 
     def test_export_report_backup_delegates_to_versioning_orchestrator(self):
@@ -402,7 +402,7 @@ class TestReportBackupTools:
         mock_orch = MagicMock()
         mock_orch.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.export_report_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_report_backup("rptTest", None)
                 assert result["success"] is True
                 mock_orch.export_report_backup.assert_called_once()
@@ -414,7 +414,7 @@ class TestReportBackupTools:
         """export_report_backup should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(server.export_report_backup.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.export_report_backup("rptTest", None)
             assert result["success"] is False
             assert "Not connected" in result["error"]
@@ -428,7 +428,7 @@ class TestReportBackupTools:
         mock_orch = MagicMock()
         mock_orch.import_report_from_file.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.import_report_from_file.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_report_from_file("rptTest", "/tmp/rptTest.txt")
                 assert result["success"] is True
                 mock_orch.import_report_from_file.assert_called_once()
@@ -441,7 +441,7 @@ class TestReportBackupTools:
         """import_report_from_file should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(server.import_report_from_file.__globals__, connection_service=mock_conn):
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
             result = server.import_report_from_file("rptTest", "/tmp/rptTest.txt")
             assert result["success"] is False
             assert "Not connected" in result["error"]
@@ -455,7 +455,7 @@ class TestReportBackupTools:
         mock_orch = MagicMock()
         mock_orch.restore_report_backup.return_value = {"success": True}
         with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.dict(server.restore_report_backup.__globals__, connection_service=mock_conn):
+            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_report_backup("rptTest", "/tmp/rptTest.txt")
                 assert result["success"] is True
                 mock_orch.restore_report_backup.assert_called_once()
@@ -468,8 +468,8 @@ class TestReportBackupTools:
         """restore_report_backup should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(server.restore_report_backup.__globals__, connection_service=mock_conn):
-            result = server.restore_report_backup("rptTest", "/tmp/rptTest.txt")
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
+            result = server.restore_report_backup("rptTest", None)
             assert result["success"] is False
             assert "Not connected" in result["error"]
 

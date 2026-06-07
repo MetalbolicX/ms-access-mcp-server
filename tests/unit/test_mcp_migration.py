@@ -1,4 +1,6 @@
+from ms_access_mcp.mcp import server  # noqa: F401
 from ms_access_mcp.mcp.server import transfer_data as transfer_data_tool
+from ms_access_mcp.mcp import migration as migration_module
 from ms_access_mcp.models.migration import TableTransferConfig
 
 
@@ -65,94 +67,99 @@ def _make_fake_selector(adapter):
 
 def test_mcp_transfer_data_forwards_table_overrides(monkeypatch):
     """MCP transfer_data forwards table_overrides dict to service as TableTransferConfig instances."""
+    from unittest.mock import patch
     fake_service = _FakeMigrationService()
     fake_adapter = _FakeAdapter()
     fake_selector = _make_fake_selector(fake_adapter)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
+    with patch.object(migration_module, '_migration', return_value=fake_service):
+        monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
-    result = transfer_data_tool(
-        "postgres",
-        "conn",
-        "source.accdb",
-        table_overrides={"Customers": {"columns": ["Name"]}},
-    )
+        result = transfer_data_tool(
+            "postgres",
+            "conn",
+            "source.accdb",
+            table_overrides={"Customers": {"columns": ["Name"]}},
+        )
 
-    assert result["success"] is True
-    assert len(fake_service.transfer_calls) == 1
-    assert "Customers" in fake_service.transfer_calls[0]["table_overrides"]
-    customer_cfg = fake_service.transfer_calls[0]["table_overrides"]["Customers"]
-    assert isinstance(customer_cfg, TableTransferConfig)
-    assert customer_cfg.columns == ["Name"]
+        assert result["success"] is True
+        assert len(fake_service.transfer_calls) == 1
+        assert "Customers" in fake_service.transfer_calls[0]["table_overrides"]
+        customer_cfg = fake_service.transfer_calls[0]["table_overrides"]["Customers"]
+        assert isinstance(customer_cfg, TableTransferConfig)
+        assert customer_cfg.columns == ["Name"]
 
 
 def test_mcp_transfer_data_defaults_to_backward_compatible_modes(monkeypatch):
+    from unittest.mock import patch
     fake_service = _FakeMigrationService()
     fake_adapter = _FakeAdapter()
     fake_selector = _make_fake_selector(fake_adapter)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
+    with patch.object(migration_module, '_migration', return_value=fake_service):
+        monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
-    result = transfer_data_tool("postgres", "conn", "source.accdb")
+        result = transfer_data_tool("postgres", "conn", "source.accdb")
 
-    assert result["success"] is True
-    assert len(fake_service.transfer_calls) == 1
-    assert fake_service.transfer_calls[0]["transfer_mode"] == "auto"
-    assert fake_service.transfer_calls[0]["verification_mode"] == "full"
+        assert result["success"] is True
+        assert len(fake_service.transfer_calls) == 1
+        assert fake_service.transfer_calls[0]["transfer_mode"] == "auto"
+        assert fake_service.transfer_calls[0]["verification_mode"] == "full"
 
 
 def test_mcp_transfer_data_forwards_explicit_modes(monkeypatch):
+    from unittest.mock import patch
     fake_service = _FakeMigrationService()
     fake_adapter = _FakeAdapter()
     fake_selector = _make_fake_selector(fake_adapter)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
+    with patch.object(migration_module, '_migration', return_value=fake_service):
+        monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
-    result = transfer_data_tool(
-        "postgres",
-        "conn",
-        "source.accdb",
-        transfer_mode="batch",
-        verification_mode="count-only",
-    )
+        result = transfer_data_tool(
+            "postgres",
+            "conn",
+            "source.accdb",
+            transfer_mode="batch",
+            verification_mode="count-only",
+        )
 
-    assert result["success"] is True
-    assert len(fake_service.transfer_calls) == 1
-    assert fake_service.transfer_calls[0]["transfer_mode"] == "batch"
-    assert fake_service.transfer_calls[0]["verification_mode"] == "count-only"
+        assert result["success"] is True
+        assert len(fake_service.transfer_calls) == 1
+        assert fake_service.transfer_calls[0]["transfer_mode"] == "batch"
+        assert fake_service.transfer_calls[0]["verification_mode"] == "count-only"
 
 
 def test_mcp_transfer_data_forwards_odbc_connection_string(monkeypatch):
     """MCP transfer_data forwards odbc_connection_string to migration service unchanged."""
+    from unittest.mock import patch
     fake_service = _FakeMigrationService()
     fake_adapter = _FakeAdapter()
     fake_selector = _make_fake_selector(fake_adapter)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
+    with patch.object(migration_module, '_migration', return_value=fake_service):
+        monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
-    odbc_conn_str = "DRIVER={PostgreSQL Unicode};SERVER=test;PORT=5432;DATABASE=test;UID=u;PWD=p"
-    result = transfer_data_tool(
-        "postgres",
-        "conn",
-        "source.accdb",
-        odbc_connection_string=odbc_conn_str,
-    )
+        odbc_conn_str = "DRIVER={PostgreSQL Unicode};SERVER=test;PORT=5432;DATABASE=test;UID=u;PWD=p"
+        result = transfer_data_tool(
+            "postgres",
+            "conn",
+            "source.accdb",
+            odbc_connection_string=odbc_conn_str,
+        )
 
-    assert result["success"] is True
-    assert len(fake_service.transfer_calls) == 1
-    assert fake_service.transfer_calls[0]["odbc_connection_string"] == odbc_conn_str
+        assert result["success"] is True
+        assert len(fake_service.transfer_calls) == 1
+        assert fake_service.transfer_calls[0]["odbc_connection_string"] == odbc_conn_str
 
 
 def test_mcp_transfer_data_omitting_odbc_connection_string_records_none(monkeypatch):
     """MCP transfer_data with no odbc_connection_string passes None to service."""
+    from unittest.mock import patch
     fake_service = _FakeMigrationService()
     fake_adapter = _FakeAdapter()
     fake_selector = _make_fake_selector(fake_adapter)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "migration_service", fake_service)
-    monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
+    with patch.object(migration_module, '_migration', return_value=fake_service):
+        monkeypatch.setitem(transfer_data_tool.__globals__, "BackendSelector", fake_selector)
 
-    result = transfer_data_tool("postgres", "conn", "source.accdb")
+        result = transfer_data_tool("postgres", "conn", "source.accdb")
 
-    assert result["success"] is True
-    assert len(fake_service.transfer_calls) == 1
-    assert fake_service.transfer_calls[0]["odbc_connection_string"] is None
+        assert result["success"] is True
+        assert len(fake_service.transfer_calls) == 1
+        assert fake_service.transfer_calls[0]["odbc_connection_string"] is None

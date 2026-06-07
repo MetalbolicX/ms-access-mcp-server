@@ -1,22 +1,33 @@
 """Migration tools for MS Access database — Phase 1 SDD."""
 from types import SimpleNamespace
 
-from .server import mcp, connection_service, migration_service
+from .server import mcp
+from .container import get_container
 from ..services.backend_selector import BackendSelector, SCHEMA_CAPS, DATA_READ_CAPS
+
+
+def _pool():
+    """Lazy accessor for the connection pool."""
+    return get_container().connection_pool
+
+
+def _migration():
+    """Lazy accessor for the migration service."""
+    return get_container().migration
 
 
 def _find_connection_by_path(database_path: str):
     """Find a pool connection by database path, returning (name, state) or None."""
     try:
-        for name, state in connection_service.list().items():
+        for name, state in _pool().list().items():
             if state.db_path.replace("\\", "/").lower() == database_path.replace("\\", "/").lower():
                 return name, state
     except Exception:
         pass
 
     # Backward-compatible singleton seam used by older tests and callers.
-    current_database = getattr(connection_service, "current_database", None)
-    adapter = getattr(connection_service, "adapter", None)
+    current_database = getattr(_pool(), "current_database", None)
+    adapter = getattr(_pool(), "adapter", None)
     if current_database and adapter is not None:
         if current_database.replace("\\", "/").lower() == database_path.replace("\\", "/").lower():
             return "default", SimpleNamespace(adapter=adapter, db_path=current_database)
@@ -33,8 +44,8 @@ def extract_schema(database_path: str) -> dict:
     """
     # Try to reuse an existing connection to the same database
     conn_name, state = _find_connection_by_path(database_path)
-    if state is not None and connection_service.is_connected(conn_name):
-        schema = migration_service.extract_schema(state.adapter, database_path)
+    if state is not None and _pool().is_connected(conn_name):
+        schema = _migration().extract_schema(state.adapter, database_path)
         return {"success": True, "schema": schema.model_dump(), "reused_connection": True, "connection_name": conn_name}
 
     # Route through BackendSelector to get an adapter with schema introspection capabilities
@@ -45,7 +56,7 @@ def extract_schema(database_path: str) -> dict:
     )
     if not adapter.connect(database_path):
         return {"success": False, "error": "Failed to connect to database"}
-    schema = migration_service.extract_schema(adapter, database_path)
+    schema = _migration().extract_schema(adapter, database_path)
     adapter.disconnect()
     return {"success": True, "schema": schema.model_dump(), "reused_connection": False}
 
@@ -62,7 +73,7 @@ def upload_schema(target_type: str, connection_string: str, schema_json: dict) -
     """
     from ..models.migration import ExtractedSchema
     schema = ExtractedSchema(**schema_json)
-    result = migration_service.upload_schema(target_type, connection_string, schema)
+    result = _migration().upload_schema(target_type, connection_string, schema)
     return result
 
 
@@ -100,7 +111,7 @@ def transfer_data(
     # Reuse existing connection if available
     conn_name, state = _find_connection_by_path(database_path)
     owns_connection = False
-    if state is not None and connection_service.is_connected(conn_name):
+    if state is not None and _pool().is_connected(conn_name):
         adapter = state.adapter
     else:
         adapter = BackendSelector.get_adapter(
@@ -115,13 +126,13 @@ def transfer_data(
     if schema_json:
         schema = ExtractedSchema(**schema_json)
     else:
-        schema = migration_service.extract_schema(adapter, database_path)
+        schema = _migration().extract_schema(adapter, database_path)
 
     deserialized_overrides: dict[str, TableTransferConfig] | None = None
     if table_overrides is not None:
         deserialized_overrides = {k: TableTransferConfig(**v) for k, v in table_overrides.items()}
 
-    result = migration_service.transfer_data(
+    result = _migration().transfer_data(
         target_type,
         connection_string,
         schema,
@@ -144,4 +155,4 @@ def get_migration_status(job_id: str) -> dict:
     Args:
         job_id: Migration job ID returned from transfer_data
     """
-    return migration_service.get_job_status(job_id)
+    return _migration().get_job_status(job_id)

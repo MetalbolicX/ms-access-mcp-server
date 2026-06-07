@@ -2,7 +2,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from ms_access_mcp.mcp import server
+from ms_access_mcp.mcp import server  # noqa: F401
+from ms_access_mcp.mcp import linked_tables as linked_tables_module
 
 
 class TestLinkedTablesConnectionGuards:
@@ -18,7 +19,7 @@ class TestLinkedTablesConnectionGuards:
         """Each linked table tool should return error when not connected."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = False
-        with patch.dict(tool_func.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = tool_func(*args)
             assert result["success"] is False
             assert "Not connected" in result["error"]
@@ -34,7 +35,7 @@ class TestGetLinkedTables:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_linked_tables.return_value = {"success": True, "tables": []}
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.get_linked_tables.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.get_linked_tables()
             assert result["success"] is True
             mock_conn.adapter.get_linked_tables.assert_called_once()
@@ -46,7 +47,7 @@ class TestGetLinkedTables:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.get_linked_tables.side_effect = RuntimeError("DAO error")
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.get_linked_tables.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.get_linked_tables()
             assert result["success"] is False
             assert "DAO error" in result["error"]
@@ -63,7 +64,7 @@ class TestCreateLinkedTable:
         mock_conn.adapter.create_linked_table.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
         args = ("lnkName", "RemoteT", "ODBC;DSN=test")
-        with patch.dict(server.create_linked_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.create_linked_table(*args)
             assert result["success"] is True
             mock_conn.adapter.create_linked_table.assert_called_once_with("lnkName", "RemoteT", "ODBC;DSN=test")
@@ -76,7 +77,7 @@ class TestCreateLinkedTable:
         mock_conn.adapter.create_linked_table.side_effect = RuntimeError("Link failed")
         mock_conn.get_adapter.return_value = mock_conn.adapter
         args = ("lnkName", "RemoteT", "ODBC;DSN=bad")
-        with patch.dict(server.create_linked_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.create_linked_table(*args)
             assert result["success"] is False
             assert "Link failed" in result["error"]
@@ -92,7 +93,7 @@ class TestRefreshLinkedTable:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.refresh_linked_table.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.refresh_linked_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.refresh_linked_table("existing_link")
             assert result["success"] is True
             mock_conn.adapter.refresh_linked_table.assert_called_once_with("existing_link")
@@ -108,7 +109,7 @@ class TestUnlinkTable:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.unlink_table.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.dict(server.unlink_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.unlink_table("lnkName")
             assert result["success"] is True
             mock_conn.adapter.unlink_table.assert_called_once_with("lnkName")
@@ -130,7 +131,7 @@ class TestLinkedTablesComOnlyError:
             "get_linked_tables requires COM automation (WinComAdapter)"
         )
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.get_linked_tables.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.get_linked_tables()
             assert result["success"] is False
             assert "COM automation" in result["error"]
@@ -146,7 +147,7 @@ class TestLinkedTablesComOnlyError:
             "create_linked_table requires COM automation (WinComAdapter)"
         )
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.create_linked_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.create_linked_table("lnk", "RemoteT", "ODBC;DSN=test")
             assert result["success"] is False
             assert "COM automation" in result["error"]
@@ -162,7 +163,7 @@ class TestLinkedTablesComOnlyError:
             "refresh_linked_table requires COM automation (WinComAdapter)"
         )
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.refresh_linked_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.refresh_linked_table("lnk")
             assert result["success"] is False
             assert "COM automation" in result["error"]
@@ -178,7 +179,7 @@ class TestLinkedTablesComOnlyError:
             "unlink_table requires COM automation (WinComAdapter)"
         )
         mock_conn.get_adapter.return_value = mock_adapter
-        with patch.dict(server.unlink_table.__globals__, connection_service=mock_conn):
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
             result = server.unlink_table("lnk")
             assert result["success"] is False
             assert "COM automation" in result["error"]

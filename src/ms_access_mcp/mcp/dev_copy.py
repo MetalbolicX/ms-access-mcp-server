@@ -1,28 +1,39 @@
 """Dev copy, backup/restore, and compact/repair tools for MS Access — Phase 1 SDD.
 
 Note: Dev copy operations work with the active connection and require
-connection_service to have adapter and current_database properties.
+the connection pool to have adapter and current_database properties.
 """
-from .server import mcp, connection_service, dev_copy_service
+from .server import mcp
+from .container import get_container
+
+
+def _pool():
+    """Lazy accessor for the connection pool."""
+    return get_container().connection_pool
+
+
+def _dev_copy():
+    """Lazy accessor for the dev copy service."""
+    return get_container().dev_copy
 
 
 def _get_adapter(connection_name: str = "default"):
     """Get adapter for a named connection, or return None if not found."""
     try:
-        return connection_service.get_adapter(connection_name)
+        return _pool().get_adapter(connection_name)
     except KeyError:
         return None
 
 
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
-    return connection_service.is_connected(connection_name)
+    return _pool().is_connected(connection_name)
 
 
 def _get_current_db_path(connection_name: str = "default"):
     """Get current database path for a connection."""
     try:
-        return connection_service.get(connection_name).db_path
+        return _pool().get(connection_name).db_path
     except KeyError:
         return None
 
@@ -335,7 +346,7 @@ def create_dev_copy(backup_dir: str | None = None, connection_name: str = "defau
         return {"success": False, "error": "No adapter available"}
 
     try:
-        result = dev_copy_service.create_dev_copy(connection_service, adapter, backup_dir)
+        result = _dev_copy().create_dev_copy(_pool(), adapter, backup_dir)
         return result
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -365,7 +376,7 @@ def deploy_dev_copy(production_path: str | None = None, connection_name: str = "
         return {"success": False, "error": "No adapter available"}
 
     try:
-        result = dev_copy_service.deploy_dev_copy(connection_service, adapter, production_path)
+        result = _dev_copy().deploy_dev_copy(_pool(), adapter, production_path)
         return result
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -391,7 +402,7 @@ def discard_dev_copy(production_path: str | None = None, connection_name: str = 
         return {"success": False, "error": "No adapter available"}
 
     try:
-        result = dev_copy_service.discard_dev_copy(connection_service, adapter, production_path)
+        result = _dev_copy().discard_dev_copy(_pool(), adapter, production_path)
         return result
     except Exception as e:
         return {"success": False, "error": str(e)}
@@ -411,12 +422,12 @@ def get_dev_copy_status(db_path: str | None = None) -> dict:
     """
     if db_path is None:
         try:
-            result = dev_copy_service.get_dev_copy_status()
+            result = _dev_copy().get_dev_copy_status()
             return result
         except Exception as e:
             return {"active": False, "error": str(e)}
     try:
-        result = dev_copy_service.get_dev_copy_status(db_path)
+        result = _dev_copy().get_dev_copy_status(db_path)
         return result
     except Exception as e:
         return {"active": False, "error": str(e)}
