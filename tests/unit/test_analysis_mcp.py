@@ -1,22 +1,21 @@
 """Tests for analysis MCP tool — Phase 4.3."""
 
-import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 
 # Import server first to resolve circular dependency
 from ms_access_mcp.mcp import server  # noqa: F401
-from ms_access_mcp.mcp import analysis as analysis_module
+from ms_access_mcp.mcp import _helpers
 
 
 class TestAnalyzeQueryToolRegistration:
     """Verify analyze_query tool is registered with MCP server."""
 
-    def test_analyze_query_tool_registered(self):
+    @pytest.mark.anyio
+    async def test_analyze_query_tool_registered(self):
         """4.3 RED: analyze_query tool must be registered in MCP server."""
-        import asyncio
         from ms_access_mcp.mcp.server import mcp
-        tool_names = [tool.name for tool in asyncio.run(mcp.list_tools())]
+        tool_names = [tool.name for tool in await mcp.list_tools()]
         assert "analyze_query" in tool_names
 
 
@@ -55,7 +54,7 @@ class TestAnalyzeQueryTool:
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
 
-        with patch.object(analysis_module, '_pool', return_value=mock_pool):
+        with patch.object(_helpers, '_pool', return_value=mock_pool):
             result = analyze_query(
                 sql="SELECT * FROM Customers",
                 connection_name="test_conn",
@@ -79,7 +78,7 @@ class TestAnalyzeQueryTool:
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
 
-        with patch.object(analysis_module, '_pool', return_value=mock_pool):
+        with patch.object(_helpers, '_pool', return_value=mock_pool):
             result = analyze_query(
                 sql="SELECT * FROM Customers",
                 connection_name="test_conn",
@@ -107,7 +106,7 @@ class TestAnalyzeQueryTool:
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
 
-        with patch.object(analysis_module, '_pool', return_value=mock_pool):
+        with patch.object(_helpers, '_pool', return_value=mock_pool):
             result = analyze_query(
                 sql="SELECT * FROM Customers",
                 connection_name="test_conn",

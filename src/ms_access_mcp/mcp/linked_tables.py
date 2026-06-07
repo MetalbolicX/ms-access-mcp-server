@@ -1,24 +1,6 @@
 """Linked table tools for MS Access database — Phase 1 SDD."""
 from .server import mcp
-from .container import get_container
-
-
-def _pool():
-    """Lazy accessor for the connection pool."""
-    return get_container().connection_pool
-
-
-def _get_adapter(connection_name: str = "default"):
-    """Get adapter for a named connection, or return None if not found."""
-    try:
-        return _pool().get_adapter(connection_name)
-    except KeyError:
-        return None
-
-
-def _check_connected(connection_name: str = "default"):
-    """Check if a named connection is connected."""
-    return _pool().is_connected(connection_name)
+from ._helpers import _get_adapter, _check_connected
 
 
 @mcp.tool()
