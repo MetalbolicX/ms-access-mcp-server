@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from ..adapters.base import AccessAdapter
+from ..adapters.interfaces import ISchemaAdapter
 from ..models.migration import ExtractedSchema, TableSchema, ColumnSchema
 
 
@@ -16,7 +16,7 @@ class SchemaExtractor:
     2. get_tables() — fallback, builds TableSchema from raw table/field objects
     """
 
-    def extract(self, adapter: AccessAdapter, source_path: str) -> ExtractedSchema:
+    def extract(self, adapter: ISchemaAdapter, source_path: str) -> ExtractedSchema:
         """Extract schema from Access database via adapter.
 
         Args:

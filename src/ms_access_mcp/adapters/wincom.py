@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 from typing import Optional, Callable, Any
 from .base import AccessAdapter
+from .interfaces import IDataAdapter, ISchemaAdapter, IUiAdapter
 from .com_dispatcher import ComDispatcher, DAO_DB_FAIL_ON_ERROR
 from .vba_operations import VbaOperations
 from .ui_operations import UiOperations
@@ -31,7 +32,7 @@ from ..models.migration import (
 )
 
 
-class WinComAdapter(AccessAdapter):
+class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     """COM-based adapter using pywin32 for full Access automation.
 
     All COM operations are dispatched to a dedicated STA thread via ComDispatcher

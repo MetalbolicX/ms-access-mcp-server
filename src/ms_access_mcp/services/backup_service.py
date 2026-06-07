@@ -8,7 +8,7 @@ Handles:
 import os
 from typing import Callable, Optional
 
-from ..adapters.base import AccessAdapter
+from ..adapters.interfaces import IUiAdapter
 
 
 class BackupService:
@@ -154,7 +154,7 @@ class BackupService:
     # ========================================================================
 
     def export_module_backup(
-        self, adapter: AccessAdapter, module_name: str, backup_dir: str | None = None
+        self, adapter: IUiAdapter, module_name: str, backup_dir: str | None = None
     ) -> dict:
         """Export a VBA module's code to a .bas file.
 
@@ -175,7 +175,7 @@ class BackupService:
         )
 
     def import_module_from_text(
-        self, adapter: AccessAdapter, module_name: str, file_path: str
+        self, adapter: IUiAdapter, module_name: str, file_path: str
     ) -> dict:
         """Import a VBA module from a .bas text file.
 
@@ -240,7 +240,7 @@ class BackupService:
 
     def compile_with_retry(
         self,
-        adapter: AccessAdapter,
+        adapter: IUiAdapter,
         module_name: str,
         new_code: str,
         max_retries: int = 3,
@@ -298,7 +298,7 @@ class BackupService:
         }
 
     def restore_module_backup(
-        self, adapter: AccessAdapter, module_name: str, backup_path: str
+        self, adapter: IUiAdapter, module_name: str, backup_path: str
     ) -> dict:
         """Restore a VBA module from a .bas backup file.
 
@@ -320,7 +320,7 @@ class BackupService:
     # ========================================================================
 
     def export_form_backup(
-        self, adapter: AccessAdapter, form_name: str, backup_dir: str | None = None
+        self, adapter: IUiAdapter, form_name: str, backup_dir: str | None = None
     ) -> dict:
         """Export a form (including VBA code-behind) to a .txt file.
 
@@ -341,7 +341,7 @@ class BackupService:
         )
 
     def import_form_from_text(
-        self, adapter: AccessAdapter, form_name: str, file_path: str
+        self, adapter: IUiAdapter, form_name: str, file_path: str
     ) -> dict:
         """Import a form from a .txt text file.
 
@@ -365,7 +365,7 @@ class BackupService:
         )
 
     def restore_form_backup(
-        self, adapter: AccessAdapter, form_name: str, backup_path: str
+        self, adapter: IUiAdapter, form_name: str, backup_path: str
     ) -> dict:
         """Restore a form from a .txt backup file.
 
@@ -384,7 +384,7 @@ class BackupService:
     # ========================================================================
 
     def export_report_backup(
-        self, adapter: AccessAdapter, report_name: str, backup_dir: str | None = None
+        self, adapter: IUiAdapter, report_name: str, backup_dir: str | None = None
     ) -> dict:
         """Export a report (including VBA code-behind) to a .txt file.
 
@@ -405,7 +405,7 @@ class BackupService:
         )
 
     def import_report_from_file(
-        self, adapter: AccessAdapter, report_name: str, file_path: str
+        self, adapter: IUiAdapter, report_name: str, file_path: str
     ) -> dict:
         """Import a report from a .txt text file.
 
@@ -429,7 +429,7 @@ class BackupService:
         )
 
     def restore_report_backup(
-        self, adapter: AccessAdapter, report_name: str, backup_path: str
+        self, adapter: IUiAdapter, report_name: str, backup_path: str
     ) -> dict:
         """Restore a report from a .txt backup file.
 

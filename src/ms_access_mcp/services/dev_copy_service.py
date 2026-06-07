@@ -12,7 +12,7 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Optional
 
-from ..adapters.base import AccessAdapter
+from ..adapters.interfaces import IUiAdapter
 from .backup_service import BackupService
 from .connection import ConnectionService
 from .manifest_repository import ManifestRepository
@@ -105,7 +105,7 @@ class DevCopyService:
         return self._backup.get_backup_dir()
 
     def export_module_backup(
-        self, adapter: AccessAdapter, module_name: str, backup_dir: str | None = None
+        self, adapter: IUiAdapter, module_name: str, backup_dir: str | None = None
     ) -> dict:
         """Export a VBA module's code to a .bas file.
 
@@ -114,7 +114,7 @@ class DevCopyService:
         return self._backup.export_module_backup(adapter, module_name, backup_dir)
 
     def import_module_from_text(
-        self, adapter: AccessAdapter, module_name: str, file_path: str
+        self, adapter: IUiAdapter, module_name: str, file_path: str
     ) -> dict:
         """Import a VBA module from a .bas text file.
 
@@ -124,7 +124,7 @@ class DevCopyService:
 
     def compile_with_retry(
         self,
-        adapter: AccessAdapter,
+        adapter: IUiAdapter,
         module_name: str,
         new_code: str,
         max_retries: int = 3,
@@ -136,7 +136,7 @@ class DevCopyService:
         return self._backup.compile_with_retry(adapter, module_name, new_code, max_retries)
 
     def restore_module_backup(
-        self, adapter: AccessAdapter, module_name: str, backup_path: str
+        self, adapter: IUiAdapter, module_name: str, backup_path: str
     ) -> dict:
         """Restore a VBA module from a .bas backup file.
 
@@ -145,7 +145,7 @@ class DevCopyService:
         return self._backup.restore_module_backup(adapter, module_name, backup_path)
 
     def export_form_backup(
-        self, adapter: AccessAdapter, form_name: str, backup_dir: str | None = None
+        self, adapter: IUiAdapter, form_name: str, backup_dir: str | None = None
     ) -> dict:
         """Export a form (including VBA code-behind) to a .txt file.
 
@@ -154,7 +154,7 @@ class DevCopyService:
         return self._backup.export_form_backup(adapter, form_name, backup_dir)
 
     def import_form_from_text(
-        self, adapter: AccessAdapter, form_name: str, file_path: str
+        self, adapter: IUiAdapter, form_name: str, file_path: str
     ) -> dict:
         """Import a form from a .txt text file.
 
@@ -163,7 +163,7 @@ class DevCopyService:
         return self._backup.import_form_from_text(adapter, form_name, file_path)
 
     def restore_form_backup(
-        self, adapter: AccessAdapter, form_name: str, backup_path: str
+        self, adapter: IUiAdapter, form_name: str, backup_path: str
     ) -> dict:
         """Restore a form from a .txt backup file.
 
@@ -172,7 +172,7 @@ class DevCopyService:
         return self._backup.restore_form_backup(adapter, form_name, backup_path)
 
     def export_report_backup(
-        self, adapter: AccessAdapter, report_name: str, backup_dir: str | None = None
+        self, adapter: IUiAdapter, report_name: str, backup_dir: str | None = None
     ) -> dict:
         """Export a report (including VBA code-behind) to a .txt file.
 
@@ -181,7 +181,7 @@ class DevCopyService:
         return self._backup.export_report_backup(adapter, report_name, backup_dir)
 
     def import_report_from_file(
-        self, adapter: AccessAdapter, report_name: str, file_path: str
+        self, adapter: IUiAdapter, report_name: str, file_path: str
     ) -> dict:
         """Import a report from a .txt text file.
 
@@ -190,7 +190,7 @@ class DevCopyService:
         return self._backup.import_report_from_file(adapter, report_name, file_path)
 
     def restore_report_backup(
-        self, adapter: AccessAdapter, report_name: str, backup_path: str
+        self, adapter: IUiAdapter, report_name: str, backup_path: str
     ) -> dict:
         """Restore a report from a .txt backup file.
 
@@ -229,7 +229,7 @@ class DevCopyService:
             return 0.0
 
     def create_dev_copy(
-        self, conn_service: ConnectionService, adapter: AccessAdapter, backup_dir: str | None = None
+        self, conn_service: ConnectionService, adapter: IUiAdapter, backup_dir: str | None = None
     ) -> dict:
         """Copy the production database to a dev sandbox and switch connection.
 
@@ -315,7 +315,7 @@ class DevCopyService:
 
         return result
 
-    def deploy_dev_copy(self, conn_service: ConnectionService, adapter: AccessAdapter, production_path: str | None = None) -> dict:
+    def deploy_dev_copy(self, conn_service: ConnectionService, adapter: IUiAdapter, production_path: str | None = None) -> dict:
         """Deploy the active dev copy back to production.
 
         Creates a .bak backup of production, copies the dev copy over production,
@@ -373,7 +373,7 @@ class DevCopyService:
             "bak_path": bak_path,
         }
 
-    def discard_dev_copy(self, conn_service: ConnectionService, adapter: AccessAdapter, production_path: str | None = None) -> dict:
+    def discard_dev_copy(self, conn_service: ConnectionService, adapter: IUiAdapter, production_path: str | None = None) -> dict:
         """Discard the active dev copy and reconnect to production.
 
         Deletes the dev copy, removes the manifest, and reconnects to production.

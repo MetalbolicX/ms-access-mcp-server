@@ -1,24 +1,29 @@
 """Com-only adapter mixin — provides NotImplementedError stubs for all COM-only operations.
 
-OdbcAdapter inherits this mixin to satisfy the AccessAdapter protocol without
+OdbcAdapter inherits this mixin to satisfy the IUiAdapter protocol without
 requiring COM automation. Each stub raises NotImplementedError("requires COM automation").
 
 Methods that OdbcAdapter implements itself (ODBC data operations) are NOT in this mixin:
-- execute_query, insert_data, update_data, delete_data
-- export_data
-- get_tables, get_queries, create_query, set_query_sql, delete_query, create_table, delete_table
-- export_schema_ddl
+- execute_query, insert_data, update_data, delete_data (IDataAdapter)
+- export_data (IDataAdapter)
+- get_tables, get_queries, create_query, set_query_sql, delete_query, create_table, delete_table (ISchemaAdapter)
+- get_linked_tables, create_linked_table, refresh_linked_table, unlink_table (ISchemaAdapter)
+- export_schema_ddl (ISchemaAdapter)
 - compact_repair (returns error dict), copy_database (returns False)
+
+The mixin satisfies the protocol requirement that all IUiAdapter methods exist,
+while OdbcAdapter's own implementations override these stubs for the methods it supports
+(like copy_database which returns False instead of raising).
 """
 
 from typing import Any
 
 
 class ComOnlyAdapterMixin:
-    """NotImplementedError stubs for COM-only AccessAdapter methods.
+    """NotImplementedError stubs for COM-only IUiAdapter methods.
 
-    OdbcAdapter inherits from both AccessAdapter (via base.py) and this mixin.
-    The mixin satisfies the protocol requirement that all AccessAdapter methods exist,
+    OdbcAdapter inherits from both IDataAdapter/ISchemaAdapter and this mixin.
+    The mixin satisfies the protocol requirement that all IUiAdapter methods exist,
     while OdbcAdapter's own implementations override these stubs for the methods it supports
     (like copy_database which returns False instead of raising).
     """

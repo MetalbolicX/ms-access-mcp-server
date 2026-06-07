@@ -2,6 +2,7 @@ import os
 from typing import Any, Optional
 import pyodbc
 from .base import AccessAdapter
+from .interfaces import IDataAdapter, ISchemaAdapter
 from .com_only_mixin import ComOnlyAdapterMixin
 from ..models.database import (
     TableInfo,
@@ -18,12 +19,12 @@ ACE_OLEDB_12 = "Microsoft.ACE.OLEDB.12.0"
 ACE_OLEDB_16 = "Microsoft.ACE.OLEDB.16.0"
 
 
-class OdbcAdapter(ComOnlyAdapterMixin, AccessAdapter):
+class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     """Data-only adapter using pyodbc for fast read-only access.
 
     Inherits ComOnlyAdapterMixin first so its NotImplementedError stubs
     take precedence over AccessAdapter protocol stubs for COM-only methods.
-    Implements IDataAdapter + ISchemaAdapter (via AccessAdapter protocol).
+    Implements IDataAdapter + ISchemaAdapter (via interfaces).
     """
 
     # Default driver string — used when ACCESS_MCP_ODBC_DRIVER is not set

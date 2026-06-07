@@ -1,8 +1,9 @@
 """Stateless orchestrator wrapping versioning operations.
 
-All methods accept an AccessAdapter and return standardized dicts.
+All methods accept an IUiAdapter and return standardized dicts.
 """
 import os
+from ..adapters.interfaces import IUiAdapter
 from ..services.dev_copy_service import DevCopyService
 
 
@@ -20,12 +21,12 @@ class VersioningOrchestrator:
             self._dev_copy_service = DevCopyService()
         return self._dev_copy_service
 
-    def export_all(self, output_dir, adapter, dedup=True, module_ext=".bas"):
+    def export_all(self, output_dir, adapter: IUiAdapter, dedup=True, module_ext=".bas"):
         """Export all forms, reports, modules, macros, and queries to a directory structure.
 
         Args:
             output_dir: Root directory for export
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
             dedup: If True, skip export when SHA256 of content matches existing file
             module_ext: Extension for module files, '.bas' (default) or '.txt'
 
@@ -42,12 +43,12 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def import_all(self, input_dir, adapter):
+    def import_all(self, input_dir, adapter: IUiAdapter):
         """Import all objects from a directory structure.
 
         Args:
             input_dir: Root directory containing exported objects
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), and adapter result data
@@ -60,12 +61,12 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def compare(self, export_dir, adapter):
+    def compare(self, export_dir, adapter: IUiAdapter):
         """Compare objects in the DB against exported files.
 
         Args:
             export_dir: Directory containing exported objects to compare against
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), and comparison result
@@ -78,12 +79,12 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def export_schema_ddl(self, output_dir, adapter):
+    def export_schema_ddl(self, output_dir, adapter: IUiAdapter):
         """Export table schemas as DDL files.
 
         Args:
             output_dir: Root directory for DDL output
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), and adapter result data
@@ -96,12 +97,12 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def export_module_backup(self, module_name, adapter, backup_dir=None):
+    def export_module_backup(self, module_name, adapter: IUiAdapter, backup_dir=None):
         """Export a VBA module's code to a .bas file.
 
         Args:
             module_name: Name of the VBA module to export
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
             backup_dir: Optional custom backup directory
 
         Returns:
@@ -116,13 +117,13 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def import_module_from_text(self, module_name, file_path, adapter):
+    def import_module_from_text(self, module_name, file_path, adapter: IUiAdapter):
         """Import a VBA module from a .bas text file.
 
         Args:
             module_name: Name of the module to import
             file_path: Path to the .bas file
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), etc.
@@ -136,12 +137,12 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def export_form_backup(self, form_name, adapter, backup_dir=None):
+    def export_form_backup(self, form_name, adapter: IUiAdapter, backup_dir=None):
         """Export a form (including VBA code-behind) to a .txt file.
 
         Args:
             form_name: Name of the form to export
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
             backup_dir: Optional custom backup directory
 
         Returns:
@@ -156,13 +157,13 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def import_form_from_file(self, form_name, file_path, adapter):
+    def import_form_from_file(self, form_name, file_path, adapter: IUiAdapter):
         """Import a form from a .txt text file.
 
         Args:
             form_name: Name of the form to import
             file_path: Path to the .txt file
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), etc.
@@ -176,13 +177,13 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def restore_form_backup(self, form_name, backup_path, adapter):
+    def restore_form_backup(self, form_name, backup_path, adapter: IUiAdapter):
         """Restore a form from a .txt backup file.
 
         Args:
             form_name: Name of the form to restore
             backup_path: Path to the .txt backup file
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), etc.
@@ -196,12 +197,12 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def export_report_backup(self, report_name, adapter, backup_dir=None):
+    def export_report_backup(self, report_name, adapter: IUiAdapter, backup_dir=None):
         """Export a report (including VBA code-behind) to a .txt file.
 
         Args:
             report_name: Name of the report to export
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
             backup_dir: Optional custom backup directory
 
         Returns:
@@ -216,13 +217,13 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def import_report_from_file(self, report_name, file_path, adapter):
+    def import_report_from_file(self, report_name, file_path, adapter: IUiAdapter):
         """Import a report from a .txt text file.
 
         Args:
             report_name: Name of the report to import
             file_path: Path to the .txt file
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), etc.
@@ -236,13 +237,13 @@ class VersioningOrchestrator:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def restore_report_backup(self, report_name, backup_path, adapter):
+    def restore_report_backup(self, report_name, backup_path, adapter: IUiAdapter):
         """Restore a report from a .txt backup file.
 
         Args:
             report_name: Name of the report to restore
             backup_path: Path to the .txt backup file
-            adapter: AccessAdapter instance
+            adapter: IUiAdapter instance
 
         Returns:
             dict with success (bool), error (str|None), etc.

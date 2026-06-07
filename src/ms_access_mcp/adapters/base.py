@@ -19,7 +19,14 @@ from .interfaces import IDataAdapter, ISchemaAdapter, IUiAdapter
 
 @runtime_checkable
 class AccessAdapter(Protocol):
-    """Abstract interface for MS Access operations — full surface area."""
+    """Abstract interface for MS Access operations — full surface area.
+
+    .. deprecated::
+        AccessAdapter is deprecated. Use IDataAdapter, ISchemaAdapter,
+        or IUiAdapter from adapters.interfaces instead. These segregated
+        interfaces provide better separation of concerns and LSP compliance.
+        AccessAdapter is retained for backward compatibility only.
+    """
 
     def connect(self, db_path: str) -> bool: ...
 

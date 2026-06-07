@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 from typing import Optional
 
 from ..models.migration import MigrationJob, ExtractedSchema, TableResult, TableSchema, ColumnSchema, TableTransferConfig
-from ..adapters.base import AccessAdapter
+from ..adapters.interfaces import ISchemaAdapter, IDataAdapter
+from ..adapters.base import AccessAdapter  # For execute_raw_sql compatibility
 from .job_tracker import JobTracker
 from .schema_mapper import SchemaMapper
 from .verification import VerificationService
@@ -29,7 +30,7 @@ class MigrationService:
         self._verification = VerificationService()
         self._connector_registry = connector_registry or _default_registry
 
-    def extract_schema(self, adapter: AccessAdapter, source_path: str) -> ExtractedSchema:
+    def extract_schema(self, adapter: ISchemaAdapter, source_path: str) -> ExtractedSchema:
         """Extract schema from Access database via adapter."""
         return self._schema_extractor.extract(adapter, source_path)
 
@@ -150,7 +151,7 @@ class MigrationService:
         target_type: str,
         connection_string: str,
         schema: ExtractedSchema,
-        adapter: AccessAdapter,
+        adapter: IDataAdapter,
         job_id: str | None = None,
         *,
         transfer_mode: str = "auto",
