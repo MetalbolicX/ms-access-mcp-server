@@ -1,13 +1,9 @@
-import os
-import json
 import uuid
 import hashlib
 from datetime import UTC, datetime
-from typing import Optional
 
-from ..models.migration import MigrationJob, ExtractedSchema, TableResult, TableSchema, ColumnSchema, TableTransferConfig
+from ..models.migration import ExtractedSchema, TableResult, TableTransferConfig
 from ..adapters.interfaces import ISchemaAdapter, IDataAdapter
-from ..adapters.base import AccessAdapter  # For execute_raw_sql compatibility
 from .job_tracker import JobTracker
 from .schema_mapper import SchemaMapper
 from .verification import VerificationService
@@ -265,12 +261,12 @@ class MigrationService:
             return {"success": False, "error": f"Job {job_id} not found"}
         return {"success": True, "job": job.model_dump()}
 
-    def execute_raw_sql(self, sql: str, adapter: AccessAdapter) -> dict:
+    def execute_raw_sql(self, sql: str, adapter: IDataAdapter) -> dict:
         """Execute a raw SQL statement via the adapter (passthrough path).
 
         Args:
             sql: Raw SQL string (e.g., INSERT INTO [ODBC;...].[table] SELECT ...)
-            adapter: Source adapter (must have execute_raw_sql method)
+            adapter: Source adapter (must implement IDataAdapter with execute_raw_sql)
 
         Returns:
             dict with success=True and rows_affected (int), or success=False and error.

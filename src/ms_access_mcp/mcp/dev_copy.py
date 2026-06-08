@@ -5,11 +5,7 @@ the connection pool to have adapter and current_database properties.
 """
 from .server import mcp, _get_path_guard
 from .container import get_container
-
-
-def _pool():
-    """Lazy accessor for the connection pool."""
-    return get_container().connection_pool
+from ._helpers import _pool, _get_adapter, _check_connected
 
 
 def _dev_copy():
@@ -36,8 +32,6 @@ def _validate_path(path: str) -> str:
     if guard is not None:
         return guard.validate(path)
     return path
-
-
 def _get_current_db_path(connection_name: str = "default"):
     """Get current database path for a connection."""
     try:

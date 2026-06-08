@@ -1,24 +1,6 @@
 """Query analysis MCP tool."""
 from .server import mcp
-
-
-def _pool():
-    """Lazy accessor for connection pool (avoids circular import at module level)."""
-    from .container import get_container
-    return get_container().connection_pool
-
-
-def _get_adapter(connection_name: str = "default"):
-    """Get adapter for a named connection, or return None if not found."""
-    try:
-        return _pool().get_adapter(connection_name)
-    except KeyError:
-        return None
-
-
-def _check_connected(connection_name: str = "default"):
-    """Check if a named connection is connected."""
-    return _pool().is_connected(connection_name)
+from ._helpers import _get_adapter, _check_connected
 
 
 @mcp.tool()
