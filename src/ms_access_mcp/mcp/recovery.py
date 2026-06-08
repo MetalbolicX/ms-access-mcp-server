@@ -12,17 +12,27 @@ def _pool():
 
 
 @mcp.tool()
-def recover_access() -> dict:
+def recover_access(confirm: bool = True) -> dict:
     """
     Kill hung Microsoft Access processes and reconnect all managed connections.
 
-    Executes taskkill /F /IM MSACCESS.EXE on Windows and attempts to
-    reconnect all previously managed connections.
+    Requires confirm=True to execute the kill operation. On Windows, executes
+    taskkill /F /PID {pid} for each owned connection's PID (scoped to the
+    current MCP session's connections).
+
+    Args:
+        confirm: Must be True to execute the kill operation. Defaults to True.
 
     Returns:
         dict with success status, reconnected connection names, and any errors
     """
-    return _pool().recover_access()
+    result = _pool().recover_access(confirm=confirm)
+    if result.get("confirm_required"):
+        return {
+            "success": False,
+            "error": "confirm=True required for destructive recovery operation",
+        }
+    return result
 
 
 @mcp.tool()

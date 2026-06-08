@@ -155,3 +155,70 @@ class TestNewReExports:
         from ms_access_mcp.mcp.server import recover_access, diagnose_environment
         assert callable(recover_access)
         assert callable(diagnose_environment)
+
+
+class TestMainGuard:
+    """Tests for __main__ guard that enables stdio transport."""
+
+    def test_main_guard_calls_mcp_run(self):
+        """The __main__ guard should call mcp.run() for stdio transport."""
+        import ms_access_mcp.mcp.server as server_module
+        import ast
+
+        # Read the source and parse for __main__ guard
+        source = open(server_module.__file__, "r").read()
+        tree = ast.parse(source)
+
+        # Find the __main__ guard block
+        has_main_guard = False
+        has_mcp_run_call = False
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.If):
+                # Check for `if __name__ == "__main__":`
+                if (isinstance(node.test, ast.Compare) and
+                    isinstance(node.test.left, ast.Name) and
+                    node.test.left.id == "__name__" and
+                    len(node.test.ops) == 1 and
+                    isinstance(node.test.ops[0], ast.Eq) and
+                    isinstance(node.test.comparators[0], ast.Constant) and
+                    node.test.comparators[0].value == "__main__"):
+                    has_main_guard = True
+                    # Check that mcp.run() is called within this block
+                    for child in ast.walk(node):
+                        if isinstance(child, ast.Call):
+                            if (isinstance(child.func, ast.Attribute) and
+                                child.func.attr == "run"):
+                                has_mcp_run_call = True
+
+        assert has_main_guard, "server.py should have `if __name__ == '__main__':` guard"
+        assert has_mcp_run_call, "server.py __main__ guard should call mcp.run()"
+
+
+class TestRunHttpTLS:
+    """Tests for TLS kwargs in run_http()."""
+
+    def test_run_http_accepts_ssl_kwargs(self):
+        """run_http should accept ssl_keyfile and ssl_certfile kwargs."""
+        from ms_access_mcp.mcp.server import run_http
+        import inspect
+
+        sig = inspect.signature(run_http)
+        param_names = list(sig.parameters.keys())
+
+        assert "ssl_keyfile" in param_names, "run_http should accept ssl_keyfile parameter"
+        assert "ssl_certfile" in param_names, "run_http should accept ssl_certfile parameter"
+
+    def test_run_http_ssl_kwargs_are_optional(self):
+        """ssl_keyfile and ssl_certfile should be optional (None defaults)."""
+        from ms_access_mcp.mcp.server import run_http
+        import inspect
+
+        sig = inspect.signature(run_http)
+        ssl_keyfile_param = sig.parameters.get("ssl_keyfile")
+        ssl_certfile_param = sig.parameters.get("ssl_certfile")
+
+        assert ssl_keyfile_param is not None, "ssl_keyfile parameter should exist"
+        assert ssl_certfile_param is not None, "ssl_certfile parameter should exist"
+        assert ssl_keyfile_param.default is None, "ssl_keyfile should default to None"
+        assert ssl_certfile_param.default is None, "ssl_certfile should default to None"

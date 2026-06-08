@@ -81,7 +81,7 @@ class TestQueryCrudTools:
         mock_conn.adapter.delete_query.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.object(crud_module, '_pool', return_value=mock_conn):
-            result = crud_module.delete_query("q1")
+            result = crud_module.delete_query("q1", confirm=True)
             assert result["success"] is True
             mock_conn.adapter.delete_query.assert_called_once_with("q1")
 
@@ -110,7 +110,7 @@ class TestTableCrudTools:
         mock_conn.adapter.delete_table.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.object(crud_module, '_pool', return_value=mock_conn):
-            result = crud_module.delete_table("T1")
+            result = crud_module.delete_table("T1", confirm=True)
             assert result["success"] is True
             mock_conn.adapter.delete_table.assert_called_once_with("T1")
 
@@ -162,6 +162,66 @@ class TestDataCrudTools:
         mock_conn.adapter.delete_data.return_value = {"success": True, "rows_deleted": 1}
         mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.object(crud_module, '_pool', return_value=mock_conn):
-            result = crud_module.delete_data("T1", {"ID": 1})
+            result = crud_module.delete_data("T1", {"ID": 1}, confirm=True)
             assert result["success"] is True
-            mock_conn.adapter.delete_data.assert_called_once()
+            mock_conn.adapter.delete_data.assert_called_once_with("T1", {"ID": 1})
+
+
+class TestDestructiveToolGuards:
+    """Tests for confirm=True / dry_run=True guards on destructive tools."""
+
+    @pytest.mark.parametrize("tool_func,args", [
+        (crud_module.delete_data, ("T1", {"ID": 1})),
+        (crud_module.delete_table, ("T1",)),
+        (crud_module.delete_query, ("q1",)),
+    ])
+    def test_destructive_tool_rejected_without_confirm(self, tool_func, args):
+        """Destructive tool must raise ValueError when confirm=False (default)."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.delete_data.return_value = {"success": True}
+        mock_conn.adapter.delete_table.return_value = {"success": True}
+        mock_conn.adapter.delete_query.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = tool_func(*args)
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+
+    @pytest.mark.parametrize("tool_func,args", [
+        (crud_module.delete_data, ("T1", {"ID": 1})),
+        (crud_module.delete_table, ("T1",)),
+        (crud_module.delete_query, ("q1",)),
+    ])
+    def test_destructive_tool_executes_with_confirm_true(self, tool_func, args):
+        """Destructive tool executes when confirm=True."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.delete_data.return_value = {"success": True, "rows_deleted": 1}
+        mock_conn.adapter.delete_table.return_value = {"success": True}
+        mock_conn.adapter.delete_query.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = tool_func(*args, confirm=True)
+            assert result["success"] is True
+
+    @pytest.mark.parametrize("tool_func,args", [
+        (crud_module.delete_data, ("T1", {"ID": 1})),
+        (crud_module.delete_table, ("T1",)),
+        (crud_module.delete_query, ("q1",)),
+    ])
+    def test_destructive_tool_dry_run_returns_preview(self, tool_func, args):
+        """Destructive tool with dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = tool_func(*args, confirm=True, dry_run=True)
+            assert result.get("dry_run") is True
+            # No actual adapter call should be made
+            mock_conn.adapter.delete_data.assert_not_called()
+            mock_conn.adapter.delete_table.assert_not_called()
+            mock_conn.adapter.delete_query.assert_not_called()

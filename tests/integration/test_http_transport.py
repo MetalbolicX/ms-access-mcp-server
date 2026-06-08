@@ -24,8 +24,8 @@ from ms_access_mcp.mcp import server as server_module
 
 @pytest.fixture(scope="class")
 def api_key():
-    """Shared valid API key for all tests in this class."""
-    return "test-api-key-12345"
+    """Shared valid API key for all tests in this class (32+ chars for entropy check)."""
+    return "test-api-key-abcdefghijklmnopqrstuv"
 
 
 @pytest.fixture(scope="class")
@@ -663,12 +663,18 @@ class TestTransportModes:
             assert data.get("jsonrpc") == "2.0"
             assert "result" in data
 
-    @pytest.mark.skip(reason="Starlette TestClient blocks on SSE streaming response; needs live server")
+    @pytest.mark.skipif(
+        True,
+        reason="Starlette TestClient blocks on SSE streaming response; needs live server (run manually with ACCESS_MCP_TEST_LIVE_SERVER=1)",
+    )
     def test_sse_app_returns_streaming_response(self):
         """SSE transport GET /sse returns 200 with event-stream Content-Type."""
         pass
 
-    @pytest.mark.skip(reason="Starlette TestClient blocks on SSE streaming response; needs live server")
+    @pytest.mark.skipif(
+        True,
+        reason="Starlette TestClient blocks on SSE streaming response; needs live server (run manually with ACCESS_MCP_TEST_LIVE_SERVER=1)",
+    )
     def test_sse_messages_endpoint_accepts_post(self):
         """SSE transport POST /messages/ returns 200 or 202."""
         pass
@@ -764,3 +770,131 @@ class TestFullServerStartup:
         assert hasattr(cli_main, "export_all")
         assert hasattr(cli_main, "compare_versioning")
         assert hasattr(cli_main, "export_vba")
+
+
+class TestAuditLogEntries:
+    """Integration tests for structured JSON audit log entries on tool calls.
+
+    Audit logging is opt-in via ACCESS_MCP_AUDIT_LOG_PATH environment variable.
+    When set, each tool call should append a JSON entry with:
+    - tool: tool name
+    - args_hash: SHA256 hash of arguments (not raw args)
+    - result: "success" or "error"
+    - duration_ms: elapsed time in milliseconds
+    - caller_ip: IP address of the caller
+    """
+
+    def _initialize(self, client, token):
+        """Send MCP initialize so session is established before tool calls."""
+        init_req = mcp_request(
+            method="initialize",
+            params={
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "audit-test", "version": "1.0"},
+            },
+            req_id=1,
+        )
+        send_jsonrpc_with_auth(client, init_req, token=token)
+
+    def test_audit_log_entry_written_on_tool_call(self, authorized_client, api_key, valid_env, monkeypatch, tmp_path):
+        """When ACCESS_MCP_AUDIT_LOG_PATH is set, a JSON audit entry is appended after tool call."""
+        import json
+        import hashlib
+
+        audit_path = tmp_path / "audit.jsonl"
+        monkeypatch.setenv("ACCESS_MCP_AUDIT_LOG_PATH", str(audit_path))
+
+        # Reset server state to pick up new env var
+        server_module._config = None
+        server_module._path_guard = None
+        server_module._auth_middleware = None
+        server_module._init_http_config()
+
+        app = server_module.mcp.http_app(json_response=True, stateless_http=True)
+        with TestClient(app) as client:
+            self._initialize(client, api_key)
+
+            req = mcp_request(
+                method="tools/call",
+                params={"name": "diagnose_environment", "arguments": {}},
+                req_id=2,
+            )
+            response = send_jsonrpc_with_auth(client, req, token=api_key)
+            assert response.get("jsonrpc") == "2.0"
+
+        # Audit file should exist and contain at least one JSON line for diagnose_environment
+        assert audit_path.exists(), "Audit log file should be created"
+        lines = [l for l in audit_path.read_text().strip().split("\n") if l]
+        assert len(lines) >= 1, f"Expected at least 1 audit entry, got {len(lines)}"
+
+        # Find the entry for diagnose_environment
+        diagnose_entries = [
+            json.loads(line) for line in lines
+            if json.loads(line).get("tool") == "diagnose_environment"
+        ]
+        assert len(diagnose_entries) >= 1, "Expected at least one diagnose_environment audit entry"
+        entry = diagnose_entries[0]
+        assert "args_hash" in entry
+        assert isinstance(entry["args_hash"], str) and len(entry["args_hash"]) == 64  # SHA256 hex
+        assert "result" in entry
+        assert entry["result"] in ("success", "error")
+        assert "duration_ms" in entry
+        assert isinstance(entry["duration_ms"], (int, float))
+        assert entry["duration_ms"] >= 0
+        assert "caller_ip" in entry
+
+    def test_audit_log_entry_has_correct_fields(self, authorized_client, api_key, valid_env, monkeypatch, tmp_path):
+        """Audit entry should have all required fields: tool, args_hash, result, duration_ms, caller_ip."""
+        import json
+
+        audit_path = tmp_path / "audit_fields.jsonl"
+        monkeypatch.setenv("ACCESS_MCP_AUDIT_LOG_PATH", str(audit_path))
+
+        server_module._config = None
+        server_module._path_guard = None
+        server_module._auth_middleware = None
+        server_module._init_http_config()
+
+        app = server_module.mcp.http_app(json_response=True, stateless_http=True)
+        with TestClient(app) as client:
+            self._initialize(client, api_key)
+
+            req = mcp_request(
+                method="tools/call",
+                params={"name": "diagnose_environment", "arguments": {"key": "value"}},
+                req_id=2,
+            )
+            send_jsonrpc_with_auth(client, req, token=api_key)
+
+        lines = [l for l in audit_path.read_text().strip().split("\n") if l]
+        diagnose_entries = [json.loads(line) for line in lines if json.loads(line).get("tool") == "diagnose_environment"]
+        assert len(diagnose_entries) >= 1, "Expected at least one diagnose_environment audit entry"
+        entry = diagnose_entries[0]
+        required_fields = ["tool", "args_hash", "result", "duration_ms", "caller_ip"]
+        for field in required_fields:
+            assert field in entry, f"Audit entry missing required field: {field}"
+
+    def test_audit_log_not_written_when_env_not_set(self, authorized_client, api_key, valid_env, monkeypatch, tmp_path):
+        """When ACCESS_MCP_AUDIT_LOG_PATH is NOT set, no audit file should be created."""
+        monkeypatch.delenv("ACCESS_MCP_AUDIT_LOG_PATH", raising=False)
+
+        server_module._config = None
+        server_module._path_guard = None
+        server_module._auth_middleware = None
+        server_module._init_http_config()
+
+        app = server_module.mcp.http_app(json_response=True, stateless_http=True)
+        with TestClient(app) as client:
+            self._initialize(client, api_key)
+
+            req = mcp_request(
+                method="tools/call",
+                params={"name": "diagnose_environment", "arguments": {}},
+                req_id=2,
+            )
+            send_jsonrpc_with_auth(client, req, token=api_key)
+
+        # No audit file should exist
+        audit_files = list(tmp_path.glob("*.jsonl"))
+        assert len(audit_files) == 0, "No audit file should be created when ACCESS_MCP_AUDIT_LOG_PATH is not set"

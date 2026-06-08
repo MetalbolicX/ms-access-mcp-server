@@ -858,6 +858,60 @@ class TestWinComDataOperations:
         result = adapter.delete_data("t")
         assert result["success"] is False
 
+    def test_update_data_sqli_blocked_via_parameterization(self, adapter, mock_app, tmp_path):
+        """SQL injection attempt in where_dict value should be treated as literal string.
+
+        When parameterized queries are used, a value like "1; DROP TABLE users--"
+        is bound as a parameter, not executed as SQL.
+        """
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+        adapter.insert_data("users", {"id": 1, "name": "Alice"})
+        adapter.insert_data("users", {"id": 2, "name": "Bob"})
+
+        # Malicious where value — should be treated as a literal, not executed
+        result = adapter.update_data(
+            "users",
+            {"name": "Hacked"},
+            {"name": "1; DROP TABLE users--"},
+        )
+        # With parameterized queries, the malicious string is a literal value
+        # The table should still exist and have 2 rows (no rows updated because
+        # no name matches the literal string "1; DROP TABLE users--")
+        result_select = adapter.execute_query("SELECT COUNT(*) as cnt FROM users")
+        assert result_select["rows"][0]["cnt"] == 2  # table still intact, 2 rows
+
+    def test_delete_data_sqli_blocked_via_parameterization(self, adapter, mock_app, tmp_path):
+        """SQL injection attempt in where_dict should be treated as literal string on delete."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+        adapter.insert_data("users", {"id": 1, "name": "Alice"})
+        adapter.insert_data("users", {"id": 2, "name": "Bob"})
+
+        # Malicious where value
+        result = adapter.delete_data("users", {"name": "1; DROP TABLE users--"})
+        # Table should still exist (1 row deleted = 0, no match for literal string)
+        result_select = adapter.execute_query("SELECT COUNT(*) as cnt FROM users")
+        assert result_select["rows"][0]["cnt"] == 2  # table still intact
+
+    def test_update_data_obrien_escaped(self, adapter, mock_app, tmp_path):
+        """O'Brien with apostrophe should be safely handled via parameterization."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+        adapter.insert_data("users", {"id": 1, "name": "O'Brien"})
+
+        result = adapter.update_data("users", {"name": "Smith"}, {"name": "O'Brien"})
+        assert result["success"] is True
+
+        result = adapter.execute_query("SELECT name FROM users WHERE id=1")
+        assert result["rows"][0]["name"] == "Smith"
+
 
 class TestWinComSchema:
     """Schema operations — tables, queries, relationships."""

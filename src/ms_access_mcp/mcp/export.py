@@ -4,7 +4,7 @@ Replaces the old ``export_table_csv`` / ``export_query_json`` with a single
 ``export_data`` tool that accepts a ``format`` parameter (``csv``, ``json``,
 ``excel``).
 """
-from .server import mcp
+from .server import mcp, _get_path_guard
 
 
 def _pool():
@@ -70,6 +70,14 @@ def export_data(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+
+    # Validate output path
+    path_guard = _get_path_guard()
+    if path_guard is not None:
+        try:
+            file_path = path_guard.validate(file_path)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
 
     adapter = _get_adapter(connection_name)
     if adapter is None:

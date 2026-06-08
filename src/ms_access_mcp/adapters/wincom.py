@@ -30,6 +30,9 @@ from ..models.migration import (
     IndexSchema,
     UnknownMetadata,
 )
+from ..logging import get_logger
+
+_logger = get_logger(__name__)
 
 
 class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
@@ -116,8 +119,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                 return True
             except Exception as _ex:
                 self._dispatcher._release_com_safe()
-                import sys
-                print(f"[WinComAdapter] _do_connect FAILED: {_ex}", file=sys.stderr)
+                _logger.exception(f"[WinComAdapter] _do_connect FAILED: {_ex}")
                 return False
 
         return self._dispatcher.call(_do_connect)
@@ -129,7 +131,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         try:
             self._dispatcher.call(_do_disconnect)
         except Exception as e:
-            print(f"Cleanup warning: disconnect failed: {e}", file=sys.stderr)
+            _logger.warning(f"Cleanup warning: disconnect failed: {e}")
         self._dispatcher.shutdown()
         self._db_path = None
 

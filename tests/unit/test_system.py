@@ -486,6 +486,38 @@ class TestRecoverAccessTool:
             mock_pool.recover_access.assert_called_once()
             assert result["success"] is True
 
+    def test_recover_access_accepts_confirm_parameter(self):
+        """recover_access should accept confirm: bool = True parameter."""
+        # Check that the function signature accepts confirm
+        import inspect
+        sig = inspect.signature(server.recover_access)
+        params = list(sig.parameters.keys())
+        assert "confirm" in params, f"recover_access should have 'confirm' param, got: {params}"
+        # Default should be True
+        default = sig.parameters["confirm"].default
+        assert default is True, f"recover_access confirm default should be True, got: {default}"
+
+    def test_recover_access_rejects_confirm_false(self):
+        """recover_access with confirm=False should return error (confirm required)."""
+        mock_pool = MagicMock()
+        mock_pool.recover_access.return_value = {"success": False, "error": "confirm=True required"}
+        with patch.object(recovery_module, '_pool', return_value=mock_pool):
+            result = server.recover_access(confirm=False)
+            assert result["success"] is False
+            assert "confirm" in result.get("error", "").lower()
+
+    def test_recover_access_executes_with_confirm_true(self):
+        """recover_access with confirm=True should execute taskkill via pool."""
+        mock_pool = MagicMock()
+        mock_pool.recover_access.return_value = {
+            "success": True,
+            "reconnected": ["default"],
+            "confirm_required": None,
+        }
+        with patch.object(recovery_module, '_pool', return_value=mock_pool):
+            result = server.recover_access(confirm=True)
+            assert result["success"] is True
+
 
 class TestDiagnoseEnvironmentTool:
     """Tests for diagnose_environment tool."""

@@ -1,5 +1,5 @@
 """Persistence/versioning tools — export/import Access objects as text files."""
-from .server import mcp
+from .server import mcp, _get_path_guard
 
 
 def _pool():
@@ -19,6 +19,14 @@ def _get_adapter(connection_name: str = "default"):
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
     return _pool().is_connected(connection_name)
+
+
+def _validate_path(path: str) -> str:
+    """Validate a path through PathGuard, returning the absolute path or raising."""
+    guard = _get_path_guard()
+    if guard is not None:
+        return guard.validate(path)
+    return path
 
 
 # ============================================================================
@@ -254,6 +262,7 @@ def export_all_versioning(output_dir: str, connection_name: str = "default") -> 
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        output_dir = _validate_path(output_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.export_all(output_dir, adapter, dedup=True, module_ext=".bas")
@@ -276,6 +285,7 @@ def import_all_versioning(input_dir: str, connection_name: str = "default") -> d
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        input_dir = _validate_path(input_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.import_all(input_dir, adapter)
@@ -325,6 +335,7 @@ def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        output_dir = _validate_path(output_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.export_schema_ddl(output_dir, adapter)
@@ -349,5 +360,9 @@ def execute_sql_script(script_path: str, connection_name: str = "default") -> di
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = adapter.execute_sql_script(script_path)
-    return result
+    try:
+        script_path = _validate_path(script_path)
+        result = adapter.execute_sql_script(script_path)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}

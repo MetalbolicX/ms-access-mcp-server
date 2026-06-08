@@ -19,20 +19,32 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```cmd
 set ACCESS_MCP_API_KEY=<your-generated-key>
 set ACCESS_MCP_ALLOWED_DIRS=C:\MyDatabases;D:\SharedDBs
-set ACCESS_MCP_HOST=127.0.0.1
-set ACCESS_MCP_PORT=8000
 ```
 
 ### 4. Start server
+
+Using the installed script command:
+
+```cmd
+ms-access-mcp serve
+```
+
+Or using Python module syntax:
 
 ```cmd
 python -m ms_access_mcp.cli.main serve
 ```
 
-Or with CLI args:
+With CLI args:
 
 ```cmd
-python -m ms_access_mcp.cli.main serve --host 0.0.0.0 --port 8000 --api-key <key> --allowed-dirs "C:\Data;D:\DBs"
+ms-access-mcp serve --host 127.0.0.1 --port 8000 --api-key <key> --allowed-dirs "C:\Data;D:\DBs"
+```
+
+With TLS certificates:
+
+```cmd
+ms-access-mcp serve --ssl-keyfile /path/to/key.pem --ssl-certfile /path/to/cert.pem
 ```
 
 ## Client Setup (Linux/WSL)
@@ -99,7 +111,7 @@ uv sync   # pywin32 not needed on Linux
 export ACCESS_MCP_API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 export ACCESS_MCP_ALLOWED_DIRS=/path/to/databases
 
-python -m ms_access_mcp.mcp.server
+ms-access-mcp serve
 ```
 
 ### Limitations on Linux
@@ -122,9 +134,15 @@ Only expose port 8000 to trusted networks:
 netsh advfirewall firewall add rule name="MCP Access Server" dir=in action=allow protocol=tcp localport=8000 remoteip=192.168.1.0/24
 ```
 
-### TLS (recommended for production)
+### TLS
 
-Use a reverse proxy (nginx/caddy) with TLS termination:
+You can enable TLS directly via CLI options:
+
+```cmd
+ms-access-mcp serve --ssl-keyfile /path/to/key.pem --ssl-certfile /path/to/cert.pem
+```
+
+Alternatively, use a reverse proxy (nginx/caddy) with TLS termination:
 
 ```
 [Client] --HTTPS--> [Reverse Proxy:443] --HTTP--> [MCP Server:8000]
@@ -153,6 +171,10 @@ server {
 }
 ```
 
+### Remote Binding Warning
+
+Binding to `0.0.0.0` exposes the server to remote connections. The server will warn when starting with `--host 0.0.0.0` unless `ACCESS_MCP_ALLOW_REMOTE=1` is set.
+
 ### Database path restrictions
 
 The server only allows access to `.accdb` files in configured directories.
@@ -172,7 +194,7 @@ set ACCESS_MCP_API_KEY=<generated-key>
 set ACCESS_MCP_ALLOWED_DIRS=C:\AccessDatabases
 
 # 4. Start the server
-python -m ms_access_mcp.cli.main serve --host 127.0.0.1 --port 8000
+ms-access-mcp serve
 ```
 
 ## Environment Variables
@@ -183,3 +205,4 @@ python -m ms_access_mcp.cli.main serve --host 127.0.0.1 --port 8000
 | `ACCESS_MCP_HOST` | No | `127.0.0.1` | Bind address |
 | `ACCESS_MCP_PORT` | No | `8000` | Bind port |
 | `ACCESS_MCP_ALLOWED_DIRS` | No | User home | Semicolon-separated directory whitelist |
+| `ACCESS_MCP_ALLOW_REMOTE` | No | — | Set to `1` to acknowledge remote binding risk when using `0.0.0.0` |

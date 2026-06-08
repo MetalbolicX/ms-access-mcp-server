@@ -1,5 +1,5 @@
 """Schema and metadata tools for MS Access database — Phase 1 SDD."""
-from .server import mcp, _path_guard
+from .server import mcp, _get_path_guard
 
 
 def _pool():
@@ -106,9 +106,10 @@ def generate_sql(output_path: str, connection_name: str = "default") -> dict:
         return {"success": False, "error": "No adapter available"}
 
     # Validate output path
-    if _path_guard is not None:
+    path_guard = _get_path_guard()
+    if path_guard is not None:
         try:
-            output_path = _path_guard.validate(output_path)
+            output_path = path_guard.validate(output_path)
         except ValueError as e:
             return {"success": False, "error": str(e)}
 

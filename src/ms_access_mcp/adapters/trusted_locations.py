@@ -6,6 +6,10 @@ Extracted from WinComAdapter to respect SRP.
 import sys
 from typing import Any
 
+from ..logging import get_logger
+
+_logger = get_logger(__name__)
+
 
 def capture_trusted_locations() -> list[dict]:
     """Capture current Trusted Locations from Windows registry.
@@ -22,7 +26,7 @@ def capture_trusted_locations() -> list[dict]:
     try:
         import winreg
     except ImportError:
-        print("[trusted_locations] winreg not available, skipping Trusted Locations capture", file=sys.stderr)
+        _logger.debug("winreg not available, skipping Trusted Locations capture")
         return []
 
     locations: list[dict] = []
@@ -92,7 +96,7 @@ def restore_trusted_locations(locations: list[dict]) -> bool:
     try:
         import winreg
     except ImportError:
-        print("[trusted_locations] winreg not available, skipping Trusted Locations restore", file=sys.stderr)
+        _logger.debug("winreg not available, skipping Trusted Locations restore")
         return False
 
     def write_location(hkey: Any, subkey_path: str, locs: list[dict]) -> None:
@@ -120,5 +124,5 @@ def restore_trusted_locations(locations: list[dict]) -> bool:
         write_location(winreg.HKEY_CURRENT_USER, hkcu_path, locations)
         return True
     except Exception as e:
-        print(f"[trusted_locations] Failed to restore Trusted Locations: {e}", file=sys.stderr)
+        _logger.warning(f"Failed to restore Trusted Locations: {e}")
         return False

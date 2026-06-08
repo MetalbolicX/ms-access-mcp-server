@@ -1,4 +1,5 @@
 """CLI for MS Access MCP Server versioning operations."""
+import os
 import typer
 from pathlib import Path
 from typing import Literal, Optional
@@ -13,6 +14,51 @@ app = typer.Typer(help="MS Access versioning CLI")
 
 
 BACKEND_OPT = typer.Option("odbc", "--backend", "-b", help="Adapter backend: 'odbc' (cross-platform, default) or 'com' (Windows only, for VBA/forms)")
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Bind address"),
+    port: int = typer.Option(8000, "--port", "-p", help="Bind port"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", help="API key (or set ACCESS_MCP_API_KEY env var)"),
+    allowed_dirs: Optional[str] = typer.Option(None, "--allowed-dirs", help="Allowed directories (semicolon-separated)"),
+    transport: Literal["stdio", "http", "sse", "streamable-http"] = typer.Option("http", "--transport", "-t", help="Transport type"),
+    ssl_keyfile: Optional[str] = typer.Option(None, "--ssl-keyfile", help="SSL key file for TLS"),
+    ssl_certfile: Optional[str] = typer.Option(None, "--ssl-certfile", help="SSL certificate file for TLS"),
+) -> None:
+    """Start the MCP server with HTTP transport."""
+    # Set environment variables from CLI args
+    if host:
+        os.environ["ACCESS_MCP_HOST"] = host
+    if port:
+        os.environ["ACCESS_MCP_PORT"] = str(port)
+    if api_key:
+        os.environ["ACCESS_MCP_API_KEY"] = api_key
+    if allowed_dirs:
+        os.environ["ACCESS_MCP_ALLOWED_DIRS"] = allowed_dirs
+
+    # Warn on 0.0.0.0 bind unless ACCESS_MCP_ALLOW_REMOTE is set
+    if host == "0.0.0.0" and not os.environ.get("ACCESS_MCP_ALLOW_REMOTE"):
+        typer.echo(
+            "WARNING: Binding to 0.0.0.0 exposes the server to remote connections. "
+            "Set ACCESS_MCP_ALLOW_REMOTE=1 to acknowledge this risk.",
+            err=True,
+        )
+
+    if transport == "stdio":
+        # stdio transport uses mcp.run() directly
+        from ms_access_mcp.mcp.server import mcp
+        mcp.run(transport="stdio")
+    else:
+        # HTTP-based transports use run_http
+        from ms_access_mcp.mcp.server import run_http
+        run_http(
+            host=host,
+            port=port,
+            transport=transport,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+        )
 
 
 # Global adapter init helper — called by most commands

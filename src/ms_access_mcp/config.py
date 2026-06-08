@@ -1,3 +1,4 @@
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,16 +37,36 @@ class LlmConfig:
     telemetry_enabled: bool = False
 
 
+def _shannon_entropy(s: str) -> float:
+    """Calculate Shannon entropy in bits/character for a string."""
+    if not s:
+        return 0.0
+    freq: dict[str, float] = {}
+    for char in s:
+        freq[char] = freq.get(char, 0.0) + 1.0
+    entropy = 0.0
+    length = len(s)
+    for count in freq.values():
+        p = count / length
+        if p > 0:
+            entropy -= p * math.log2(p)
+    return entropy
+
+
 class ServerConfig:
     """Load and validate server configuration from environment variables.
 
     Environment variables (all optional except ACCESS_MCP_API_KEY):
         ACCESS_MCP_API_KEY   -- Required. Bearer token for HTTP auth.
+                                Must be at least 32 characters with sufficient entropy.
         ACCESS_MCP_HOST     -- Bind address. Default: 127.0.0.1
         ACCESS_MCP_PORT     -- Bind port. Default: 8000
         ACCESS_MCP_ALLOWED_DIRS -- Semicolon-separated directory whitelist.
                                   Default: user home directory.
     """
+
+    MIN_KEY_LENGTH = 32
+    MIN_ENTROPY = 3.0  # bits per character
 
     def __init__(self):
         api_key = os.environ.get("ACCESS_MCP_API_KEY", "")
@@ -53,6 +74,23 @@ class ServerConfig:
             raise ValueError(
                 "ACCESS_MCP_API_KEY environment variable is required. "
                 "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+
+        # Validate key length
+        if len(api_key) < self.MIN_KEY_LENGTH:
+            raise ValueError(
+                f"API key must be at least {self.MIN_KEY_LENGTH} characters. "
+                f"Current length: {len(api_key)}. "
+                "Generate a suitable key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+            )
+
+        # Validate key entropy
+        entropy = _shannon_entropy(api_key)
+        if entropy < self.MIN_ENTROPY:
+            raise ValueError(
+                f"API key has insufficient entropy ({entropy:.2f} bits/char). "
+                f"Minimum required: {self.MIN_ENTROPY} bits/char. "
+                "Use a high-entropy random key generator."
             )
 
         self.api_key = api_key

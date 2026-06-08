@@ -1,4 +1,19 @@
 from pathlib import Path
+from functools import wraps
+
+
+# Argument names that represent file/directory paths and need PathGuard validation
+PATH_ARG_NAMES = frozenset({
+    "file_path",
+    "output_path",
+    "output_dir",
+    "input_dir",
+    "backup_path",
+    "backup_dir",
+    "script_path",
+    "source",
+    "dest",
+})
 
 
 class PathGuard:
@@ -35,3 +50,38 @@ class PathGuard:
                 f"Allowed directories: {[str(d) for d in self._allowed]}"
             )
         return str(Path(path).resolve())
+
+
+def validate_tool_args(guard: PathGuard):
+    """Decorator that validates path-named arguments through PathGuard.
+
+    Auto-detects args named: file_path, output_path, output_dir, input_dir,
+    backup_path, backup_dir, script_path, source, dest
+
+    If validation fails, returns {"success": False, "error": "..."} instead of
+    calling the wrapped function.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Get function signature to map positional args to names
+            import inspect
+            sig = inspect.signature(func)
+            bound = sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            # Check each path argument
+            for arg_name, arg_value in bound.arguments.items():
+                if arg_name in PATH_ARG_NAMES and arg_value is not None:
+                    if not isinstance(arg_value, str):
+                        continue
+                    if not guard.is_allowed(arg_value):
+                        return {
+                            "success": False,
+                            "error": f"{arg_name}: path not allowed: {arg_value}. "
+                                     f"Allowed directories: {[str(d) for d in guard._allowed]}",
+                        }
+
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator

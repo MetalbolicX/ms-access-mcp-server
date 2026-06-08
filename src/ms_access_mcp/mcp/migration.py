@@ -1,7 +1,7 @@
 """Migration tools for MS Access database — Phase 1 SDD."""
 from types import SimpleNamespace
 
-from .server import mcp
+from .server import mcp, _get_path_guard
 from .container import get_container
 from ..services.backend_selector import BackendSelector, SCHEMA_CAPS, DATA_READ_CAPS
 
@@ -14,6 +14,14 @@ def _pool():
 def _migration():
     """Lazy accessor for the migration service."""
     return get_container().migration
+
+
+def _validate_path(path: str) -> str:
+    """Validate a path through PathGuard, returning absolute path or raising."""
+    guard = _get_path_guard()
+    if guard is not None:
+        return guard.validate(path)
+    return path
 
 
 def _find_connection_by_path(database_path: str):
@@ -42,6 +50,12 @@ def extract_schema(database_path: str) -> dict:
     Args:
         database_path: Path to the Access database to extract schema from
     """
+    # Validate path
+    try:
+        database_path = _validate_path(database_path)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
     # Try to reuse an existing connection to the same database
     conn_name, state = _find_connection_by_path(database_path)
     if state is not None and _pool().is_connected(conn_name):
@@ -107,6 +121,12 @@ def transfer_data(
             get_odbc_connection_string(). Format: "DRIVER={...};SERVER=...;PORT=...;DATABASE=...;UID=...;PWD=..."
     """
     from ..models.migration import ExtractedSchema, TableTransferConfig
+
+    # Validate database path
+    try:
+        database_path = _validate_path(database_path)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
 
     # Reuse existing connection if available
     conn_name, state = _find_connection_by_path(database_path)

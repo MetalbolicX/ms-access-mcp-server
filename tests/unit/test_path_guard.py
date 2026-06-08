@@ -116,3 +116,117 @@ class TestPathGuardValidate:
         guard = PathGuard(allowed_dirs=[str(tmp_path)])
         with pytest.raises(ValueError, match="not allowed"):
             guard.validate("\\\\server\\share\\db.accdb")
+
+
+# ============================================================================
+# PathGuard Middleware Wrapper (validate_tool_args decorator)
+# ============================================================================
+
+class TestPathGuardMiddleware:
+    """PathGuard middleware wrapper validates file args on tool calls."""
+
+    def test_validate_tool_argsDecorator_rejects_traversal_on_file_path(self, tmp_path):
+        """Decorator should reject file_path containing ../ traversal."""
+        from ms_access_mcp.path_guard import validate_tool_args, PathGuard
+
+        guard = PathGuard(allowed_dirs=[str(tmp_path)])
+
+        @validate_tool_args(guard)
+        def my_tool(file_path: str) -> dict:
+            return {"success": True, "file_path": file_path}
+
+        bad_path = str(tmp_path / ".." / ".." / "etc" / "passwd.accdb")
+        result = my_tool(file_path=bad_path)
+        assert result["success"] is False
+        assert "not allowed" in result["error"]
+
+    def test_validate_tool_argsDecorator_rejects_unc_path(self, tmp_path):
+        """Decorator should reject UNC paths in file_path arg."""
+        from ms_access_mcp.path_guard import validate_tool_args, PathGuard
+
+        guard = PathGuard(allowed_dirs=[str(tmp_path)])
+
+        @validate_tool_args(guard)
+        def my_tool(file_path: str) -> dict:
+            return {"success": True, "file_path": file_path}
+
+        result = my_tool(file_path="\\\\server\\share\\db.accdb")
+        assert result["success"] is False
+        assert "not allowed" in result["error"]
+
+    def test_validate_tool_argsDecorator_allows_valid_path(self, tmp_path):
+        """Decorator should allow file_path inside allowed dirs."""
+        from ms_access_mcp.path_guard import validate_tool_args, PathGuard
+
+        guard = PathGuard(allowed_dirs=[str(tmp_path)])
+        good_file = tmp_path / "app.accdb"
+        good_file.touch()
+
+        @validate_tool_args(guard)
+        def my_tool(file_path: str) -> dict:
+            return {"success": True, "file_path": file_path}
+
+        result = my_tool(file_path=str(good_file))
+        assert result["success"] is True
+
+    def test_validate_tool_argsDecorator_checks_multiple_path_args(self, tmp_path):
+        """Decorator should validate all path args: file_path, output_path, source, dest."""
+        from ms_access_mcp.path_guard import validate_tool_args, PathGuard
+
+        guard = PathGuard(allowed_dirs=[str(tmp_path)])
+        good_file = tmp_path / "app.accdb"
+        good_file.touch()
+
+        @validate_tool_args(guard)
+        def my_tool(file_path: str, output_path: str, source: str, dest: str) -> dict:
+            return {"success": True}
+
+        # All valid
+        result = my_tool(
+            file_path=str(good_file),
+            output_path=str(good_file),
+            source=str(good_file),
+            dest=str(good_file),
+        )
+        assert result["success"] is True
+
+        # output_path traversal rejected
+        bad_out = str(tmp_path / ".." / "etc" / "out.accdb")
+        result = my_tool(
+            file_path=str(good_file),
+            output_path=bad_out,
+            source=str(good_file),
+            dest=str(good_file),
+        )
+        assert result["success"] is False
+        assert "output_path" in result["error"]
+
+    def test_validate_tool_argsDecorator_checks_backup_path_and_script_path(self, tmp_path):
+        """Decorator should also validate backup_path, script_path, input_dir, output_dir."""
+        from ms_access_mcp.path_guard import validate_tool_args, PathGuard
+
+        guard = PathGuard(allowed_dirs=[str(tmp_path)])
+        good_file = tmp_path / "app.accdb"
+        good_file.touch()
+
+        @validate_tool_args(guard)
+        def my_tool(backup_path: str, script_path: str, input_dir: str) -> dict:
+            return {"success": True}
+
+        # All valid
+        result = my_tool(
+            backup_path=str(good_file),
+            script_path=str(good_file),
+            input_dir=str(tmp_path / "data"),
+        )
+        assert result["success"] is True
+
+        # script_path traversal rejected
+        bad_script = str(tmp_path / ".." / "hack" / "script.sql")
+        result = my_tool(
+            backup_path=str(good_file),
+            script_path=bad_script,
+            input_dir=str(tmp_path),
+        )
+        assert result["success"] is False
+        assert "script_path" in result["error"]

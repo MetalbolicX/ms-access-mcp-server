@@ -185,3 +185,66 @@ class TestLinkedTablesComOnlyError:
             assert "COM automation" in result["error"]
             assert "WinComAdapter" in result["error"]
             assert "use_com=True" in result["error"]
+
+
+class TestConnectStringAllowlist:
+    """Tests for connect_string provider allowlist validation."""
+
+    def test_create_linked_table_rejects_unknown_provider(self):
+        """create_linked_table should reject connect_string with unknown provider."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.create_linked_table(
+                "lnkName",
+                "RemoteT",
+                "Provider=Unknown.Provider;Data Source=remote.db;",
+            )
+            assert result["success"] is False
+            assert "allowlist" in result["error"].lower() or "not allowed" in result["error"].lower()
+
+    def test_create_linked_table_accepts_known_odbc_provider(self):
+        """create_linked_table should accept ODBC connect strings."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.create_linked_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.create_linked_table(
+                "lnkName",
+                "RemoteT",
+                "ODBC;DSN=MyDSN;",
+            )
+            assert result["success"] is True
+
+    def test_create_linked_table_accepts_ace_oledb_provider(self):
+        """create_linked_table should accept Microsoft.ACE.OLEDB connect strings."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.create_linked_table.return_value = {"success": True}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.create_linked_table(
+                "lnkName",
+                "RemoteT",
+                "Provider=Microsoft.ACE.OLEDB.12.0;Data Source=\\\\server\\share\\db.accdb;",
+            )
+            assert result["success"] is True
+
+    def test_create_linked_table_rejects_custom_provider(self):
+        """create_linked_table should reject arbitrary Provider= values."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.create_linked_table(
+                "lnkName",
+                "RemoteT",
+                "Provider=MyCustom.Provider;Data Source=remote.mdb;",
+            )
+            assert result["success"] is False

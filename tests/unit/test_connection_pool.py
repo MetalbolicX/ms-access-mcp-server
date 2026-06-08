@@ -396,13 +396,22 @@ class TestPoolRecoverAccess:
 
     @patch("sys.platform", "win32")
     @patch("subprocess.run")
-    def test_recover_access_kills_msaccess_on_windows(self, mock_run):
+    def test_recover_access_kills_owned_pid_on_windows(self, mock_run):
+        """recover_access with confirm=True kills the owned PID, not all MSACCESS."""
         pool = ConnectionPool()
         mock_run.return_value = MagicMock(returncode=0)
-        result = pool.recover_access()
+        adapter1 = make_mock_adapter("a1")
+        pool._pool["prod"] = ConnectionState(
+            adapter=adapter1,
+            db_path="/tmp/prod.accdb",
+            adapter_type="com",
+            pid=12345,
+        )
+        result = pool.recover_access(confirm=True)
         mock_run.assert_called()
         call_args = str(mock_run.call_args)
-        assert "taskkill" in call_args.lower() or "msaccess" in call_args.lower()
+        assert "taskkill" in call_args.lower()
+        assert "/PID" in call_args or "12345" in call_args
 
     @patch("sys.platform", "win32")
     @patch("subprocess.run")
@@ -414,7 +423,7 @@ class TestPoolRecoverAccess:
         pool._pool["prod"] = ConnectionState(adapter=adapter1, db_path="/tmp/prod.accdb", adapter_type="odbc")
         pool._pool["dev"] = ConnectionState(adapter=adapter2, db_path="/tmp/dev.accdb", adapter_type="odbc")
 
-        result = pool.recover_access()
+        result = pool.recover_access(confirm=True)
         assert adapter1.connect.call_count >= 1
         assert adapter2.connect.call_count >= 1
 
@@ -428,7 +437,7 @@ class TestPoolRecoverAccess:
         pool._pool["prod"] = ConnectionState(adapter=adapter1, db_path="/tmp/prod.accdb", adapter_type="odbc")
         pool._pool["dev"] = ConnectionState(adapter=adapter2, db_path="/tmp/dev.accdb", adapter_type="odbc")
 
-        result = pool.recover_access()
+        result = pool.recover_access(confirm=True)
         assert "prod" in result.get("reconnected", [])
         assert "dev" in result.get("reconnected", [])
 
@@ -480,3 +489,253 @@ class TestPoolIsConnected:
     def test_is_connected_returns_false_when_not_in_pool(self):
         pool = ConnectionPool()
         assert pool.is_connected("nonexistent") is False
+
+
+# =============================================================================
+# ConnectionState.pid — PID tracking for scoped cleanup
+# =============================================================================
+
+class TestConnectionStatePid:
+    """ConnectionState holds a pid field for scoped process management."""
+
+    def test_connection_state_holds_pid(self):
+        """ConnectionState should store pid (process ID) of the Access process."""
+        adapter = make_mock_adapter()
+        state = ConnectionState(
+            adapter=adapter,
+            db_path="/tmp/db.accdb",
+            adapter_type="com",
+            pid=12345,
+        )
+        assert state.pid == 12345
+
+    def test_connection_state_pid_defaults_to_none(self):
+        """ConnectionState pid should default to None when not provided."""
+        adapter = make_mock_adapter()
+        state = ConnectionState(
+            adapter=adapter,
+            db_path="/tmp/db.accdb",
+            adapter_type="odbc",
+        )
+        assert state.pid is None
+
+
+# =============================================================================
+# recover_access() — confirm parameter and PID-scoped taskkill
+# =============================================================================
+
+class TestPoolRecoverAccessConfirm:
+    """recover_access requires confirm=True to execute taskkill."""
+
+    @patch("ms_access_mcp.services.connection.subprocess.run")
+    def test_recover_access_rejects_confirm_false(self, mock_subprocess_run):
+        """recover_access with confirm=False should NOT execute taskkill."""
+        pool = ConnectionPool()
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        result = pool.recover_access(confirm=False)
+        # When confirm=False, taskkill should not run
+        for call in mock_subprocess_run.call_args_list:
+            if call.args or call.kwargs:
+                cmd = str(call.args[0] if call.args else call.kwargs)
+                assert "taskkill" not in cmd.lower(), f"taskkill should not run when confirm=False, got: {cmd}"
+        assert result.get("confirm_required") is True
+
+    @patch("ms_access_mcp.services.connection.subprocess.run")
+    def test_recover_access_executes_with_confirm_true(self, mock_subprocess_run):
+        """recover_access with confirm=True should execute taskkill targeting owned PIDs."""
+        pool = ConnectionPool()
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        adapter1 = make_mock_adapter("a1")
+        pool._pool["prod"] = ConnectionState(
+            adapter=adapter1,
+            db_path="/tmp/prod.accdb",
+            adapter_type="com",
+            pid=12345,
+        )
+        result = pool.recover_access(confirm=True)
+        # Should have called taskkill with /PID not /IM
+        taskkill_calls = [
+            c for c in mock_subprocess_run.call_args_list
+            if c.args and "taskkill" in str(c.args[0]).lower()
+        ]
+        assert len(taskkill_calls) >= 1
+        # Verify /PID 12345 was passed, not /IM MSACCESS.EXE
+        last_taskkill = str(taskkill_calls[-1].args[0])
+        assert "/PID" in last_taskkill or "12345" in last_taskkill, \
+            f"taskkill should target specific PID, not global MSACCESS.EXE: {last_taskkill}"
+
+    @patch("ms_access_mcp.services.connection.subprocess.run")
+    def test_recover_access_only_kills_owned_pids(self, mock_subprocess_run):
+        """recover_access should only kill PIDs stored in ConnectionState, not all MSACCESS."""
+        pool = ConnectionPool()
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        adapter1 = make_mock_adapter("a1")
+        adapter2 = make_mock_adapter("a2")
+        pool._pool["prod"] = ConnectionState(
+            adapter=adapter1,
+            db_path="/tmp/prod.accdb",
+            adapter_type="com",
+            pid=12345,
+        )
+        pool._pool["dev"] = ConnectionState(
+            adapter=adapter2,
+            db_path="/tmp/dev.accdb",
+            adapter_type="com",
+            pid=67890,
+        )
+        result = pool.recover_access(confirm=True)
+        # Both PIDs should appear in taskkill calls
+        all_calls_str = str(mock_subprocess_run.call_args_list)
+        assert "12345" in all_calls_str, "PID 12345 should be targeted"
+        assert "67890" in all_calls_str, "PID 67890 should be targeted"
+        # /IM MSACCESS.EXE should NOT appear
+        assert "/IM" not in all_calls_str and "MSACCESS.EXE" not in all_calls_str, \
+            "Should use /PID not /IM MSACCESS.EXE"
+
+
+class TestPoolRecoverAccessNoConfirmFlag:
+    """recover_access without confirm defaults to no-kill (backward compat)."""
+
+    @patch("ms_access_mcp.services.connection.subprocess.run")
+    def test_recover_access_default_confirm_is_false(self, mock_subprocess_run):
+        """recover_access called without confirm defaults to False (no kill)."""
+        pool = ConnectionPool()
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        result = pool.recover_access()  # No confirm arg
+        # Default behavior should be confirm=False
+        taskkill_calls = [
+            c for c in mock_subprocess_run.call_args_list
+            if c.args and "taskkill" in str(c.args[0]).lower()
+        ]
+        assert len(taskkill_calls) == 0, "taskkill should not run without explicit confirm=True"
+
+
+class TestPoolRLock:
+    """Tests for RLock-protected pool mutation under concurrent access."""
+
+    def test_pool_has_rlock_for_thread_safety(self):
+        """ConnectionPool should use RLock to protect _pool and _active dicts."""
+        pool = ConnectionPool()
+        # _lock should be an RLock-like lock (reentrant)
+        assert hasattr(pool, "_lock"), "ConnectionPool should have a _lock attribute"
+        import threading
+        # threading.RLock wraps _thread.RLock; check via type name
+        lock_type_name = type(pool._lock).__name__
+        assert "RLock" in lock_type_name or "Lock" in lock_type_name, \
+            f"_lock should be an RLock, got {lock_type_name}"
+
+    def test_connect_disconnect_concurrent_safety(self):
+        """Concurrent connect/disconnect calls should not corrupt pool state."""
+        import threading
+        import time
+
+        pool = ConnectionPool()
+        errors = []
+
+        def connect_worker(name):
+            try:
+                adapter = make_mock_adapter(name)
+                pool.connect(name, "/tmp/test.accdb", adapter=adapter)
+            except Exception as e:
+                errors.append(f"connect {name}: {e}")
+
+        def disconnect_worker(name):
+            try:
+                pool.disconnect(name)
+            except Exception as e:
+                errors.append(f"disconnect {name}: {e}")
+
+        threads = []
+        for i in range(5):
+            t_connect = threading.Thread(target=connect_worker, args=(f"conn{i}",))
+            t_disconnect = threading.Thread(target=disconnect_worker, args=(f"conn{i}",))
+            threads.extend([t_connect, t_disconnect])
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.0)
+
+        assert len(errors) == 0, f"Concurrent access errors: {errors}"
+        # Pool should be in a consistent state
+        assert isinstance(pool.list(), dict)
+
+    def test_pool_list_returns_snapshot_under_concurrent_connect(self):
+        """pool.list() should return a consistent dict snapshot during concurrent writes."""
+        import threading
+
+        pool = ConnectionPool()
+        results = []
+
+        def writer(idx):
+            adapter = make_mock_adapter(f"w{idx}")
+            pool.connect(f"conn{idx}", f"/tmp/test{idx}.accdb", adapter=adapter)
+
+        def reader():
+            for _ in range(10):
+                try:
+                    snapshot = pool.list()
+                    results.append(len(snapshot))
+                except Exception:
+                    pass
+
+        threads = []
+        for i in range(5):
+            t_write = threading.Thread(target=writer, args=(i,))
+            t_read = threading.Thread(target=reader)
+            threads.extend([t_write, t_read])
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5.0)
+
+        # All reads should succeed without exception
+        assert len(results) == 50, f"Expected 50 reads, got {len(results)}"
+        # No read should return a corrupt/partial dict
+        for r in results:
+            assert isinstance(r, int)
+
+
+# =============================================================================
+# connection_pool_size gauge — observability
+# =============================================================================
+
+class TestConnectionPoolSizeGauge:
+    """ConnectionPool emits connection_pool_size gauge for observability."""
+
+    def test_pool_updates_pool_size_gauge_on_connect(self):
+        """Connecting a new named connection should update connection_pool_size gauge."""
+        from ms_access_mcp.telemetry import metrics
+        pool = ConnectionPool()
+        adapter = make_mock_adapter()
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=adapter):
+            with patch.object(metrics, "connection_pool_size") as mock_gauge:
+                pool.connect("prod", "/tmp/prod.accdb", "odbc")
+                # Gauge should be set to pool size (1)
+                mock_gauge.set.assert_called_with(1)
+
+    def test_pool_updates_pool_size_gauge_on_disconnect(self):
+        """Disconnecting a connection should update connection_pool_size gauge."""
+        from ms_access_mcp.telemetry import metrics
+        pool = ConnectionPool()
+        adapter = make_mock_adapter()
+        pool._pool["prod"] = ConnectionState(adapter=adapter, db_path="/tmp/prod.accdb", adapter_type="odbc")
+        with patch.object(metrics, "connection_pool_size") as mock_gauge:
+            pool.disconnect("prod")
+            # Gauge should be set to pool size (0)
+            mock_gauge.set.assert_called_with(0)
+
+    def test_pool_updates_pool_size_gauge_on_multiple_connects(self):
+        """Multiple connects should update gauge to reflect current pool size."""
+        from ms_access_mcp.telemetry import metrics
+        pool = ConnectionPool()
+        adapter1 = make_mock_adapter("a1")
+        adapter2 = make_mock_adapter("a2")
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter") as mock_odbc:
+            mock_odbc.side_effect = [adapter1, adapter2]
+            with patch.object(metrics, "connection_pool_size") as mock_gauge:
+                pool.connect("prod", "/tmp/prod.accdb", "odbc")
+                pool.connect("dev", "/tmp/dev.accdb", "odbc")
+                # Last call should set gauge to 2
+                assert mock_gauge.set.call_args_list[-1] == call(2)

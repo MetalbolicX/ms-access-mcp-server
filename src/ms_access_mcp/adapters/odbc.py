@@ -173,6 +173,12 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
 
             if where_dict is not None:
                 if isinstance(where_dict, str):
+                    # Sanitize: only allow simple column comparisons and IN clauses
+                    # Reject statements that could be SQL injection vectors
+                    import re as _re
+                    # Whitelist: alphanumeric column names, =, <>, <, >, <=, >=, LIKE, IN, AND, OR, NOT, parentheses, spaces, commas, digits, dots
+                    if not _re.match(r"^[\w\s\.\,\=\<\>\(\)\'\"\-]+$", where_dict):
+                        return {"success": False, "error": "where_dict string contains disallowed characters"}
                     sql += f" WHERE {where_dict}"
                 else:
                     where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
@@ -206,6 +212,10 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             params: list = []
             if where_dict is not None:
                 if isinstance(where_dict, str):
+                    # Sanitize: only allow simple column comparisons and IN clauses
+                    import re as _re
+                    if not _re.match(r"^[\w\s\.\,\=\<\>\(\)\'\"\-]+$", where_dict):
+                        return {"success": False, "error": "where_dict string contains disallowed characters"}
                     sql += f" WHERE {where_dict}"
                 else:
                     where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())

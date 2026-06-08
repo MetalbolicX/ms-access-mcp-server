@@ -1,4 +1,5 @@
 from typing import Optional, Any
+import time
 
 # Load .env file before any config initialization (optional dependency)
 try:
@@ -8,6 +9,7 @@ except ImportError:
     pass
 
 from fastmcp import FastMCP
+from fastmcp.server.middleware import Middleware, MiddlewareContext
 from ..services.connection import ConnectionPool
 from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
@@ -17,32 +19,82 @@ from .container import get_container
 from ..config import ServerConfig
 from ..auth import ApiKeyMiddleware
 from ..path_guard import PathGuard
+from ..telemetry.metrics import tool_calls_total, tool_latency_seconds
+from ..telemetry.audit import audit_log
 import uvicorn
 
 # Create FastMCP server
 mcp = FastMCP("MS Access MCP Server")
 
-# Initialize services (kept as module-level for backward compatibility with tool modules)
-connection_service = ConnectionPool()
-com_automation_service = COMAutomationService()
-migration_service = MigrationService(connector_registry=_default_registry)
-dev_copy_service = DevCopyService()
-
-# Lazily initialized config and path guard (only for HTTP mode via serve command)
-_config: ServerConfig | None = None
+# Path guard — initialized lazily on first tool call to avoid requiring
+# ACCESS_MCP_API_KEY at import time (tests and stdio mode don't need auth).
+# Tools that need path validation check: if _path_guard is not None: ...
 _path_guard: PathGuard | None = None
 _auth_middleware: ApiKeyMiddleware | None = None
 
 
+class ToolTelemetryMiddleware(Middleware):
+    """Middleware that records tool call metrics and audit log entries.
+
+    Tracks:
+    - tool_calls_total{tool, status}: increment on each tool call
+    - tool_latency_seconds{tool}: histogram of call duration
+    - Audit log entries: tool, args_hash, result, duration_ms, caller_ip
+    """
+
+    async def on_call_tool(self, context: MiddlewareContext, call_next):
+        """Record metrics and audit log for each tool call."""
+        # context.message is CallToolRequestParams with .name and .arguments
+        tool_name = getattr(context.message, "name", "unknown") if context.message else "unknown"
+        args = getattr(context.message, "arguments", None) or {}
+        start = time.perf_counter()
+        status = "success"
+        try:
+            result = await call_next(context)
+            return result
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            duration_ms = (time.perf_counter() - start) * 1000
+            # Record Prometheus metrics
+            tool_calls_total.labels(tool=tool_name, status=status).inc()
+            tool_latency_seconds.labels(tool=tool_name).observe(duration_ms / 1000.0)
+            # Write audit log entry (args not logged verbatim — hashed)
+            audit_log(tool=tool_name, args=args, result=status, duration_ms=duration_ms)
+
+
+def _get_path_guard() -> PathGuard | None:
+    """Lazily initialize and return the PathGuard.
+
+    Called by tool modules at runtime (not import time) so ServerConfig()
+    validation only runs when HTTP mode with auth is used.
+    """
+    global _path_guard
+    if _path_guard is None:
+        try:
+            config = ServerConfig()
+            _path_guard = PathGuard(allowed_dirs=config.allowed_dirs)
+        except ValueError:
+            # No ACCESS_MCP_API_KEY — stdio mode without auth
+            # Use home directory as allowed dir for stdio safety
+            from pathlib import Path
+            _path_guard = PathGuard(allowed_dirs=[str(Path.home())])
+    return _path_guard
+
+
 def _init_http_config() -> None:
-    """Initialize HTTP config, auth, and path guard from environment."""
-    global _config, _path_guard, _auth_middleware
-    if _config is not None:
-        return
-    _config = ServerConfig()
-    _path_guard = PathGuard(allowed_dirs=_config.allowed_dirs)
-    _auth_middleware = ApiKeyMiddleware(api_key=_config.api_key)
+    """Initialize HTTP auth middleware from environment.
+
+    Idempotent: only runs once. Path guard is lazily initialized via
+    _get_path_guard() on first tool call, not at import time.
+    """
+    global _auth_middleware
+    if _auth_middleware is not None:
+        return  # Already initialized
+    _auth_middleware = ApiKeyMiddleware(api_key=ServerConfig().api_key)
     mcp.add_middleware(_auth_middleware)
+    mcp.add_middleware(ToolTelemetryMiddleware())
 
 
 # Import tool modules to register their @mcp.tool() decorators
@@ -116,6 +168,8 @@ def run_http(
     port: int = 8000,
     transport: str = "http",
     app: Optional[Any] = None,
+    ssl_keyfile: Optional[str] = None,
+    ssl_certfile: Optional[str] = None,
 ) -> None:
     """Run the MCP server with HTTP transport and auth.
 
@@ -125,10 +179,16 @@ def run_http(
         transport: HTTP transport type ("http", "streamable-http", "sse")
         app: Optional ASGI app to use (for testing). If not provided,
              creates app via get_asgi_app().
+        ssl_keyfile: Optional path to SSL key file for TLS.
+        ssl_certfile: Optional path to SSL certificate file for TLS.
     """
     if app is None:
         app = get_asgi_app(transport=transport)
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
 
 
 def __getattr__(name):

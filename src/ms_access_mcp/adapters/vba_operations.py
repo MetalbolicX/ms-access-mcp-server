@@ -16,6 +16,9 @@ from ..config import ServerConfig
 from ..adapters.com_dispatcher import ComDispatcher
 from ..adapters.trusted_locations import capture_trusted_locations, restore_trusted_locations
 from ..models.database import ModuleInfo
+from ..logging import get_logger
+
+_logger = get_logger(__name__)
 
 
 # Compile command IDs by Access version (most likely first)
@@ -106,6 +109,12 @@ class VbaOperations:
         except Exception:
             pass  # Best-effort
 
+    # Module-level cache for preserve_trusted_locations (read once, cache for process lifetime)
+try:
+    _PRESERVE_TRUSTED_LOCATIONS = ServerConfig().preserve_trusted_locations
+except Exception:
+    _PRESERVE_TRUSTED_LOCATIONS = False
+
     # ------------------------------------------------------------------ #
     # Trusted Locations wrapper
     # ------------------------------------------------------------------ #
@@ -114,15 +123,9 @@ class VbaOperations:
         """Execute func(*args, **kwargs) with Trusted Locations preservation if enabled.
 
         Captures Trusted Locations before the call and restores them after,
-        controlled by config.preserve_trusted_locations.
+        controlled by config.preserve_trusted_locations (cached at module level).
         """
-        try:
-            config = ServerConfig()
-            preserve = config.preserve_trusted_locations
-        except Exception:
-            preserve = False
-
-        if not preserve:
+        if not _PRESERVE_TRUSTED_LOCATIONS:
             return func(*args, **kwargs)
 
         captured = capture_trusted_locations()
@@ -275,7 +278,7 @@ class VbaOperations:
             except Exception as set_vba_exc:
                 import traceback
                 traceback.print_exc()
-                print(f"[set_vba_code] Exception: {set_vba_exc}", file=sys.stderr)
+                _logger.exception(f"[set_vba_code] Exception: {set_vba_exc}")
                 return False
 
         return self._dispatcher.call(self._trusted_locations_wrap, _do)

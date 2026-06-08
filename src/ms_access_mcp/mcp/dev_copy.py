@@ -3,7 +3,7 @@
 Note: Dev copy operations work with the active connection and require
 the connection pool to have adapter and current_database properties.
 """
-from .server import mcp
+from .server import mcp, _get_path_guard
 from .container import get_container
 
 
@@ -28,6 +28,14 @@ def _get_adapter(connection_name: str = "default"):
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
     return _pool().is_connected(connection_name)
+
+
+def _validate_path(path: str) -> str:
+    """Validate a path through PathGuard, returning absolute path or raising."""
+    guard = _get_path_guard()
+    if guard is not None:
+        return guard.validate(path)
+    return path
 
 
 def _get_current_db_path(connection_name: str = "default"):
@@ -58,6 +66,13 @@ def compact_repair(action: str, source_path: str, dest_path: str, keep_original:
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
+    # Validate paths
+    try:
+        source_path = _validate_path(source_path)
+        dest_path = _validate_path(dest_path)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
+
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -83,6 +98,13 @@ def copy_database(source: str, dest: str, connection_name: str = "default") -> d
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+
+    # Validate paths
+    try:
+        source = _validate_path(source)
+        dest = _validate_path(dest)
+    except ValueError as e:
+        return {"success": False, "error": str(e)}
 
     adapter = _get_adapter(connection_name)
     if adapter is None:
@@ -142,6 +164,7 @@ def import_module_from_text(module_name: str, file_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        file_path = _validate_path(file_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.import_module_from_text(module_name, file_path, adapter)
@@ -165,6 +188,7 @@ def restore_module_backup(module_name: str, backup_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        backup_path = _validate_path(backup_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.restore_module_backup(module_name, backup_path, adapter)
@@ -215,6 +239,7 @@ def import_form_from_file(form_name: str, file_path: str, connection_name: str =
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        file_path = _validate_path(file_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.import_form_from_file(form_name, file_path, adapter)
@@ -238,6 +263,7 @@ def restore_form_backup(form_name: str, backup_path: str, connection_name: str =
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        backup_path = _validate_path(backup_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.restore_form_backup(form_name, backup_path, adapter)
@@ -284,6 +310,7 @@ def import_report_from_file(report_name: str, file_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        file_path = _validate_path(file_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.import_report_from_file(report_name, file_path, adapter)
@@ -307,6 +334,7 @@ def restore_report_backup(report_name: str, backup_path: str, connection_name: s
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        backup_path = _validate_path(backup_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.restore_report_backup(report_name, backup_path, adapter)

@@ -25,7 +25,7 @@ class TestCliServeCommand:
             ])
             assert result.exit_code == 0, result.stdout
             mock_run.assert_called_once_with(
-                host="0.0.0.0", port=9999, transport="http"
+                host="0.0.0.0", port=9999, transport="http", ssl_keyfile=None, ssl_certfile=None
             )
         # Clean up env vars
         os.environ.pop("ACCESS_MCP_HOST", None)
@@ -42,7 +42,7 @@ class TestCliServeCommand:
             result = runner.invoke(app, ["serve"])
             assert result.exit_code == 0, result.stdout
             mock_run.assert_called_once_with(
-                host="127.0.0.1", port=8000, transport="http"
+                host="127.0.0.1", port=8000, transport="http", ssl_keyfile=None, ssl_certfile=None
             )
 
     def test_serve_with_sse_transport(self):
@@ -54,7 +54,7 @@ class TestCliServeCommand:
             result = runner.invoke(app, ["serve", "--transport", "sse"])
             assert result.exit_code == 0, result.stdout
             mock_run.assert_called_once_with(
-                host="127.0.0.1", port=8000, transport="sse"
+                host="127.0.0.1", port=8000, transport="sse", ssl_keyfile=None, ssl_certfile=None
             )
 
     def test_serve_with_streamable_http_transport(self):
@@ -66,7 +66,7 @@ class TestCliServeCommand:
             result = runner.invoke(app, ["serve", "--transport", "streamable-http"])
             assert result.exit_code == 0, result.stdout
             mock_run.assert_called_once_with(
-                host="127.0.0.1", port=8000, transport="streamable-http"
+                host="127.0.0.1", port=8000, transport="streamable-http", ssl_keyfile=None, ssl_certfile=None
             )
 
     def test_serve_without_api_key_exits_with_error(self):
@@ -103,7 +103,7 @@ class TestCliServeCommand:
             ])
             assert result.exit_code == 0, result.stdout
             mock_run.assert_called_once_with(
-                host="0.0.0.0", port=9000, transport="http"
+                host="0.0.0.0", port=9000, transport="http", ssl_keyfile=None, ssl_certfile=None
             )
 
     def test_serve_with_allowed_dirs_single(self):
@@ -190,6 +190,84 @@ class TestCliServeCommand:
         os.environ.pop("ACCESS_MCP_PORT", None)
         os.environ.pop("ACCESS_MCP_API_KEY", None)
         os.environ.pop("ACCESS_MCP_ALLOWED_DIRS", None)
+
+    def test_serve_with_ssl_options(self):
+        """serve --ssl-keyfile and --ssl-certfile should pass SSL kwargs to run_http."""
+        with (
+            runner.isolation(),
+            patch("ms_access_mcp.mcp.server.run_http") as mock_run,
+        ):
+            result = runner.invoke(app, [
+                "serve",
+                "--ssl-keyfile", "/path/to/key.pem",
+                "--ssl-certfile", "/path/to/cert.pem",
+            ])
+            assert result.exit_code == 0, f"Expected0, got {result.exit_code}: {result.stdout}"
+            mock_run.assert_called_once()
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("ssl_keyfile") == "/path/to/key.pem"
+            assert call_kwargs.get("ssl_certfile") == "/path/to/cert.pem"
+        os.environ.pop("ACCESS_MCP_API_KEY", None)
+
+    def test_serve_with_stdio_transport(self):
+        """serve --transport stdio should call mcp.run() with stdio."""
+        with (
+            runner.isolation(),
+            patch("ms_access_mcp.mcp.server.mcp.run") as mock_run,
+        ):
+            result = runner.invoke(app, [
+                "serve",
+                "--transport", "stdio",
+            ])
+            assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.stdout}"
+            mock_run.assert_called_once()
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs.get("transport") == "stdio"
+        os.environ.pop("ACCESS_MCP_API_KEY", None)
+
+    def test_serve_warns_on_0_0_0_0_without_remote_flag(self):
+        """serve --host 0.0.0.0 should warn unless ACCESS_MCP_ALLOW_REMOTE=1."""
+        env = os.environ.copy()
+        env.pop("ACCESS_MCP_ALLOW_REMOTE", None)
+        with (
+            runner.isolation(env=env),
+            patch("ms_access_mcp.mcp.server.run_http") as mock_run,
+        ):
+            result = runner.invoke(app, [
+                "serve",
+                "--host", "0.0.0.0",
+            ])
+            assert result.exit_code == 0, f"Expected0, got {result.exit_code}: {result.stdout}"
+            # Warning goes to stderr
+            output = result.stdout + result.stderr
+            assert "0.0.0.0" in output or "warning" in output.lower() or "remote" in output.lower(), \
+                f"Expected warning about 0.0.0.0, got: stdout={result.stdout!r} stderr={result.stderr!r}"
+        os.environ.pop("ACCESS_MCP_HOST", None)
+        os.environ.pop("ACCESS_MCP_PORT", None)
+        os.environ.pop("ACCESS_MCP_API_KEY", None)
+        os.environ.pop("ACCESS_MCP_ALLOWED_DIRS", None)
+
+    def test_serve_no_warning_on_0_0_0_0_with_remote_flag(self):
+        """serve --host 0.0.0.0 should NOT warn when ACCESS_MCP_ALLOW_REMOTE=1."""
+        env = os.environ.copy()
+        env["ACCESS_MCP_ALLOW_REMOTE"] = "1"
+        with (
+            runner.isolation(env=env),
+            patch("ms_access_mcp.mcp.server.run_http") as mock_run,
+        ):
+            result = runner.invoke(app, [
+                "serve",
+                "--host", "0.0.0.0",
+            ])
+            assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.stdout}"
+            # Should not contain a warning
+            assert "warning" not in result.stdout.lower() or "0.0.0.0" not in result.stdout, \
+                f"Should not warn about 0.0.0.0 when ACCESS_MCP_ALLOW_REMOTE=1, got: {result.stdout}"
+        os.environ.pop("ACCESS_MCP_HOST", None)
+        os.environ.pop("ACCESS_MCP_PORT", None)
+        os.environ.pop("ACCESS_MCP_API_KEY", None)
+        os.environ.pop("ACCESS_MCP_ALLOWED_DIRS", None)
+        os.environ.pop("ACCESS_MCP_ALLOW_REMOTE", None)
 
 
 class TestCliConnectCommand:

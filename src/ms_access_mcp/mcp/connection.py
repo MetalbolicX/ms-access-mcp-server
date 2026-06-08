@@ -8,7 +8,7 @@ Tools:
 - get_active_connection() → returns active connection name (NEW)
 - is_connected() → checks connection status
 """
-from .server import mcp, _path_guard
+from .server import mcp, _get_path_guard
 
 from ..adapters.wincom import WinComAdapter
 from ..adapters.odbc import OdbcAdapter
@@ -37,9 +37,10 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
         name: Named connection identifier (defaults to "default")
     """
     # Validate path against allowed directories when HTTP config is active
-    if _path_guard is not None:
+    path_guard = _get_path_guard()
+    if path_guard is not None:
         try:
-            database_path = _path_guard.validate(database_path)
+            database_path = path_guard.validate(database_path)
         except ValueError as e:
             return {"success": False, "error": str(e)}
 

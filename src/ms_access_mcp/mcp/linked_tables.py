@@ -3,6 +3,24 @@ from .server import mcp
 from .container import get_container
 
 
+# Allowlist of permitted connect_string provider patterns
+# Matches: ODBC, Microsoft.ACE.OLEDB.*, Driver={Microsoft Access Driver...}
+_CONNECT_STRING_ALLOWLIST_RE = (
+    r"^(ODBC;)",
+    r"^(Provider=Microsoft\.ACE\.OLEDB\.\d+\.\d+;)",
+    r"^(Driver=\{Microsoft Access Driver)",
+)
+
+
+def _is_connect_string_allowed(connect_string: str) -> bool:
+    """Return True if connect_string matches the provider allowlist."""
+    import re
+    for pattern in _CONNECT_STRING_ALLOWLIST_RE:
+        if re.match(pattern, connect_string, re.IGNORECASE):
+            return True
+    return False
+
+
 def _pool():
     """Lazy accessor for the connection pool."""
     return get_container().connection_pool
@@ -59,6 +77,15 @@ def create_linked_table(name: str, source_table: str, connect_string: str, conne
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+
+    # Validate connect_string against provider allowlist
+    if not _is_connect_string_allowed(connect_string):
+        return {
+            "success": False,
+            "error": "connect_string provider not in allowlist. "
+                     "Allowed: ODBC, Microsoft.ACE.OLEDB.*",
+        }
+
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}

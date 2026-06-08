@@ -5,6 +5,10 @@ Provides:
 - Counter: llm.calls_failed (increment on provider/timeout errors)
 - Counter: llm.calls_fallbacks (increment on fallback responses)
 - Histogram: llm.latency_seconds (record call latency)
+- Counter: tool_calls_total (increment on each tool call)
+- Histogram: tool_latency_seconds (record tool call latency)
+- Counter: auth_failures_total (increment on auth failures)
+- Gauge: connection_pool_size (current connection pool size)
 
 When prometheus_client is not installed, all operations are no-ops (safe to call
 everywhere without side effects).
@@ -17,10 +21,10 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
-    from prometheus_client import Counter, Histogram
+    from prometheus_client import Counter, Histogram, Gauge
 
 try:
-    from prometheus_client import Counter, Histogram, REGISTRY  # noqa: F401
+    from prometheus_client import Counter, Histogram, Gauge, REGISTRY  # noqa: F401
 
     _HAS_PROMETHEUS = True
 except ImportError:
@@ -34,6 +38,10 @@ _llm_calls_total: "Counter | _NoOpCounter"
 _llm_calls_failed: "Counter | _NoOpCounter"
 _llm_calls_fallbacks: "Counter | _NoOpCounter"
 _llm_latency_seconds: "Histogram | _NoOpHistogram"
+tool_calls_total: "Counter | _NoOpCounter"
+tool_latency_seconds: "Histogram | _NoOpHistogram"
+auth_failures_total: "Counter | _NoOpCounter"
+connection_pool_size: "Gauge | _NoOpGauge"
 
 
 class _NoOpLabels:
@@ -66,6 +74,13 @@ class _NoOpHistogram:
         pass
 
 
+class _NoOpGauge:
+    """No-op gauge that accepts .set() without side effects."""
+
+    def set(self, value: float) -> None:
+        pass
+
+
 if _HAS_PROMETHEUS:
     _llm_calls_total = Counter(
         "llm_calls_total",
@@ -88,11 +103,35 @@ if _HAS_PROMETHEUS:
         ["provider", "model"],
         buckets=(0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0),
     )
+    tool_calls_total = Counter(
+        "tool_calls_total",
+        "Total tool calls",
+        ["tool", "status"],
+    )
+    tool_latency_seconds = Histogram(
+        "tool_latency_seconds",
+        "Tool call latency in seconds",
+        ["tool"],
+        buckets=(0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0),
+    )
+    auth_failures_total = Counter(
+        "auth_failures_total",
+        "Auth failures",
+        ["reason"],
+    )
+    connection_pool_size = Gauge(
+        "connection_pool_size",
+        "Connection pool size",
+    )
 else:
     _llm_calls_total = _NoOpCounter()
     _llm_calls_failed = _NoOpCounter()
     _llm_calls_fallbacks = _NoOpCounter()
     _llm_latency_seconds = _NoOpHistogram()
+    tool_calls_total = _NoOpCounter()
+    tool_latency_seconds = _NoOpHistogram()
+    auth_failures_total = _NoOpCounter()
+    connection_pool_size = _NoOpGauge()
 
 
 # ---------------------------------------------------------------------------
