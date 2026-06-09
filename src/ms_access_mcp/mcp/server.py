@@ -103,7 +103,7 @@ def _init_http_config() -> None:
 
 
 # Import tool modules to register their @mcp.tool() decorators
-from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis  # noqa: E402, F811
+from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
@@ -148,6 +148,13 @@ from .persistence import (  # noqa: E402
     export_query_to_text, import_query_from_text,
     export_all_versioning, import_all_versioning, compare_versioning,
     export_schema_ddl, execute_sql_script,
+)
+from .reports import (  # noqa: E402
+    report_exists, create_report, rename_report,
+    get_report_properties, set_report_property, set_report_properties,
+    get_report_controls, get_report_control_properties,
+    set_report_control_property, set_report_control_properties,
+    add_report_control, remove_report_control,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import (

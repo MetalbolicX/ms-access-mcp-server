@@ -1082,6 +1082,152 @@ class UiOperations:
 
         return self._dispatcher.call(_do)
 
+    def create_report(self, report_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+        """Create a new report via DoCmd.CreateReport, optionally setting RecordSource and properties."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                report_obj = self._dispatcher.access_app.DoCmd.CreateReport()
+                if record_source:
+                    try:
+                        report_obj.RecordSource = record_source
+                    except Exception:
+                        pass
+                if properties:
+                    for prop_name, value in properties.items():
+                        try:
+                            report_obj.Properties(prop_name).Value = value
+                        except Exception:
+                            pass
+                # Close with acSaveYes (1) to persist the report
+                self._dispatcher.access_app.DoCmd.Close(4, report_obj.Name, 1)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def rename_report(self, old_name: str, new_name: str) -> bool:
+        """Rename a report via DoCmd.Rename with acReport=4."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher.access_app.DoCmd.Rename(new_name, 4, old_name)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def get_report_properties(self, report_name: str) -> dict:
+        """Get all properties of a report by opening it in design view."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    props: dict[str, str] = {}
+                    for prop in report.Properties:
+                        try:
+                            props[prop.Name] = str(prop.Value)
+                        except Exception:
+                            pass
+                    return props
+                return {}
+            except Exception:
+                return {}
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_report_property(self, report_name: str, property_name: str, value: str) -> bool:
+        """Set a single property of a report by opening it in design view."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    report.Properties(property_name).Value = value
+                    return True
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acSaveYes=1
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_report_properties(self, report_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a report. Returns dict of {property_name: success}."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for prop_name, value in properties.items():
+                opened = False
+                try:
+                    self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                    opened = True
+
+                    try:
+                        report = self._dispatcher.access_app.Reports(report_name)
+                    except Exception:
+                        report = None
+
+                    success = False
+                    if report is not None:
+                        try:
+                            report.Properties(prop_name).Value = value
+                            success = True
+                        except Exception:
+                            pass
+                except Exception:
+                    success = False
+                finally:
+                    if opened:
+                        try:
+                            self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acSaveYes=1
+                        except Exception:
+                            pass
+                results[prop_name] = success
+            return results
+
+        return self._dispatcher.call(_do)
+
     def export_report_to_text(self, report_name: str) -> str:
         """Export a report to text representation via SaveAsText."""
         if not self._dispatcher._started:
@@ -1099,6 +1245,266 @@ class UiOperations:
 
         def _do() -> bool:
             return self._load_object_from_text(4, report_name, report_data)
+
+        return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------------- #
+    # Report control operations
+    # ------------------------------------------------------------------------- #
+
+    def get_report_controls(self, report_name: str) -> list[ControlInfo]:
+        """Get all controls in a report by opening it in design view."""
+        if not self._dispatcher._started:
+            return []
+
+        def _do() -> list[ControlInfo]:
+            controls: list[ControlInfo] = []
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    for i in range(report.Controls.Count):
+                        try:
+                            ctrl = report.Controls(i)
+                            ctrl_name = ctrl.Name
+                            ctrl_type_code = ctrl.ControlType
+                            ctrl_type = self._access_control_type_name(ctrl_type_code)
+
+                            props: dict[str, str] = {}
+                            for prop_name in ("Visible", "Enabled", "Left", "Top",
+                                              "Width", "Height", "Caption",
+                                              "ControlSource", "TabIndex"):
+                                try:
+                                    val = ctrl.Properties(prop_name).Value
+                                    if val is not None:
+                                        props[prop_name] = str(val)
+                                except Exception:
+                                    pass
+
+                            controls.append(ControlInfo(
+                                name=ctrl_name, type=ctrl_type, properties=props,
+                            ))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
+            return controls
+
+        return self._dispatcher.call(_do)
+
+    def get_report_control_properties(self, report_name: str, control_name: str) -> dict:
+        """Get all properties of a specific control by opening the report in design view."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    for i in range(report.Controls.Count):
+                        try:
+                            ctrl = report.Controls(i)
+                            if ctrl.Name == control_name:
+                                props: dict[str, str] = {}
+                                for prop in ctrl.Properties:
+                                    try:
+                                        props[prop.Name] = str(prop.Value)
+                                    except Exception:
+                                        pass
+                                return props
+                        except Exception:
+                            pass
+                return {}
+            except Exception:
+                return {}
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_report_control_property(self, report_name: str, control_name: str, property_name: str, value: str) -> bool:
+        """Set a property of a control by opening the report in design view."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    for i in range(report.Controls.Count):
+                        try:
+                            ctrl = report.Controls(i)
+                            if ctrl.Name == control_name:
+                                ctrl.Properties(property_name).Value = value
+                                return True
+                        except Exception:
+                            pass
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acReport=4, acSaveYes=1
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_report_control_properties(self, report_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a report control. Returns dict of {property_name: success}."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for prop_name, value in properties.items():
+                try:
+                    opened = False
+                    try:
+                        self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                        opened = True
+
+                        try:
+                            report = self._dispatcher.access_app.Reports(report_name)
+                        except Exception:
+                            report = None
+
+                        success = False
+                        if report is not None:
+                            for i in range(report.Controls.Count):
+                                try:
+                                    ctrl = report.Controls(i)
+                                    if ctrl.Name == control_name:
+                                        ctrl.Properties(prop_name).Value = value
+                                        success = True
+                                        break
+                                except Exception:
+                                    pass
+                    except Exception:
+                        success = False
+                    finally:
+                        if opened:
+                            try:
+                                self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acReport=4, acSaveYes=1
+                            except Exception:
+                                pass
+                    results[prop_name] = success
+                except Exception:
+                    results[prop_name] = False
+            return results
+
+        return self._dispatcher.call(_do)
+
+    def add_report_control(self, report_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+        """Add a control to a report by opening it in design view, creating the control, and setting its name and properties."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                type_int = self._access_control_type_id(control_type)
+                if type_int == 0:
+                    return False
+
+                ctrl = self._dispatcher.access_app.DoCmd.CreateControl(report_name, type_int, section)
+                ctrl.Name = control_name
+
+                if properties:
+                    for prop_name, value in properties.items():
+                        try:
+                            ctrl.Properties(prop_name).Value = value
+                        except Exception:
+                            pass
+
+                self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acReport=4, acSaveYes=1
+                return True
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def remove_report_control(self, report_name: str, control_name: str) -> bool:
+        """Remove a control from a report by opening it in design view, selecting the control, and running the delete command."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    for i in range(report.Controls.Count):
+                        try:
+                            ctrl = report.Controls(i)
+                            if ctrl.Name == control_name:
+                                ctrl.SetFocus()
+                                self._dispatcher.access_app.DoCmd.RunCommand(365)  # acCmdDelete
+                                self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acReport=4, acSaveYes=1
+                                return True
+                        except Exception:
+                            pass
+
+                self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
 
         return self._dispatcher.call(_do)
 

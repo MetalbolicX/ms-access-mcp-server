@@ -453,6 +453,39 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def delete_report(self, report_name: str) -> bool:
         return self._ui.delete_report(report_name)
 
+    def create_report(self, report_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+        return self._ui.create_report(report_name, record_source, template_name, properties)
+
+    def rename_report(self, old_name: str, new_name: str) -> bool:
+        return self._ui.rename_report(old_name, new_name)
+
+    def get_report_properties(self, report_name: str) -> dict:
+        return self._ui.get_report_properties(report_name)
+
+    def set_report_property(self, report_name: str, property_name: str, value: str) -> bool:
+        return self._ui.set_report_property(report_name, property_name, value)
+
+    def set_report_properties(self, report_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        return self._ui.set_report_properties(report_name, properties)
+
+    def get_report_controls(self, report_name: str) -> list[ControlInfo]:
+        return self._ui.get_report_controls(report_name)
+
+    def get_report_control_properties(self, report_name: str, control_name: str) -> dict:
+        return self._ui.get_report_control_properties(report_name, control_name)
+
+    def set_report_control_property(self, report_name: str, control_name: str, property_name: str, value: str) -> bool:
+        return self._ui.set_report_control_property(report_name, control_name, property_name, value)
+
+    def set_report_control_properties(self, report_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        return self._ui.set_report_control_properties(report_name, control_name, properties)
+
+    def add_report_control(self, report_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+        return self._ui.add_report_control(report_name, control_type, control_name, section, properties)
+
+    def remove_report_control(self, report_name: str, control_name: str) -> bool:
+        return self._ui.remove_report_control(report_name, control_name)
+
     def export_report_to_text(self, report_name: str) -> str:
         return self._ui.export_report_to_text(report_name)
 
