@@ -105,11 +105,13 @@ from .connection import (  # noqa: E402
     connect_access, disconnect_access, is_connected,
     list_connections, set_active_connection, get_active_connection,
 )
-from .schema import get_tables, get_table_schema, get_relationships, generate_sql, get_er_diagram  # noqa: E402
+from .schema import get_tables, get_table_schema, get_relationships, generate_sql, get_er_diagram, get_indexes  # noqa: E402
 from .crud import (  # noqa: E402
     get_queries, create_query, set_query_sql, delete_query,
     create_table, delete_table,
+    create_index, drop_index,
     query_data, insert_data, update_data, delete_data,
+    alter_table,
 )
 from .export import export_data  # noqa: E402
 from .com import (  # noqa: E402

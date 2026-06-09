@@ -80,12 +80,44 @@ skip_unless_odbc_driver = pytest.mark.skipif(
 # ---- Shared test helper --------------------------------------------------------
 
 def call_mcp_tool(tool_name: str, *args, connection_service=None, **kwargs):
-    """Call an MCP tool function by name, patching its connection_service.
+    """Call an MCP tool function by name, routing it to the given connection_service.
 
-    Uses patch.dict on the tool's __globals__ to ensure the connection_service
-    binding in each tool module (created at import time via 'from .server import
-    connection_service') is correctly replaced for the duration of the call.
+    Patches get_container in each tool module's namespace so that all lazy
+    _pool() accesses resolve to the provided connection_service.
     """
+    from ms_access_mcp.mcp.container import ServiceContainer
     tool_func = getattr(server_module, tool_name)
-    with patch.dict(tool_func.__globals__, connection_service=connection_service):
+
+    if connection_service is not None:
+        mock_container = ServiceContainer(
+            connection_pool=connection_service,
+            com_automation=None,
+            migration=None,
+            dev_copy=None,
+            connector_registry=None,
+        )
+        tool_module_name = tool_func.__module__
+        # Map tool module name to the actual module object
+        module_map = {
+            "ms_access_mcp.mcp.crud": getattr(server_module, "crud", None),
+            "ms_access_mcp.mcp.schema": getattr(server_module, "schema", None),
+            "ms_access_mcp.mcp.connection": getattr(server_module, "connection", None),
+            "ms_access_mcp.mcp.vba": getattr(server_module, "vba", None),
+            "ms_access_mcp.mcp.linked_tables": getattr(server_module, "linked_tables", None),
+            "ms_access_mcp.mcp.export": getattr(server_module, "export", None),
+            "ms_access_mcp.mcp.recovery": getattr(server_module, "recovery", None),
+            "ms_access_mcp.mcp.system": getattr(server_module, "system", None),
+            "ms_access_mcp.mcp.persistence": getattr(server_module, "persistence", None),
+            "ms_access_mcp.mcp.com": getattr(server_module, "com", None),
+            "ms_access_mcp.mcp.migration": getattr(server_module, "migration", None),
+        }
+        target_module = module_map.get(tool_module_name)
+        if target_module is not None and hasattr(target_module, "get_container"):
+            with patch.object(target_module, "get_container", return_value=mock_container):
+                return tool_func(*args, **kwargs)
+        else:
+            # Fallback: patch the global get_container in container module
+            with patch("ms_access_mcp.mcp.container.get_container", return_value=mock_container):
+                return tool_func(*args, **kwargs)
+    else:
         return tool_func(*args, **kwargs)

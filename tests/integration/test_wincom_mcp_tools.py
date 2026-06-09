@@ -426,3 +426,225 @@ class TestMcpDevCopyTools:
         assert "active" in result
 
         self.pool.disconnect("test_db")
+
+
+# ============================================================================
+# MCP Tool Wrappers via WinComAdapter — Index Lifecycle
+# ============================================================================
+
+
+class TestMcpIndexTools:
+    """Index MCP tools (create_index, get_indexes, drop_index) via WinComAdapter.
+
+    Lifecycle test: create_table → create_index → get_indexes → drop_index → get_indexes
+    Proves WinCom index visibility — created indexes ARE returned by get_indexes.
+    """
+
+    def setup_method(self):
+        self.adapter: WinComAdapter = WinComAdapter()
+        self.pool: ConnectionPool = ConnectionPool()
+
+    def teardown_method(self):
+        _cleanup_adapter(self.adapter)
+
+    def test_index_lifecycle_create_get_drop(self, temp_db_copy: str):
+        """create_table → create_index → get_indexes → drop_index → get_indexes proves visibility."""
+        assert self.adapter.connect(temp_db_copy)
+        self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
+
+        TABLE = "__idx_test_tbl"
+        INDEX = "__idx_test_ix"
+        COLUMNS = [{"name": "id", "type": "Long Integer"}, {"name": "name", "type": "Text", "size": 100}]
+
+        try:
+            # Step 1: create_table
+            create_tbl = call_mcp_tool(
+                "create_table",
+                TABLE,
+                COLUMNS,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            assert create_tbl["success"] is True, f"create_table failed: {create_tbl}"
+
+            # Step 2: create_index
+            create_idx = call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["name"],
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            assert create_idx["success"] is True, f"create_index failed: {create_idx}"
+
+            # Step 3: get_indexes — index must be visible (WinCom contract)
+            indexes_result = call_mcp_tool(
+                "get_indexes",
+                TABLE,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            assert indexes_result["success"] is True, f"get_indexes failed: {indexes_result}"
+            index_names = {idx["name"] for idx in indexes_result.get("indexes", [])}
+            assert INDEX in index_names, f"Index {INDEX} not found in get_indexes: {index_names}"
+
+            # Step 4: drop_index
+            drop_idx = call_mcp_tool(
+                "drop_index",
+                TABLE,
+                INDEX,
+                connection_name="test_db",
+                connection_service=self.pool,
+                confirm=True,
+            )
+            assert drop_idx["success"] is True, f"drop_index failed: {drop_idx}"
+
+            # Step 5: get_indexes — index must be gone
+            indexes_after = call_mcp_tool(
+                "get_indexes",
+                TABLE,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            assert indexes_after["success"] is True, f"get_indexes after drop failed: {indexes_after}"
+            index_names_after = {idx["name"] for idx in indexes_after.get("indexes", [])}
+            assert INDEX not in index_names_after, f"Index {INDEX} should be gone: {index_names_after}"
+
+        finally:
+            self.pool.disconnect("test_db")
+
+    def test_create_index_with_unique_flag(self, temp_db_copy: str):
+        """create_index with unique=True creates a UNIQUE index via WinComAdapter."""
+        assert self.adapter.connect(temp_db_copy)
+        self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
+
+        TABLE = "__idx_test_unique"
+        INDEX = "__idx_test_unique_ix"
+        COLUMNS = [{"name": "id", "type": "Long Integer"}, {"name": "code", "type": "Text", "size": 50}]
+
+        try:
+            call_mcp_tool(
+                "create_table",
+                TABLE,
+                COLUMNS,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+
+            create_idx = call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["code"],
+                unique=True,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            assert create_idx["success"] is True, f"create_index unique failed: {create_idx}"
+
+            # Verify the index appears in get_indexes
+            indexes_result = call_mcp_tool(
+                "get_indexes",
+                TABLE,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            assert indexes_result["success"] is True
+            index_names = {idx["name"] for idx in indexes_result.get("indexes", [])}
+            assert INDEX in index_names, f"Unique index {INDEX} not found: {index_names}"
+
+        finally:
+            self.pool.disconnect("test_db")
+
+    def test_drop_index_requires_confirm(self, temp_db_copy: str):
+        """drop_index without confirm=True returns error (destructive guard)."""
+        assert self.adapter.connect(temp_db_copy)
+        self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
+
+        TABLE = "__idx_test_noconfirm"
+        INDEX = "__idx_test_noconfirm_ix"
+        COLUMNS = [{"name": "id", "type": "Long Integer"}]
+
+        try:
+            call_mcp_tool(
+                "create_table",
+                TABLE,
+                COLUMNS,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["id"],
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+
+            # Without confirm=True — should be rejected
+            drop_result = call_mcp_tool(
+                "drop_index",
+                TABLE,
+                INDEX,
+                connection_name="test_db",
+                connection_service=self.pool,
+                confirm=False,
+            )
+            assert drop_result["success"] is False, "drop_index should reject without confirm=True"
+            assert "confirm" in drop_result.get("error", "").lower()
+
+        finally:
+            self.pool.disconnect("test_db")
+
+    def test_drop_index_dry_run_preview(self, temp_db_copy: str):
+        """drop_index with dry_run=True returns preview without executing."""
+        assert self.adapter.connect(temp_db_copy)
+        self.pool.connect("test_db", temp_db_copy, self.adapter, "com")
+
+        TABLE = "__idx_test_dryrun"
+        INDEX = "__idx_test_dryrun_ix"
+        COLUMNS = [{"name": "id", "type": "Long Integer"}]
+
+        try:
+            call_mcp_tool(
+                "create_table",
+                TABLE,
+                COLUMNS,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["id"],
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+
+            dry_run = call_mcp_tool(
+                "drop_index",
+                TABLE,
+                INDEX,
+                connection_name="test_db",
+                connection_service=self.pool,
+                confirm=True,
+                dry_run=True,
+            )
+            assert dry_run.get("dry_run") is True, f"Expected dry_run preview, got: {dry_run}"
+            assert dry_run.get("action") == "drop_index"
+
+            # Index should still exist after dry run
+            indexes_result = call_mcp_tool(
+                "get_indexes",
+                TABLE,
+                connection_name="test_db",
+                connection_service=self.pool,
+            )
+            index_names = {idx["name"] for idx in indexes_result.get("indexes", [])}
+            assert INDEX in index_names, f"Index should still exist after dry_run: {index_names}"
+
+        finally:
+            self.pool.disconnect("test_db")

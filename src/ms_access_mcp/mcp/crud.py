@@ -178,6 +178,74 @@ def delete_table(table_name: str, connection_name: str = "default", confirm: boo
 
 
 # ============================================================================
+# INDEX CRUD
+# ============================================================================
+
+
+@mcp.tool()
+def create_index(
+    table_name: str,
+    index_name: str,
+    columns: list[str],
+    unique: bool = False,
+    ignore_null: bool = False,
+    connection_name: str = "default",
+) -> dict:
+    """
+    Create an index on one or more columns.
+
+    Args:
+        table_name: Name of the table to create index on.
+        index_name: Name for the new index.
+        columns: List of column names to include in the index.
+        unique: If True, creates a UNIQUE index (default False).
+        ignore_null: If True, adds WITH IGNORE NULL clause (default False).
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.create_index(table_name, index_name, columns, unique, ignore_null)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def drop_index(table_name: str, index_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Drop an index from a table.
+
+    Args:
+        table_name: Name of the table the index belongs to.
+        index_name: Name of the index to drop.
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the deletion
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+
+    if dry_run:
+        return {"dry_run": True, "action": "drop_index", "table_name": table_name, "index_name": index_name}
+
+    if not confirm:
+        return {"success": False, "error": "confirm=True required for destructive operation (drop_index)"}
+
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        result = adapter.drop_index(table_name, index_name)
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
 # DATA CRUD
 # ============================================================================
 
@@ -283,5 +351,53 @@ def delete_data(table_name: str, where_dict: dict | str | None = None, connectio
     try:
         result = adapter.delete_data(table_name, where_dict)
         return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+# ============================================================================
+# SCHEMA ALTER
+# ============================================================================
+
+
+@mcp.tool()
+def alter_table(table_name: str, operations: list[dict], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Alter table schema by adding, dropping, modifying columns, or renaming.
+
+    Args:
+        table_name: Name of the table to alter
+        operations: List of operation dicts with:
+            - action: "add_column" | "drop_column" | "modify_column" | "rename_table" | "rename_column"
+            - params: dict with operation-specific keys:
+                add_column: {"name": str, "type": str, "size": int?, "nullable": bool?}
+                drop_column: {"name": str}
+                modify_column: {"name": str, "type": str?, "size": int?, "nullable": bool?}
+                rename_table: {"new_name": str}
+                rename_column: {"name": str, "new_name": str}
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True for drop_column action
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+
+    if dry_run:
+        return {"dry_run": True, "table_name": table_name, "operations": operations}
+
+    # Check for drop_column operations that require confirm=True
+    for op in operations:
+        if op.get("action") == "drop_column" and not confirm:
+            return {"success": False, "error": "confirm=True required for drop_column action"}
+
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+
+    try:
+        result = adapter.alter_table(table_name, operations)
+        return result
+    except NotImplementedError as e:
+        return {"success": False, "error": str(e)}
     except Exception as e:
         return {"success": False, "error": str(e)}

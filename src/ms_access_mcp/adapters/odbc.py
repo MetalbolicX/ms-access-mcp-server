@@ -769,16 +769,62 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         unique: bool = False,
         ignore_nulls: bool = False,
     ) -> dict:
-        """Create an index via ODBC DDL. Full implementation in PR 2."""
+        """Create an index via ODBC DDL.
+
+        Jet SQL: CREATE [UNIQUE] INDEX [name] ON [table] ([col1], [col2]) [WITH IGNORE NULL]
+
+        Args:
+            table_name: Name of the table to index
+            index_name: Name for the new index
+            columns: List of column names to include in the index
+            unique: If True, creates a UNIQUE index
+            ignore_nulls: If True, adds WITH IGNORE NULL clause
+
+        Returns:
+            dict with success=True or success=False and error
+        """
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
-        raise NotImplementedError("create_index DDL — PR 2")
+
+        try:
+            col_list = ", ".join(f"[{col}]" for col in columns)
+            sql = "CREATE "
+            if unique:
+                sql += "UNIQUE "
+            sql += f"INDEX [{index_name}] ON [{table_name}] ({col_list})"
+            if ignore_nulls:
+                sql += " WITH IGNORE NULL"
+            cursor = self._conn.cursor()
+            cursor.execute(sql)
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def drop_index(self, table_name: str, index_name: str) -> dict:
-        """Drop an index via ODBC DDL. Full implementation in PR 2."""
+        """Drop an index via ODBC DDL.
+
+        Jet SQL: DROP INDEX [name] ON [table]
+        Note: ON [table] clause is REQUIRED in Jet SQL, not optional.
+
+        Args:
+            table_name: Name of the table containing the index
+            index_name: Name of the index to drop
+
+        Returns:
+            dict with success=True or success=False and error
+        """
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
-        raise NotImplementedError("drop_index DDL — PR 2")
+
+        try:
+            sql = f"DROP INDEX [{index_name}] ON [{table_name}]"
+            cursor = self._conn.cursor()
+            cursor.execute(sql)
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
 
     def _alter_table_add_column_sql(self, table_name: str, params: dict) -> str:
         """Generate ALTER TABLE ADD COLUMN SQL."""

@@ -11,6 +11,7 @@ class TestSchemaConnectionGuards:
 
     @pytest.mark.parametrize("tool_func,args", [
         (schema_module.generate_sql, ("/tmp/out.sql",)),
+        (schema_module.get_indexes, ("Customers",)),
     ])
     def test_schema_tools_return_error_when_not_connected(self, tool_func, args):
         """Schema tools should return error when not connected."""
@@ -85,6 +86,85 @@ class TestGetTableSchema:
             result = schema_module.get_table_schema("NonExistent")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
+
+
+class TestGetIndexes:
+    """Tests for get_indexes tool."""
+
+    def test_get_indexes_delegates_to_adapter(self):
+        """get_indexes should delegate to adapter.get_indexes."""
+        mock_idx = MagicMock()
+        mock_idx.model_dump.return_value = {
+            "name": "IX_Customers_Name",
+            "columns": ["LastName", "FirstName"],
+            "is_unique": False,
+            "is_primary": False,
+            "ignore_nulls": False,
+        }
+        mock_adapter = MagicMock()
+        mock_adapter.get_indexes.return_value = [mock_idx]
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_indexes("Customers")
+            assert result["success"] is True
+            assert result["count"] == 1
+            assert result["indexes"][0]["name"] == "IX_Customers_Name"
+            mock_adapter.get_indexes.assert_called_once_with("Customers")
+
+    def test_get_indexes_returns_empty_list_when_no_indexes(self):
+        """get_indexes should return empty list when no indexes found."""
+        mock_adapter = MagicMock()
+        mock_adapter.get_indexes.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_indexes("EmptyTable")
+            assert result["success"] is True
+            assert result["count"] == 0
+            assert result["indexes"] == []
+
+    def test_get_indexes_returns_no_adapter_error(self):
+        """get_indexes should return error when no adapter."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = None
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_indexes("Customers")
+            assert result["success"] is False
+            assert "No adapter" in result["error"]
+
+    def test_get_indexes_returns_multiple_indexes(self):
+        """get_indexes should return multiple index dumps."""
+        mock_idx1 = MagicMock()
+        mock_idx1.model_dump.return_value = {
+            "name": "PK_Customers",
+            "columns": ["ID"],
+            "is_unique": True,
+            "is_primary": True,
+            "ignore_nulls": False,
+        }
+        mock_idx2 = MagicMock()
+        mock_idx2.model_dump.return_value = {
+            "name": "IX_Customers_Name",
+            "columns": ["LastName", "FirstName"],
+            "is_unique": False,
+            "is_primary": False,
+            "ignore_nulls": False,
+        }
+        mock_adapter = MagicMock()
+        mock_adapter.get_indexes.return_value = [mock_idx1, mock_idx2]
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_indexes("Customers")
+            assert result["success"] is True
+            assert result["count"] == 2
+            assert result["indexes"][0]["is_primary"] is True
+            assert result["indexes"][1]["name"] == "IX_Customers_Name"
 
 
 class TestGetRelationships:

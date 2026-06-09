@@ -159,6 +159,13 @@ class TestNewReExports:
         assert callable(recover_access)
         assert callable(diagnose_environment)
 
+    def test_index_tools_exported(self):
+        """Should export get_indexes, create_index, drop_index."""
+        from ms_access_mcp.mcp.server import get_indexes, create_index, drop_index
+        assert callable(get_indexes)
+        assert callable(create_index)
+        assert callable(drop_index)
+
 
 class TestMainGuard:
     """Tests for __main__ guard that enables stdio transport."""

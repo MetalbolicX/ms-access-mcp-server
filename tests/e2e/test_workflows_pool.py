@@ -399,3 +399,234 @@ class TestSchemaErDiagram:
         # __meta should appear as a node
         node_ids = {n["id"] for n in er_result["nodes"]}
         assert "__meta" in node_ids, f"__meta should appear as node, got nodes: {node_ids}"
+
+
+# ============================================================================
+# TestIndexSmoke
+# ============================================================================
+
+
+class TestIndexSmoke:
+    """E2E smoke tests for index CRUD tools via SQLite-backed ODBC pool.
+
+    These tests verify the ODBC contract: get_indexes returns an empty list
+    because ODBC cannot enumerate DAO indexes. The tests assert:
+    - create_index succeeds (DDL executes)
+    - get_indexes returns empty list (ODBC limitation by contract)
+    - drop_index succeeds (DDL executes)
+    - No errors propagate unexpectedly
+    """
+
+    def test_create_index_via_odbc_succeeds(self, e2e_pool):
+        """create_index via ODBC pool returns success even though get_indexes stays empty."""
+        pool = e2e_pool
+        TABLE = "__e2e_test_idx_tbl"
+        INDEX = "__e2e_test_idx"
+
+        try:
+            # Create table first
+            create_tbl = call_mcp_tool(
+                "create_table",
+                TABLE,
+                [{"name": "id", "type": "Long Integer"}, {"name": "name", "type": "Text", "size": 100}],
+                connection_service=pool,
+            )
+            assert create_tbl["success"] is True, f"create_table failed: {create_tbl}"
+
+            # Create index — should succeed (DDL executes)
+            create_idx = call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["name"],
+                connection_service=pool,
+            )
+            assert create_idx["success"] is True, f"create_index failed: {create_idx}"
+
+        finally:
+            if pool.is_connected("default"):
+                adapter = pool.get_adapter("default")
+                try:
+                    adapter.execute_query(f"DROP INDEX [{INDEX}] ON [{TABLE}]")
+                except Exception:
+                    pass
+                try:
+                    adapter.execute_query(f"DROP TABLE IF EXISTS [{TABLE}]")
+                except Exception:
+                    pass
+
+    def test_get_indexes_returns_empty_via_odbc(self, e2e_pool):
+        """get_indexes via ODBC pool returns empty list — ODBC DAO limitation contract."""
+        pool = e2e_pool
+        TABLE = "__e2e_test_idx_empty"
+
+        try:
+            # Create table
+            create_tbl = call_mcp_tool(
+                "create_table",
+                TABLE,
+                [{"name": "id", "type": "Long Integer"}],
+                connection_service=pool,
+            )
+            assert create_tbl["success"] is True
+
+            # get_indexes on a table with no user-created indexes returns empty
+            # (ODBC cannot enumerate DAO indexes — this is the contract)
+            indexes_result = call_mcp_tool(
+                "get_indexes",
+                TABLE,
+                connection_service=pool,
+            )
+            assert indexes_result["success"] is True, f"get_indexes failed: {indexes_result}"
+            assert indexes_result.get("count", -1) == 0, \
+                f"ODBC get_indexes should return 0, got: {indexes_result.get('count')}"
+            assert indexes_result.get("indexes", []) == [], \
+                f"ODBC get_indexes should return empty list, got: {indexes_result.get('indexes')}"
+
+        finally:
+            if pool.is_connected("default"):
+                adapter = pool.get_adapter("default")
+                try:
+                    adapter.execute_query(f"DROP TABLE IF EXISTS [{TABLE}]")
+                except Exception:
+                    pass
+
+    def test_drop_index_via_odbc_succeeds(self, e2e_pool):
+        """drop_index via ODBC pool returns success after create_index."""
+        pool = e2e_pool
+        TABLE = "__e2e_test_drop_idx"
+        INDEX = "__e2e_test_drop_idx"
+
+        try:
+            # Create table and index
+            call_mcp_tool(
+                "create_table",
+                TABLE,
+                [{"name": "id", "type": "Long Integer"}],
+                connection_service=pool,
+            )
+            call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["id"],
+                connection_service=pool,
+            )
+
+            # Drop index with confirm=True — should succeed
+            drop_result = call_mcp_tool(
+                "drop_index",
+                TABLE,
+                INDEX,
+                confirm=True,
+                connection_service=pool,
+            )
+            assert drop_result["success"] is True, f"drop_index failed: {drop_result}"
+
+        finally:
+            if pool.is_connected("default"):
+                adapter = pool.get_adapter("default")
+                try:
+                    adapter.execute_query(f"DROP TABLE IF EXISTS [{TABLE}]")
+                except Exception:
+                    pass
+
+    def test_drop_index_requires_confirm_via_odbc(self, e2e_pool):
+        """drop_index without confirm=True is rejected via ODBC pool."""
+        pool = e2e_pool
+        TABLE = "__e2e_test_noconfirm"
+        INDEX = "__e2e_test_noconfirm"
+
+        try:
+            call_mcp_tool(
+                "create_table",
+                TABLE,
+                [{"name": "id", "type": "Long Integer"}],
+                connection_service=pool,
+            )
+            call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["id"],
+                connection_service=pool,
+            )
+
+            # Without confirm=True — should be rejected
+            drop_result = call_mcp_tool(
+                "drop_index",
+                TABLE,
+                INDEX,
+                connection_service=pool,
+            )
+            assert drop_result["success"] is False, \
+                "drop_index should reject without confirm=True"
+            assert "confirm" in drop_result.get("error", "").lower()
+
+        finally:
+            if pool.is_connected("default"):
+                adapter = pool.get_adapter("default")
+                try:
+                    adapter.execute_query(f"DROP TABLE IF EXISTS [{TABLE}]")
+                except Exception:
+                    pass
+
+    def test_index_lifecycle_odbc_empty_by_contract(self, e2e_pool):
+        """Full index lifecycle via ODBC: create_index → get_indexes(empty) → drop_index.
+
+        This test proves the ODBC contract: get_indexes stays empty even after
+        create_index because ODBC cannot enumerate DAO indexes.
+        """
+        pool = e2e_pool
+        TABLE = "__e2e_test_lifecycle"
+        INDEX = "__e2e_test_lifecycle_ix"
+
+        try:
+            # Step 1: create_table
+            create_tbl = call_mcp_tool(
+                "create_table",
+                TABLE,
+                [{"name": "id", "type": "Long Integer"}, {"name": "value", "type": "Double"}],
+                connection_service=pool,
+            )
+            assert create_tbl["success"] is True, f"create_table failed: {create_tbl}"
+
+            # Step 2: create_index — DDL executes successfully
+            create_idx = call_mcp_tool(
+                "create_index",
+                TABLE,
+                INDEX,
+                ["value"],
+                connection_service=pool,
+            )
+            assert create_idx["success"] is True, f"create_index failed: {create_idx}"
+
+            # Step 3: get_indexes — ODBC contract: returns empty list
+            indexes_result = call_mcp_tool(
+                "get_indexes",
+                TABLE,
+                connection_service=pool,
+            )
+            assert indexes_result["success"] is True, f"get_indexes failed: {indexes_result}"
+            assert indexes_result.get("count", -1) == 0, \
+                f"ODBC contract: get_indexes should return 0, got: {indexes_result.get('count')}"
+            assert indexes_result.get("indexes", []) == [], \
+                f"ODBC contract: get_indexes should return [], got: {indexes_result.get('indexes')}"
+
+            # Step 4: drop_index — DDL executes successfully
+            drop_result = call_mcp_tool(
+                "drop_index",
+                TABLE,
+                INDEX,
+                confirm=True,
+                connection_service=pool,
+            )
+            assert drop_result["success"] is True, f"drop_index failed: {drop_result}"
+
+        finally:
+            if pool.is_connected("default"):
+                adapter = pool.get_adapter("default")
+                try:
+                    adapter.execute_query(f"DROP TABLE IF EXISTS [{TABLE}]")
+                except Exception:
+                    pass

@@ -46,6 +46,28 @@ def get_tables(connection_name: str = "default") -> dict:
 
 
 @mcp.tool()
+def get_indexes(table_name: str, connection_name: str = "default") -> dict:
+    """
+    Get all indexes for a specific table.
+
+    Args:
+        table_name: Name of the table to get indexes for.
+        connection_name: Connection identifier (defaults to "default")
+
+    Returns:
+        Indexes for the table. WinCom returns all indexes (primary and secondary).
+        ODBC returns an empty list due to DAO-only limitation.
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    indexes = adapter.get_indexes(table_name)
+    return {"success": True, "indexes": [idx.model_dump() for idx in indexes], "count": len(indexes)}
+
+
+@mcp.tool()
 def get_table_schema(table_name: str, connection_name: str = "default") -> dict:
     """
     Get detailed schema for a specific table.

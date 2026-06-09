@@ -454,16 +454,66 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         unique: bool = False,
         ignore_nulls: bool = False,
     ) -> dict:
-        """Create an index via Jet DDL. Full implementation in PR 2."""
+        """Create an index via Jet DDL.
+
+        Jet SQL: CREATE [UNIQUE] INDEX [name] ON [table] ([col1], [col2]) [WITH IGNORE NULL]
+
+        Args:
+            table_name: Name of the table to index
+            index_name: Name for the new index
+            columns: List of column names to include in the index
+            unique: If True, creates a UNIQUE index
+            ignore_nulls: If True, adds WITH IGNORE NULL clause
+
+        Returns:
+            dict with success=True or success=False and error
+        """
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
-        raise NotImplementedError("create_index DDL — PR 2")
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                col_list = ", ".join(f"[{col}]" for col in columns)
+                sql = "CREATE "
+                if unique:
+                    sql += "UNIQUE "
+                sql += f"INDEX [{index_name}] ON [{table_name}] ({col_list})"
+                if ignore_nulls:
+                    sql += " WITH IGNORE NULL"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
 
     def drop_index(self, table_name: str, index_name: str) -> dict:
-        """Drop an index via Jet DDL. Full implementation in PR 2."""
+        """Drop an index via Jet DDL.
+
+        Jet SQL: DROP INDEX [name] ON [table]
+        Note: ON [table] clause is REQUIRED in Jet SQL, not optional.
+
+        Args:
+            table_name: Name of the table containing the index
+            index_name: Name of the index to drop
+
+        Returns:
+            dict with success=True or success=False and error
+        """
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
-        raise NotImplementedError("drop_index DDL — PR 2")
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                sql = f"DROP INDEX [{index_name}] ON [{table_name}]"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
 
     def generate_sql(self, output_path: str) -> dict:
         """Generate Jet SQL DDL and write to output_path.
