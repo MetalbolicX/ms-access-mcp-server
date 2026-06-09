@@ -533,3 +533,188 @@ class TestRemoveReportControl:
             result = server.remove_report_control("TestReport", "txtName", confirm=True)
             assert result["success"] is False
             assert "Not connected" in result["error"]
+
+
+# =============================================================================
+# PR3: REPORT SECTION TOOLS
+# =============================================================================
+
+
+class TestGetReportSections:
+    """Tests for get_report_sections tool."""
+
+    def test_get_report_sections_success_returns_sections(self):
+        """get_report_sections should return success with sections list."""
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_sections.return_value = [
+            {"index": 0, "name": "Detail", "section_type": "detail", "visible": True, "height": 100},
+            {"index": 1, "name": "ReportHeader", "section_type": "header", "visible": True, "height": 200},
+        ]
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_report_sections("TestReport")
+            assert result["success"] is True
+            assert result["count"] == 2
+            assert result["sections"][0]["index"] == 0
+            assert result["sections"][0]["section_type"] == "detail"
+
+    def test_get_report_sections_empty_returns_empty_list(self):
+        """get_report_sections with no sections should return empty list."""
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_sections.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_report_sections("TestReport")
+            assert result["success"] is True
+            assert result["count"] == 0
+            assert result["sections"] == []
+
+    def test_get_report_sections_returns_error_when_not_connected(self):
+        """get_report_sections should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_report_sections("TestReport")
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
+class TestGetReportSectionProperties:
+    """Tests for get_report_section_properties tool."""
+
+    def test_get_report_section_properties_success_returns_props(self):
+        """get_report_section_properties should return success with properties dict."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_report_section_properties.return_value = {"Visible": "True", "Height": "100"}
+        with patch.object(reports_module, '_pool', return_value=mock_conn), \
+             patch.object(reports_module, '_com', return_value=mock_com):
+            result = server.get_report_section_properties("TestReport", 0)
+            assert result["success"] is True
+            assert result["section_id"] == 0
+            assert result["properties"]["Visible"] == "True"
+
+    def test_get_report_section_properties_empty_returns_error(self):
+        """get_report_section_properties with empty dict should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_report_section_properties.return_value = {}
+        with patch.object(reports_module, '_pool', return_value=mock_conn), \
+             patch.object(reports_module, '_com', return_value=mock_com):
+            result = server.get_report_section_properties("TestReport", 0)
+            assert result["success"] is False
+            assert "error" in result
+
+    def test_get_report_section_properties_returns_error_when_not_connected(self):
+        """get_report_section_properties should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_report_section_properties("TestReport", 0)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
+class TestSetReportSectionProperty:
+    """Tests for set_report_section_property tool — destructive."""
+
+    def test_set_report_section_property_blocked_without_confirmation(self):
+        """set_report_section_property with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.set_report_section_property("TestReport", 0, "Height", "200", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_report_section_property_dry_run_returns_preview(self):
+        """set_report_section_property with dry_run=True should return preview."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.set_report_section_property("TestReport", 0, "Height", "200", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_report_section_property"
+            assert result["section_id"] == 0
+
+    def test_set_report_section_property_success_with_confirmation(self):
+        """set_report_section_property with confirm=True should delegate to COM service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_report_section_property.return_value = True
+        with patch.object(reports_module, '_pool', return_value=mock_conn), \
+             patch.object(reports_module, '_com', return_value=mock_com):
+            result = server.set_report_section_property("TestReport", 0, "Height", "200", confirm=True)
+            assert result["success"] is True
+            mock_com.set_report_section_property.assert_called_once()
+
+    def test_set_report_section_property_returns_error_when_not_connected(self):
+        """set_report_section_property should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.set_report_section_property("TestReport", 0, "Height", "200", confirm=True)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
+class TestSetReportSectionProperties:
+    """Tests for set_report_section_properties tool — destructive batch."""
+
+    def test_set_report_section_properties_blocked_without_confirmation(self):
+        """set_report_section_properties with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.set_report_section_properties("TestReport", 0, {"Height": "200", "Visible": "False"}, confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_report_section_properties_dry_run_returns_preview(self):
+        """set_report_section_properties with dry_run=True should return preview."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.set_report_section_properties("TestReport", 0, {"Height": "200"}, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_report_section_properties"
+
+    def test_set_report_section_properties_success_with_confirmation(self):
+        """set_report_section_properties with confirm=True should return success."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_report_section_properties.return_value = {"Height": True, "Visible": False}
+        with patch.object(reports_module, '_pool', return_value=mock_conn), \
+             patch.object(reports_module, '_com', return_value=mock_com):
+            result = server.set_report_section_properties("TestReport", 0, {"Height": "200", "Visible": "False"}, confirm=True)
+            assert result["success"] is True
+            assert result["properties"]["Height"] is True
+
+    def test_set_report_section_properties_empty_result_returns_error(self):
+        """set_report_section_properties with empty result should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_report_section_properties.return_value = {}
+        with patch.object(reports_module, '_pool', return_value=mock_conn), \
+             patch.object(reports_module, '_com', return_value=mock_com):
+            result = server.set_report_section_properties("TestReport", 0, {"Height": "200"}, confirm=True)
+            assert result["success"] is False
+            assert "error" in result
+
+    def test_set_report_section_properties_returns_error_when_not_connected(self):
+        """set_report_section_properties should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.set_report_section_properties("TestReport", 0, {"Height": "200"}, confirm=True)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]

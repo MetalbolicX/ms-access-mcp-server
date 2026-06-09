@@ -268,3 +268,31 @@ class COMAutomationService:
         if adapter is None:
             return False
         return adapter.remove_report_control(report_name, control_name)
+
+    def get_report_sections(self, report_name: str) -> list:
+        """Get all sections of a report."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return []
+        return adapter.get_report_sections(report_name)
+
+    def get_report_section_properties(self, report_name: str, section_id: int) -> dict:
+        """Get all properties of a specific report section."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.get_report_section_properties(report_name, section_id)
+
+    def set_report_section_property(self, report_name: str, section_id: int, property_name: str, value: str) -> bool:
+        """Set a single property of a report section."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.set_report_section_property(report_name, section_id, property_name, value)
+
+    def set_report_section_properties(self, report_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a report section at once."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.set_report_section_properties(report_name, section_id, properties)

@@ -342,3 +342,110 @@ def remove_report_control(report_name: str, control_name: str, connection_name: 
         return {"success": False, "error": "No adapter available"}
     result = _com().remove_report_control(report_name, control_name)
     return {"success": result, "report": report_name, "control": control_name}
+
+
+# =============================================================================
+# REPORT SECTION TOOLS
+# =============================================================================
+
+
+@mcp.tool()
+def get_report_sections(report_name: str, connection_name: str = "default") -> dict:
+    """
+    Get all sections of a report.
+
+    Opens the report in design view, reads Report.Sections, then closes.
+
+    Args:
+        report_name: Name of the report
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    sections = adapter.get_report_sections(report_name)
+    return {"success": True, "report": report_name, "sections": sections, "count": len(sections)}
+
+
+@mcp.tool()
+def get_report_section_properties(report_name: str, section_id: int, connection_name: str = "default") -> dict:
+    """
+    Get all properties of a specific section in a report.
+
+    Opens the report in design view, finds the section, reads its properties, then closes.
+
+    Args:
+        report_name: Name of the report
+        section_id: Section index (0=detail, 1=header, 2=footer, 3=page_header, 4=page_footer)
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    props = _com().get_report_section_properties(report_name, section_id)
+    if not props:
+        return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}
+    return {"success": True, "report": report_name, "section_id": section_id, "properties": props}
+
+
+@mcp.tool()
+def set_report_section_property(report_name: str, section_id: int, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Set a single property of a section in a report.
+
+    Opens the report in design view, finds the section, sets the property, and saves.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        report_name: Name of the report
+        section_id: Section index (0=detail, 1=header, 2=footer, 3=page_header, 4=page_footer)
+        property_name: Name of the property to set
+        value: Value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the change
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_report_section_property", report_name=report_name, section_id=section_id, property_name=property_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().set_report_section_property(report_name, section_id, property_name, value)
+    return {"success": result, "report": report_name, "section_id": section_id, "property": property_name, "value": value}
+
+
+@mcp.tool()
+def set_report_section_properties(report_name: str, section_id: int, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Set multiple properties of a section in a report at once.
+
+    Opens the report in design view, finds the section, sets each property, and saves.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        report_name: Name of the report
+        section_id: Section index (0=detail, 1=header, 2=footer, 3=page_header, 4=page_footer)
+        properties: Dict of property_name -> value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the changes
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_report_section_properties", report_name=report_name, section_id=section_id)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().set_report_section_properties(report_name, section_id, properties)
+    if not result:
+        return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}
+    return {"success": True, "report": report_name, "section_id": section_id, "properties": result}

@@ -155,6 +155,8 @@ from .reports import (  # noqa: E402
     get_report_controls, get_report_control_properties,
     set_report_control_property, set_report_control_properties,
     add_report_control, remove_report_control,
+    get_report_sections, get_report_section_properties,
+    set_report_section_property, set_report_section_properties,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import (

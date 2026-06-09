@@ -1509,6 +1509,163 @@ class UiOperations:
         return self._dispatcher.call(_do)
 
     # ------------------------------------------------------------------ #
+    # Report section operations
+    # ------------------------------------------------------------------ #
+
+    def get_report_sections(self, report_name: str) -> list[dict]:
+        """Get all sections of a report by opening it in design view."""
+        if not self._dispatcher._started:
+            return []
+
+        def _do() -> list[dict]:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is None:
+                    return []
+
+                sections: list[dict] = []
+                for i in range(5):  # 0=acDetail, 1=acHeader, 2=acFooter, 3=acPageHeader, 4=acPageFooter
+                    try:
+                        section = report.Section(i)
+                        sections.append({
+                            "index": i,
+                            "name": str(section.Name),
+                            "section_type": self._ac_section_name(i),
+                            "visible": bool(section.Visible),
+                            "height": int(section.Height),
+                        })
+                    except Exception:
+                        pass  # Section doesn't exist on this report
+                return sections
+            except Exception:
+                return []
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def get_report_section_properties(self, report_name: str, section_id: int) -> dict:
+        """Get all properties of a specific section by opening the report in design view."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    section = report.Section(section_id)
+                    props: dict[str, str] = {}
+                    for prop in section.Properties:
+                        try:
+                            props[prop.Name] = str(prop.Value)
+                        except Exception:
+                            pass
+                    return props
+                return {}
+            except Exception:
+                return {}
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_report_section_property(self, report_name: str, section_id: int, property_name: str, value: str) -> bool:
+        """Set a single property of a report section by opening the report in design view."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    report = self._dispatcher.access_app.Reports(report_name)
+                except Exception:
+                    report = None
+
+                if report is not None:
+                    section = report.Section(section_id)
+                    section.Properties(property_name).Value = value
+                    self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acReport=4, acSaveYes=1
+                    return True
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(4, report_name, 2)  # acReport=4, acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_report_section_properties(self, report_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a report section. Returns dict of {property_name: success}."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for prop_name, value in properties.items():
+                opened = False
+                try:
+                    self._dispatcher.access_app.DoCmd.OpenReport(report_name, 1)  # acDesign=1
+                    opened = True
+
+                    try:
+                        report = self._dispatcher.access_app.Reports(report_name)
+                    except Exception:
+                        report = None
+
+                    success = False
+                    if report is not None:
+                        try:
+                            section = report.Section(section_id)
+                            section.Properties(prop_name).Value = value
+                            success = True
+                        except Exception:
+                            pass
+                except Exception:
+                    success = False
+                finally:
+                    if opened:
+                        try:
+                            self._dispatcher.access_app.DoCmd.Close(4, report_name, 1)  # acReport=4, acSaveYes=1
+                        except Exception:
+                            pass
+                results[prop_name] = success
+            return results
+
+        return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------ #
     # Macro operations
     # ------------------------------------------------------------------ #
 
