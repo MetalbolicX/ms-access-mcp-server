@@ -12,6 +12,7 @@ from ..models.database import (
     RelationshipInfo,
     ForeignKeyInfo,
     QueryInfo,
+    IndexInfo,
 )
 from ..models.migration import (
     TableSchema,
@@ -191,7 +192,12 @@ class SchemaInspector:
     # ------------------------------------------------------------------ #
 
     def _get_table_indexes(self, table_name: str) -> dict[str, list[str]]:
-        """Return {index_name: [columns]} for indexes where Primary=True."""
+        """Return {index_name: [columns]} for indexes where Primary=True.
+
+        .. deprecated::
+            Use get_indexes() instead, which returns all indexes as IndexInfo objects.
+            This method is kept for backward compatibility with internal callers.
+        """
         if not self._dispatcher.is_connected():
             return {}
 
@@ -206,6 +212,37 @@ class SchemaInspector:
             except Exception:
                 pass
             return indexes
+
+        return self._dispatcher.call(_do)
+
+    def get_indexes(self, table_name: str) -> list[IndexInfo]:
+        """Return all indexes (primary + secondary) for a table as IndexInfo objects.
+
+        Unlike _get_table_indexes which only returned primary indexes,
+        this method returns ALL indexes on the table.
+        """
+        if not self._dispatcher.is_connected():
+            return []
+
+        def _do() -> list[IndexInfo]:
+            result: list[IndexInfo] = []
+            try:
+                db = self._dispatcher.current_db
+                tdef = db.TableDefs(table_name)
+                for idx in tdef.Indexes:
+                    columns = [f.Name for f in idx.Fields]
+                    if not columns:
+                        continue
+                    result.append(IndexInfo(
+                        name=idx.Name,
+                        columns=columns,
+                        is_unique=bool(getattr(idx, "Unique", False)),
+                        is_primary=bool(getattr(idx, "Primary", False)),
+                        ignore_nulls=bool(getattr(idx, "IgnoreNulls", False)),
+                    ))
+            except Exception:
+                pass
+            return result
 
         return self._dispatcher.call(_do)
 
