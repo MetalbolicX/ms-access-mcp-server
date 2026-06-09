@@ -271,6 +271,8 @@ class TestFormManipulationToolsConnectionGuards:
         (server.rename_form, ("OldName", "NewName")),
         (server.set_form_property, ("TestForm", "Caption", "New Caption")),
         (server.set_form_properties, ("TestForm", {"Caption": "New Caption"})),
+        (server.add_control, ("TestForm", "TextBox", "txtNew")),
+        (server.remove_control, ("TestForm", "txtOld")),
     ])
     def test_tool_returns_error_when_not_connected(self, tool_func, args):
         """Each form manipulation tool should return error when not connected."""
@@ -444,3 +446,107 @@ class TestSetFormProperties:
             assert result["success"] is True
             assert "properties" in result
             assert result["properties"]["Caption"] is True
+
+
+class TestAddControl:
+    """Tests for add_control tool — destructive."""
+
+    def test_add_control_blocked_without_confirmation(self):
+        """add_control with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.add_control("TestForm", "TextBox", "txtNew", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_add_control_dry_run_returns_preview(self):
+        """add_control with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.add_control("TestForm", "TextBox", "txtNew", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "add_control"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtNew"
+            assert result["control_type"] == "TextBox"
+
+    def test_add_control_success_with_confirmation(self):
+        """add_control with confirm=True should delegate to COM service and return success."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.add_control.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.add_control("TestForm", "TextBox", "txtNew", section=0, properties={"Width": "200"}, confirm=True)
+            assert result["success"] is True
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtNew"
+            assert result["control_type"] == "TextBox"
+            mock_com.add_control.assert_called_once_with("TestForm", "TextBox", "txtNew", 0, {"Width": "200"})
+
+    def test_add_control_adapter_returns_false(self):
+        """add_control with confirm=True but adapter returns False should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.add_control.return_value = False
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.add_control("TestForm", "Label", "lblNew", confirm=True)
+            assert result["success"] is False
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "lblNew"
+
+
+class TestRemoveControl:
+    """Tests for remove_control tool — destructive."""
+
+    def test_remove_control_blocked_without_confirmation(self):
+        """remove_control with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.remove_control("TestForm", "txtOld", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_remove_control_dry_run_returns_preview(self):
+        """remove_control with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.remove_control("TestForm", "txtOld", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "remove_control"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtOld"
+
+    def test_remove_control_success_with_confirmation(self):
+        """remove_control with confirm=True should delegate to COM service and return success."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.remove_control.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.remove_control("TestForm", "txtOld", confirm=True)
+            assert result["success"] is True
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtOld"
+            mock_com.remove_control.assert_called_once_with("TestForm", "txtOld")
+
+    def test_remove_control_adapter_returns_false(self):
+        """remove_control with confirm=True but adapter returns False should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.remove_control.return_value = False
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.remove_control("TestForm", "txtOld", confirm=True)
+            assert result["success"] is False
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtOld"

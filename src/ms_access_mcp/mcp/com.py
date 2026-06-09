@@ -425,3 +425,81 @@ def set_form_properties(form_name: str, properties: dict[str, str], connection_n
     if not result:
         return {"success": False, "error": f"No properties found for form '{form_name}'"}
     return {"success": True, "form": form_name, "properties": result}
+
+
+# ============================================================================
+# CONTROL MANIPULATION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def add_control(
+    form_name: str,
+    control_type: str,
+    control_name: str,
+    section: int = 0,
+    properties: dict[str, str] | None = None,
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Add a control to a form.
+
+    Opens the form in design view, creates the control via DoCmd.CreateControl,
+    and sets the control name and optional properties.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form
+        control_type: Type of control (e.g., "TextBox", "Label", "CommandButton")
+        control_name: Name for the new control
+        section: Form section (0=Detail, 1=Header, 2=Footer, default 0)
+        properties: Optional dict of property_name -> value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the change
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "add_control", form_name=form_name, control_type=control_type, control_name=control_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().add_control(form_name, control_type, control_name, section, properties)
+    return {"success": result, "form_name": form_name, "control_name": control_name, "control_type": control_type}
+
+
+@mcp.tool()
+def remove_control(
+    form_name: str,
+    control_name: str,
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Delete a control from a form.
+
+    Opens the form in design view, selects the control, and deletes it.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form
+        control_name: Name of the control to delete
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the deletion
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "remove_control", form_name=form_name, control_name=control_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().remove_control(form_name, control_name)
+    return {"success": result, "form_name": form_name, "control_name": control_name}

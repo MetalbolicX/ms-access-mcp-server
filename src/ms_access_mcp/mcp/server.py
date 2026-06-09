@@ -121,6 +121,7 @@ from .com import (  # noqa: E402
     form_exists, get_form_controls, get_control_properties, set_control_property,
     set_control_properties, get_control_event_procedures,
     create_form, rename_form, get_form_properties, set_form_property, set_form_properties,
+    add_control, remove_control,
 )
 from .vba import (  # noqa: E402
     get_vba_projects, get_vba_code,
