@@ -100,7 +100,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         self._db_path: str | None = db_path
         self._dispatcher = ComDispatcher()
         self._vba = VbaOperations(self._dispatcher)
-        self._ui = UiOperations(self._dispatcher)
+        self._ui = UiOperations(self._dispatcher, vba=self._vba)
         self._schema = SchemaInspector(self._dispatcher)
         self._versioning = VersioningIo(
             dispatcher=self._dispatcher,
@@ -420,6 +420,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
     def remove_control(self, form_name: str, control_name: str) -> bool:
         return self._ui.remove_control(form_name, control_name)
+
+    def set_control_event_procedure(self, form_name: str, control_name: str, event_name: str, code: str) -> bool:
+        return self._ui.set_control_event_procedure(form_name, control_name, event_name, code)
 
     # ========================================================================
     # FORM SECTION OPERATIONS

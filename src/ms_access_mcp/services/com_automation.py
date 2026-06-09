@@ -184,3 +184,10 @@ class COMAutomationService:
         if adapter is None:
             return {}
         return adapter.set_form_section_properties(form_name, section_id, properties)
+
+    def set_control_event_procedure(self, form_name: str, control_name: str, event_name: str, code: str) -> bool:
+        """Set a control's event procedure."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.set_control_event_procedure(form_name, control_name, event_name, code)

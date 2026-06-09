@@ -13,6 +13,9 @@ dependencies = [
     "mysql-connector-python>=8.0.0",
     "openpyxl>=3.1.5",
 ]
+authors = [
+    { name = "MS Access MCP Server contributors" }
+]
 
 [project.optional-dependencies]
 windows = ["pywin32>=306"]
@@ -31,9 +34,6 @@ ms-access-mcp = "ms_access_mcp.cli.main:main"
 Homepage = "https://github.com/gentleman-programming/ms-access-mcp-server"
 Repository = "https://github.com/gentleman-programming/ms-access-mcp-server"
 Documentation = "https://github.com/gentleman-programming/ms-access-mcp-server#readme"
-
-[project.authors]
-name = "MS Access MCP Server contributors"
 
 [build-system]
 requires = ["hatchling"]

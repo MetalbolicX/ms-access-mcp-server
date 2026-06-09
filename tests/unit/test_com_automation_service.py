@@ -352,3 +352,20 @@ class TestFormSectionManipulation:
         service = COMAutomationService()
         result = service.set_form_section_properties("TestForm", 0, {"Height": "720"})
         assert result == {}
+
+
+class TestSetControlEventProcedure:
+    def test_set_control_event_procedure_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_event_procedure.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.set_control_event_procedure("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub")
+        assert result is True
+        mock_adapter.set_control_event_procedure.assert_called_once_with(
+            "TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub"
+        )
+
+    def test_set_control_event_procedure_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.set_control_event_procedure("TestForm", "btnSave", "Click", "code")
+        assert result is False

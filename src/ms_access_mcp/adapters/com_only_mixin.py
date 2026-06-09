@@ -256,3 +256,7 @@ class ComOnlyAdapterMixin:
     def set_form_section_properties(self, form_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
         """Set multiple properties of a form section at once — requires COM automation."""
         raise NotImplementedError("set_form_section_properties requires COM automation (WinComAdapter)")
+
+    def set_control_event_procedure(self, form_name: str, control_name: str, event_name: str, code: str) -> bool:
+        """Set a control's event procedure — requires COM automation."""
+        raise NotImplementedError("set_control_event_procedure requires COM automation (WinComAdapter)")

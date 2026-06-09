@@ -22,10 +22,12 @@ class UiOperations:
 
     Args:
         dispatcher: ComDispatcher instance for STA-threaded COM calls.
+        vba: VbaOperations instance for VBA procedure manipulation.
     """
 
-    def __init__(self, dispatcher: ComDispatcher) -> None:
+    def __init__(self, dispatcher: ComDispatcher, vba: "VbaOperations | None" = None) -> None:
         self._dispatcher = dispatcher
+        self._vba = vba  # set later by WinComAdapter if not provided
 
     # ------------------------------------------------------------------ #
     # Internal helpers
@@ -792,6 +794,73 @@ class UiOperations:
                     return result
             except Exception:
                 return []
+
+        return self._dispatcher.call(_do)
+
+    def set_control_event_procedure(self, form_name: str, control_name: str, event_name: str, code: str) -> bool:
+        """Set a control's event procedure by opening the form in design view, setting the event property to [Event Procedure], and replacing the VBA procedure.
+
+        Args:
+            form_name: Name of the form containing the control.
+            control_name: Name of the control.
+            event_name: Name of the event (e.g., "Click", "Enter", "AfterUpdate").
+            code: VBA code for the event procedure body.
+
+        Returns:
+            True on success, False on failure.
+        """
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is None:
+                    return False
+
+                # Find the control by name
+                target_ctrl = None
+                for i in range(form.Controls.Count):
+                    try:
+                        ctrl = form.Controls(i)
+                        if ctrl.Name == control_name:
+                            target_ctrl = ctrl
+                            break
+                    except Exception:
+                        pass
+
+                if target_ctrl is None:
+                    return False
+
+                # Set the event property to "[Event Procedure]"
+                event_prop_name = f"On{event_name}"
+                target_ctrl.Properties(event_prop_name).Value = "[Event Procedure]"
+
+                # Replace the VBA procedure in the form's module
+                module_name = f"Form_{form_name}"
+                proc_name = f"{control_name}_{event_name}"
+                if self._vba is not None:
+                    self._vba.vba_replace_procedure(module_name, proc_name, code)
+                else:
+                    return False
+
+                return True
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                    except Exception:
+                        pass
 
         return self._dispatcher.call(_do)
 

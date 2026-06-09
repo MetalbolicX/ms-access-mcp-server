@@ -64,6 +64,7 @@ class TestProtocolCompleteness:
         # Feature-expansion VBA methods
         "set_control_properties", "get_control_event_procedures",
         "vba_list_procedures", "vba_get_procedure", "vba_replace_procedure",
+        "set_control_event_procedure",
         # Index operations
         "get_indexes", "create_index", "drop_index",
         # Control manipulation (COM-only)
@@ -381,6 +382,11 @@ class TestNotConnectedDefaults:
         result = WinComAdapter().set_form_section_properties("TestForm", 0, {"Height": "720"})
         assert isinstance(result, dict)
 
+    def test_wincom_set_control_event_procedure_returns_false(self):
+        result = WinComAdapter().set_control_event_procedure("TestForm", "ctrl", "Click", "code")
+        assert isinstance(result, bool)
+        assert result is False
+
 
 # =============================================================================
 # Return-type invariants — verify return types are consistent
@@ -529,6 +535,11 @@ class TestReturnTypeInvariants:
     def test_wincom_vba_replace_procedure_returns_bool(self):
         a = WinComAdapter()
         val = a.vba_replace_procedure("mod", "proc", "code")
+        assert isinstance(val, bool)
+
+    def test_wincom_set_control_event_procedure_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.set_control_event_procedure("frm", "ctrl", "Click", "code")
         assert isinstance(val, bool)
 
     # Index operations — return type invariants
@@ -722,6 +733,10 @@ class TestOdbcNotImplemented:
     def test_remove_control_raises(self):
         with pytest.raises(NotImplementedError):
             OdbcAdapter().remove_control("TestForm", "txtTest")
+
+    def test_set_control_event_procedure_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().set_control_event_procedure("TestForm", "ctrl", "Click", "code")
 
 
 # =============================================================================
