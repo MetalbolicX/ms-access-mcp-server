@@ -207,3 +207,27 @@ class ComOnlyAdapterMixin:
     def unlink_table(self, name: str) -> dict:
         """Unlink a table — requires COM automation."""
         raise NotImplementedError("unlink_table requires COM automation (WinComAdapter)")
+
+    # ========================================================================
+    # Form-level manipulation (COM-only)
+    # ========================================================================
+
+    def create_form(self, form_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+        """Create a new form — requires COM automation."""
+        raise NotImplementedError("create_form requires COM automation (WinComAdapter)")
+
+    def rename_form(self, old_name: str, new_name: str) -> bool:
+        """Rename a form — requires COM automation."""
+        raise NotImplementedError("rename_form requires COM automation (WinComAdapter)")
+
+    def get_form_properties(self, form_name: str) -> dict:
+        """Get all properties of a form — requires COM automation."""
+        raise NotImplementedError("get_form_properties requires COM automation (WinComAdapter)")
+
+    def set_form_property(self, form_name: str, property_name: str, value: str) -> bool:
+        """Set a single form property — requires COM automation."""
+        raise NotImplementedError("set_form_property requires COM automation (WinComAdapter)")
+
+    def set_form_properties(self, form_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple form properties at once — requires COM automation."""
+        raise NotImplementedError("set_form_properties requires COM automation (WinComAdapter)")

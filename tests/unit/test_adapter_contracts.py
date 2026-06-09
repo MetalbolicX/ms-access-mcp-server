@@ -44,6 +44,9 @@ class TestProtocolCompleteness:
         # Form manipulation
         "open_form", "close_form",
         "get_control_properties", "set_control_property",
+        # Form-level manipulation
+        "create_form", "rename_form", "get_form_properties",
+        "set_form_property", "set_form_properties",
         # Metadata
         "get_object_metadata", "get_relationships",
         # SQL generation / script
@@ -320,6 +323,30 @@ class TestNotConnectedDefaults:
         assert isinstance(result, dict)
         assert result["success"] is False
 
+    # Form manipulation — not-connected defaults
+    def test_wincom_create_form_returns_false(self):
+        result = WinComAdapter().create_form("TestForm")
+        assert isinstance(result, bool)
+        assert result is False
+
+    def test_wincom_rename_form_returns_false(self):
+        result = WinComAdapter().rename_form("Old", "New")
+        assert isinstance(result, bool)
+        assert result is False
+
+    def test_wincom_get_form_properties_returns_dict(self):
+        result = WinComAdapter().get_form_properties("TestForm")
+        assert isinstance(result, dict)
+
+    def test_wincom_set_form_property_returns_false(self):
+        result = WinComAdapter().set_form_property("TestForm", "Caption", "Hello")
+        assert isinstance(result, bool)
+        assert result is False
+
+    def test_wincom_set_form_properties_returns_dict(self):
+        result = WinComAdapter().set_form_properties("TestForm", {"Caption": "Hello"})
+        assert isinstance(result, dict)
+
 
 # =============================================================================
 # Return-type invariants — verify return types are consistent
@@ -486,6 +513,32 @@ class TestReturnTypeInvariants:
         val = a.drop_index("tbl", "ix")
         assert isinstance(val, dict)
 
+    # Form manipulation — return type invariants
+    def test_wincom_create_form_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.create_form("TestForm")
+        assert isinstance(val, bool)
+
+    def test_wincom_rename_form_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.rename_form("Old", "New")
+        assert isinstance(val, bool)
+
+    def test_wincom_get_form_properties_always_returns_dict(self):
+        a = WinComAdapter()
+        val = a.get_form_properties("TestForm")
+        assert isinstance(val, dict)
+
+    def test_wincom_set_form_property_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.set_form_property("TestForm", "prop", "val")
+        assert isinstance(val, bool)
+
+    def test_wincom_set_form_properties_always_returns_dict(self):
+        a = WinComAdapter()
+        val = a.set_form_properties("TestForm", {"prop": "val"})
+        assert isinstance(val, dict)
+
 
 # =============================================================================
 # ODBC-only constraints — ODBC must raise NotImplementedError for COM-only ops
@@ -573,6 +626,27 @@ class TestOdbcNotImplemented:
     def test_export_query_to_text_raises(self):
         with pytest.raises(NotImplementedError):
             OdbcAdapter().export_query_to_text("q")
+
+    # Form manipulation — ODBC raises NotImplementedError
+    def test_create_form_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().create_form("TestForm")
+
+    def test_rename_form_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().rename_form("Old", "New")
+
+    def test_get_form_properties_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().get_form_properties("TestForm")
+
+    def test_set_form_property_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().set_form_property("TestForm", "prop", "val")
+
+    def test_set_form_properties_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().set_form_properties("TestForm", {})
 
 
 # =============================================================================

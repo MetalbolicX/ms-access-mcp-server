@@ -298,6 +298,152 @@ class UiOperations:
 
         return self._dispatcher.call(_do)
 
+    def create_form(self, form_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+        """Create a new form via DoCmd.CreateForm, optionally setting RecordSource and properties."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                form_obj = self._dispatcher.access_app.DoCmd.CreateForm()
+                if record_source:
+                    try:
+                        form_obj.RecordSource = record_source
+                    except Exception:
+                        pass
+                if properties:
+                    for prop_name, value in properties.items():
+                        try:
+                            form_obj.Properties(prop_name).Value = value
+                        except Exception:
+                            pass
+                # Close with acSaveYes (1) to persist the form
+                self._dispatcher.access_app.DoCmd.Close(2, form_obj.Name, 1)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def rename_form(self, old_name: str, new_name: str) -> bool:
+        """Rename a form via DoCmd.Rename with acForm=2."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher.access_app.DoCmd.Rename(new_name, 2, old_name)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def get_form_properties(self, form_name: str) -> dict:
+        """Get all properties of a form by opening it in design view."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is not None:
+                    props: dict[str, str] = {}
+                    for prop in form.Properties:
+                        try:
+                            props[prop.Name] = str(prop.Value)
+                        except Exception:
+                            pass
+                    return props
+                return {}
+            except Exception:
+                return {}
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_form_property(self, form_name: str, property_name: str, value: str) -> bool:
+        """Set a single property of a form by opening it in design view."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is not None:
+                    form.Properties(property_name).Value = value
+                    return True
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_form_properties(self, form_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a form. Returns dict of {property_name: success}."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for prop_name, value in properties.items():
+                opened = False
+                try:
+                    self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                    opened = True
+
+                    try:
+                        form = self._dispatcher.access_app.Screen.ActiveForm
+                    except Exception:
+                        form = self._dispatcher.access_app.Forms(form_name)
+
+                    success = False
+                    if form is not None:
+                        try:
+                            form.Properties(prop_name).Value = value
+                            success = True
+                        except Exception:
+                            pass
+                except Exception:
+                    success = False
+                finally:
+                    if opened:
+                        try:
+                            self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                        except Exception:
+                            pass
+                results[prop_name] = success
+            return results
+
+        return self._dispatcher.call(_do)
+
     # ------------------------------------------------------------------ #
     # Control operations
     # ------------------------------------------------------------------ #

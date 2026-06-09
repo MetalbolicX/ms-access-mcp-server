@@ -194,3 +194,74 @@ class TestCompileVBA:
         service = COMAutomationService()
         result = service.compile_vba()
         assert result == {"success": False, "error": "No adapter available"}
+
+
+class TestFormManipulation:
+    def test_create_form_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.create_form.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.create_form("TestForm")
+        assert result is True
+        mock_adapter.create_form.assert_called_once_with("TestForm", "", "", None)
+
+    def test_create_form_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.create_form("TestForm")
+        assert result is False
+
+    def test_rename_form_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.rename_form.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.rename_form("OldForm", "NewForm")
+        assert result is True
+        mock_adapter.rename_form.assert_called_once_with("OldForm", "NewForm")
+
+    def test_rename_form_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.rename_form("OldForm", "NewForm")
+        assert result is False
+
+    def test_get_form_properties_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_props = {"Caption": "Hello", "Width": "100"}
+        mock_adapter.get_form_properties.return_value = mock_props
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.get_form_properties("TestForm")
+        assert result == mock_props
+        mock_adapter.get_form_properties.assert_called_once_with("TestForm")
+
+    def test_get_form_properties_without_adapter_returns_empty(self):
+        service = COMAutomationService()
+        result = service.get_form_properties("TestForm")
+        assert result == {}
+
+    def test_set_form_property_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_property.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.set_form_property("TestForm", "Caption", "Hello")
+        assert result is True
+        mock_adapter.set_form_property.assert_called_once_with("TestForm", "Caption", "Hello")
+
+    def test_set_form_property_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.set_form_property("TestForm", "Caption", "Hello")
+        assert result is False
+
+    def test_set_form_properties_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_result = {"Caption": True, "Width": True}
+        mock_adapter.set_form_properties.return_value = mock_result
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.set_form_properties("TestForm", {"Caption": "Hello", "Width": "100"})
+        assert result == mock_result
+        mock_adapter.set_form_properties.assert_called_once_with(
+            "TestForm", {"Caption": "Hello", "Width": "100"}
+        )
+
+    def test_set_form_properties_without_adapter_returns_empty(self):
+        service = COMAutomationService()
+        result = service.set_form_properties("TestForm", {"Caption": "Hello"})
+        assert result == {}

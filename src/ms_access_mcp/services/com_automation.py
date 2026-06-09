@@ -1,4 +1,4 @@
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .connection import ConnectionPool
@@ -107,3 +107,38 @@ class COMAutomationService:
         if adapter is None:
             return {"success": False, "error": "No adapter available"}
         return adapter.compile_vba()
+
+    def create_form(self, form_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+        """Create a new form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.create_form(form_name, record_source, template_name, properties)
+
+    def rename_form(self, old_name: str, new_name: str) -> bool:
+        """Rename a form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.rename_form(old_name, new_name)
+
+    def get_form_properties(self, form_name: str) -> dict:
+        """Get all properties of a form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.get_form_properties(form_name)
+
+    def set_form_property(self, form_name: str, property_name: str, value: str) -> bool:
+        """Set a single property of a form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.set_form_property(form_name, property_name, value)
+
+    def set_form_properties(self, form_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a form at once."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.set_form_properties(form_name, properties)
