@@ -1079,6 +1079,65 @@ class TestWinComSchema:
         assert remaining(0).Name == "FK_ord_cust"
 
 
+class TestWinComIndexOperations:
+    """Index operations — get_indexes delegation (PR 1 Task 2.2)."""
+
+    def test_get_indexes_not_connected_returns_empty(self, adapter):
+        """get_indexes must return [] when not connected."""
+        result = adapter.get_indexes("any_table")
+        assert result == []
+        assert isinstance(result, list)
+
+    def test_get_indexes_delegates_to_schema(self, adapter, mock_app, tmp_path):
+        """get_indexes must delegate to self._schema.get_indexes()."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        # Patch the schema's get_indexes to verify delegation
+        expected = [MagicMock(name="mock_index")]
+        with patch.object(adapter._schema, "get_indexes", return_value=expected) as mock_get:
+            result = adapter.get_indexes("Orders")
+            mock_get.assert_called_once_with("Orders")
+            assert result == expected
+
+    def test_get_indexes_returns_list_of_index_info(self, adapter, mock_app, tmp_path):
+        """get_indexes must return a list (real SchemaInspector integration)."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        # Create a table with indexes via mock DAO
+        from ms_access_mcp.models.database import IndexInfo
+
+        mock_index = IndexInfo(
+            name="IX_Test",
+            columns=["Col1"],
+            is_unique=False,
+            is_primary=False,
+            ignore_nulls=False,
+        )
+        with patch.object(adapter._schema, "get_indexes", return_value=[mock_index]):
+            result = adapter.get_indexes("TestTable")
+            assert isinstance(result, list)
+            assert len(result) == 1
+            assert result[0].name == "IX_Test"
+
+    def test_create_index_not_connected_returns_error_dict(self, adapter):
+        """create_index must return error dict when not connected."""
+        result = adapter.create_index("tbl", "ix", ["col"])
+        assert isinstance(result, dict)
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+    def test_drop_index_not_connected_returns_error_dict(self, adapter):
+        """drop_index must return error dict when not connected."""
+        result = adapter.drop_index("tbl", "ix")
+        assert isinstance(result, dict)
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
 class TestWinComFormsReportsMacros:
     """Form, report, and macro enumeration."""
 
