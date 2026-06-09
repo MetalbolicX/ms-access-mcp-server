@@ -22,6 +22,7 @@ from ..models.database import (
     LinkedTableInfo,
     ForeignKeyInfo,
     FieldInfo,
+    IndexInfo,
 )
 from ..models.migration import (
     TableSchema,
@@ -434,6 +435,35 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_relationships(self) -> list[RelationshipInfo]:
         """Get all foreign key relationships from DAO Relations collection."""
         return self._schema.get_relationships()
+
+    def get_indexes(self, table_name: str) -> list[IndexInfo]:
+        """Get all indexes for a table via SchemaInspector.
+
+        Returns list of IndexInfo (primary + secondary).
+        ODBC returns [] by contract.
+        """
+        if not self.is_connected():
+            return []
+        return self._schema.get_indexes(table_name)
+
+    def create_index(
+        self,
+        table_name: str,
+        index_name: str,
+        columns: list[str],
+        unique: bool = False,
+        ignore_nulls: bool = False,
+    ) -> dict:
+        """Create an index via Jet DDL. Full implementation in PR 2."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+        raise NotImplementedError("create_index DDL — PR 2")
+
+    def drop_index(self, table_name: str, index_name: str) -> dict:
+        """Drop an index via Jet DDL. Full implementation in PR 2."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+        raise NotImplementedError("drop_index DDL — PR 2")
 
     def generate_sql(self, output_path: str) -> dict:
         """Generate Jet SQL DDL and write to output_path.
@@ -1287,6 +1317,120 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                 return {"success": False, "error": str(e)}
 
         return self._dispatcher.call(_do)
+
+    def alter_table(self, table_name: str, operations: list[dict]) -> dict:
+        """Apply schema modifications to a table via DAO DDL and DAO object model.
+
+        Args:
+            table_name: Target table name
+            operations: List of operation dicts, each with:
+                - action: "add_column" | "drop_column" | "modify_column"
+                          | "rename_table" | "rename_column"
+                - params: dict with operation-specific keys
+
+        Returns:
+            dict with success=True/False, operations=[per-op results], error=str
+        """
+        if not self.is_connected():
+            return {"success": False, "operations": [], "error": "Not connected"}
+
+        def _do() -> dict:
+            VALID_ACTIONS = {"add_column", "drop_column", "modify_column", "rename_table", "rename_column"}
+            results: list[dict] = []
+
+            for op in operations:
+                action = op.get("action")
+                params = op.get("params", {})
+
+                if action not in VALID_ACTIONS:
+                    results.append({"action": action, "success": False, "error": f"Unknown action: {action}"})
+                    continue
+
+                try:
+                    if action == "add_column":
+                        result = self._alter_table_add_column(table_name, params)
+                    elif action == "drop_column":
+                        result = self._alter_table_drop_column(table_name, params)
+                    elif action == "modify_column":
+                        result = self._alter_table_modify_column(table_name, params)
+                    elif action == "rename_table":
+                        result = self._alter_table_rename_table(table_name, params)
+                    elif action == "rename_column":
+                        result = self._alter_table_rename_column(table_name, params)
+                    else:
+                        result = {"success": False, "error": f"Unhandled action: {action}"}
+                    results.append({"action": action, **result})
+                except Exception as e:
+                    results.append({"action": action, "success": False, "error": str(e)})
+
+            overall_success = all(r["success"] for r in results)
+            return {"success": overall_success, "operations": results}
+
+        return self._dispatcher.call(_do)
+
+    def _alter_table_add_column(self, table_name: str, params: dict) -> dict:
+        """Execute ALTER TABLE ADD COLUMN via DAO DDL."""
+        name = params["name"]
+        col_type = params.get("type", "Text")
+        size = params.get("size", 255)
+        nullable = params.get("nullable", True)
+
+        type_sql = self._access_sql_type(col_type, size)
+        col_def = f"[{name}] {type_sql}"
+        if not nullable:
+            col_def += " NOT NULL"
+        else:
+            col_def += " NULL"
+
+        sql = f"ALTER TABLE [{table_name}] ADD COLUMN {col_def}"
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return {"success": True}
+
+    def _alter_table_drop_column(self, table_name: str, params: dict) -> dict:
+        """Execute ALTER TABLE DROP COLUMN via DAO DDL."""
+        name = params["name"]
+        sql = f"ALTER TABLE [{table_name}] DROP COLUMN [{name}]"
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return {"success": True}
+
+    def _alter_table_modify_column(self, table_name: str, params: dict) -> dict:
+        """Execute ALTER TABLE ALTER COLUMN via DAO DDL."""
+        name = params["name"]
+        col_type = params.get("type", "Text")
+        size = params.get("size", 255)
+        nullable = params.get("nullable", True)
+
+        type_sql = self._access_sql_type(col_type, size)
+        col_def = f"[{name}] {type_sql}"
+        if not nullable:
+            col_def += " NOT NULL"
+        else:
+            col_def += " NULL"
+
+        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN {col_def}"
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return {"success": True}
+
+    def _alter_table_rename_table(self, table_name: str, params: dict) -> dict:
+        """Rename a table via DAO TableDef.Name assignment."""
+        new_name = params["new_name"]
+        db = self._dispatcher.current_db
+        tdef = db.TableDefs(table_name)
+        tdef.Name = new_name
+        return {"success": True}
+
+    def _alter_table_rename_column(self, table_name: str, params: dict) -> dict:
+        """Rename a column via DAO Field.Name assignment."""
+        old_name = params["name"]
+        new_name = params["new_name"]
+        db = self._dispatcher.current_db
+        tdef = db.TableDefs(table_name)
+        field = tdef.Fields(old_name)
+        field.Name = new_name
+        return {"success": True}
 
     @staticmethod
     def _access_sql_type(access_type: str, size: int = 255) -> str:

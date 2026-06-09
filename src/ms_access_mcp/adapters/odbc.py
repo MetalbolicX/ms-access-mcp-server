@@ -9,6 +9,7 @@ from ..models.database import (
     RelationshipInfo,
     QueryInfo,
     LinkedTableInfo,
+    IndexInfo,
 )
 from ..models.migration import TableSchema, ColumnSchema, UnknownMetadata
 
@@ -673,3 +674,157 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             "GUID": "GUID",
         }
         return type_map.get(type_upper, sql_type)
+
+    # ========================================================================
+    # Table Alterations (ISchemaAdapter)
+    # ========================================================================
+
+    ODBC_TYPE_MAP = {
+        "Text": "VARCHAR",
+        "Long Integer": "INT",
+        "Integer": "SMALLINT",
+        "Boolean": "BIT",
+        "Date/Time": "DATETIME",
+        "Currency": "MONEY",
+        "Memo": "TEXT",
+        "Double": "FLOAT",
+        "Single": "REAL",
+        "Binary": "VARBINARY",
+    }
+
+    def alter_table(self, table_name: str, operations: list[dict]) -> dict:
+        """Apply schema modifications to a table.
+
+        Args:
+            table_name: Target table name
+            operations: List of operation dicts, each with:
+                - action: "add_column" | "drop_column" | "modify_column"
+                          | "rename_table" | "rename_column"
+                - params: dict with operation-specific keys
+
+        Returns:
+            dict with success=True/False, operations=[per-op results], error=str
+        """
+        if not self.is_connected():
+            return {"success": False, "operations": [], "error": "Not connected"}
+
+        VALID_ACTIONS = {"add_column", "drop_column", "modify_column", "rename_table", "rename_column"}
+        results: list[dict] = []
+
+        for op in operations:
+            action = op.get("action")
+            params = op.get("params", {})
+
+            if action not in VALID_ACTIONS:
+                results.append({"action": action, "success": False, "error": f"Unknown action: {action}"})
+                continue
+
+            if action == "rename_table":
+                raise NotImplementedError("rename_table is not supported via ODBC. Use WinComAdapter.")
+
+            if action == "rename_column":
+                raise NotImplementedError("rename_column is not supported via ODBC. Use WinComAdapter.")
+
+            try:
+                cursor = self._conn.cursor()
+                try:
+                    if action == "add_column":
+                        sql = self._alter_table_add_column_sql(table_name, params)
+                    elif action == "drop_column":
+                        sql = self._alter_table_drop_column_sql(table_name, params)
+                    elif action == "modify_column":
+                        sql = self._alter_table_modify_column_sql(table_name, params)
+                    else:
+                        sql = ""
+
+                    cursor.execute(sql)
+                    results.append({"action": action, "success": True})
+                finally:
+                    cursor.close()
+            except Exception as e:
+                results.append({"action": action, "success": False, "error": str(e)})
+
+        overall_success = all(r["success"] for r in results)
+        return {"success": overall_success, "operations": results}
+
+    # ========================================================================
+    # Index operations (ISchemaAdapter) — ODBC returns empty by contract
+    # ========================================================================
+
+    def get_indexes(self, table_name: str) -> list[IndexInfo]:
+        """Get indexes for a table — ODBC cannot enumerate DAO Index objects.
+
+        By contract, ODBC returns an empty list with a warning.
+        Full index support requires WinComAdapter (DAO).
+        """
+        if not self.is_connected():
+            return []
+        return []
+
+    def create_index(
+        self,
+        table_name: str,
+        index_name: str,
+        columns: list[str],
+        unique: bool = False,
+        ignore_nulls: bool = False,
+    ) -> dict:
+        """Create an index via ODBC DDL. Full implementation in PR 2."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+        raise NotImplementedError("create_index DDL — PR 2")
+
+    def drop_index(self, table_name: str, index_name: str) -> dict:
+        """Drop an index via ODBC DDL. Full implementation in PR 2."""
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+        raise NotImplementedError("drop_index DDL — PR 2")
+
+    def _alter_table_add_column_sql(self, table_name: str, params: dict) -> str:
+        """Generate ALTER TABLE ADD COLUMN SQL."""
+        name = params["name"]
+        col_type = params.get("type", "Text")
+        size = params.get("size", 255) if col_type == "Text" else 0
+        nullable = params.get("nullable", True)
+
+        odbc_type = self.ODBC_TYPE_MAP.get(col_type, "VARCHAR")
+        if size > 0 and col_type == "Text":
+            col_def = f"[{name}] {odbc_type}({size})"
+        elif odbc_type == "VARCHAR":
+            col_def = f"[{name}] {odbc_type}({size or 255})"
+        else:
+            col_def = f"[{name}] {odbc_type}"
+
+        if not nullable:
+            col_def += " NOT NULL"
+        else:
+            col_def += " NULL"
+
+        return f"ALTER TABLE [{table_name}] ADD COLUMN {col_def}"
+
+    def _alter_table_drop_column_sql(self, table_name: str, params: dict) -> str:
+        """Generate ALTER TABLE DROP COLUMN SQL."""
+        name = params["name"]
+        return f"ALTER TABLE [{table_name}] DROP COLUMN [{name}]"
+
+    def _alter_table_modify_column_sql(self, table_name: str, params: dict) -> str:
+        """Generate ALTER TABLE ALTER COLUMN SQL."""
+        name = params["name"]
+        col_type = params.get("type", "Text")
+        size = params.get("size", 255) if col_type == "Text" else 0
+        nullable = params.get("nullable", True)
+
+        odbc_type = self.ODBC_TYPE_MAP.get(col_type, "VARCHAR")
+        if size > 0 and col_type == "Text":
+            col_def = f"[{name}] {odbc_type}({size})"
+        elif odbc_type == "VARCHAR":
+            col_def = f"[{name}] {odbc_type}({size or 255})"
+        else:
+            col_def = f"[{name}] {odbc_type}"
+
+        if not nullable:
+            col_def += " NOT NULL"
+        else:
+            col_def += " NULL"
+
+        return f"ALTER TABLE [{table_name}] ALTER COLUMN {col_def}"

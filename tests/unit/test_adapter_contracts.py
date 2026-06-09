@@ -61,6 +61,8 @@ class TestProtocolCompleteness:
         # Feature-expansion VBA methods
         "set_control_properties", "get_control_event_procedures",
         "vba_list_procedures", "vba_get_procedure", "vba_replace_procedure",
+        # Index operations
+        "get_indexes", "create_index", "drop_index",
     ]
 
     @pytest.mark.parametrize("method", ADAPTER_METHODS)
@@ -225,6 +227,20 @@ class TestNotConnectedDefaults:
         assert isinstance(result, dict)
         assert result["success"] is False
 
+    def test_wincom_get_indexes_returns_list(self):
+        result = WinComAdapter().get_indexes("any_table")
+        assert isinstance(result, list)
+
+    def test_wincom_create_index_returns_error_dict(self):
+        result = WinComAdapter().create_index("tbl", "ix", ["col"])
+        assert isinstance(result, dict)
+        assert result["success"] is False
+
+    def test_wincom_drop_index_returns_error_dict(self):
+        result = WinComAdapter().drop_index("tbl", "ix")
+        assert isinstance(result, dict)
+        assert result["success"] is False
+
     def test_wincom_execute_sql_script_returns_error_dict(self):
         result = WinComAdapter().execute_sql_script("/tmp/script.sql")
         assert isinstance(result, dict)
@@ -287,6 +303,22 @@ class TestNotConnectedDefaults:
     def test_odbc_compact_repair_raises_not_implemented(self):
         with pytest.raises(NotImplementedError):
             OdbcAdapter().compact_repair("compact", "src.accdb", "dst.accdb")
+
+    # Index operations — ODBC returns empty/warnings by contract
+    def test_odbc_get_indexes_returns_empty_list(self):
+        result = OdbcAdapter().get_indexes("any_table")
+        assert isinstance(result, list)
+        assert result == []
+
+    def test_odbc_create_index_returns_error_dict(self):
+        result = OdbcAdapter().create_index("tbl", "ix", ["col"])
+        assert isinstance(result, dict)
+        assert result["success"] is False
+
+    def test_odbc_drop_index_returns_error_dict(self):
+        result = OdbcAdapter().drop_index("tbl", "ix")
+        assert isinstance(result, dict)
+        assert result["success"] is False
 
 
 # =============================================================================
@@ -437,6 +469,22 @@ class TestReturnTypeInvariants:
         a = WinComAdapter()
         val = a.vba_replace_procedure("mod", "proc", "code")
         assert isinstance(val, bool)
+
+    # Index operations — return type invariants
+    def test_wincom_get_indexes_always_returns_list(self):
+        a = WinComAdapter()
+        val = a.get_indexes("any_table")
+        assert isinstance(val, list)
+
+    def test_wincom_create_index_always_returns_dict(self):
+        a = WinComAdapter()
+        val = a.create_index("tbl", "ix", ["col"])
+        assert isinstance(val, dict)
+
+    def test_wincom_drop_index_always_returns_dict(self):
+        a = WinComAdapter()
+        val = a.drop_index("tbl", "ix")
+        assert isinstance(val, dict)
 
 
 # =============================================================================
