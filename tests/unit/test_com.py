@@ -273,6 +273,11 @@ class TestFormManipulationToolsConnectionGuards:
         (server.set_form_properties, ("TestForm", {"Caption": "New Caption"})),
         (server.add_control, ("TestForm", "TextBox", "txtNew")),
         (server.remove_control, ("TestForm", "txtOld")),
+        # Form section tools
+        (server.get_form_sections, ("TestForm",)),
+        (server.get_form_section_properties, ("TestForm", 0)),
+        (server.set_form_section_property, ("TestForm", 0, "Height", "1000")),
+        (server.set_form_section_properties, ("TestForm", 0, {"Height": "1000"})),
     ])
     def test_tool_returns_error_when_not_connected(self, tool_func, args):
         """Each form manipulation tool should return error when not connected."""
@@ -550,3 +555,172 @@ class TestRemoveControl:
             assert result["success"] is False
             assert result["form_name"] == "TestForm"
             assert result["control_name"] == "txtOld"
+
+
+class TestGetFormSections:
+    """Tests for get_form_sections tool."""
+
+    def test_get_form_sections_success_returns_list(self):
+        """get_form_sections should return success with sections list."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_form_sections.return_value = [
+            {"index": 0, "name": "detail", "section_type": "acDetail", "visible": True, "height": 1000},
+            {"index": 1, "name": "header", "section_type": "acHeader", "visible": True, "height": 500},
+        ]
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.get_form_sections("TestForm")
+            assert result["success"] is True
+            assert result["form"] == "TestForm"
+            assert "sections" in result
+            assert len(result["sections"]) == 2
+
+    def test_get_form_sections_empty_returns_error(self):
+        """get_form_sections with empty list should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_form_sections.return_value = []
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.get_form_sections("NonExistentForm")
+            assert result["success"] is False
+            assert "error" in result
+
+
+class TestGetFormSectionProperties:
+    """Tests for get_form_section_properties tool."""
+
+    def test_get_form_section_properties_success_returns_dict(self):
+        """get_form_section_properties should return success with properties dict."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_form_section_properties.return_value = {"Height": 1000, "Visible": True}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.get_form_section_properties("TestForm", 0)
+            assert result["success"] is True
+            assert result["form"] == "TestForm"
+            assert result["section_id"] == 0
+            assert "properties" in result
+            assert result["properties"]["Height"] == 1000
+
+    def test_get_form_section_properties_empty_returns_error(self):
+        """get_form_section_properties with empty dict should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_form_section_properties.return_value = {}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.get_form_section_properties("TestForm", 1)
+            assert result["success"] is False
+            assert "error" in result
+
+
+class TestSetFormSectionProperty:
+    """Tests for set_form_section_property tool — destructive."""
+
+    def test_set_form_section_property_blocked_without_confirmation(self):
+        """set_form_section_property with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_section_property("TestForm", 0, "Height", "1000", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_form_section_property_dry_run_returns_preview(self):
+        """set_form_section_property with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_section_property("TestForm", 0, "Height", "1000", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_form_section_property"
+            assert result["form_name"] == "TestForm"
+            assert result["section_id"] == 0
+            assert result["property_name"] == "Height"
+
+    def test_set_form_section_property_success_with_confirmation(self):
+        """set_form_section_property with confirm=True should delegate to COM service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_form_section_property.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_form_section_property("TestForm", 0, "Height", "1000", confirm=True)
+            assert result["success"] is True
+            assert result["form_name"] == "TestForm"
+            assert result["section_id"] == 0
+            assert result["property_name"] == "Height"
+            assert result["value"] == "1000"
+            mock_com.set_form_section_property.assert_called_once_with("TestForm", 0, "Height", "1000")
+
+    def test_set_form_section_property_adapter_returns_false(self):
+        """set_form_section_property with confirm=True but adapter returns False should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_form_section_property.return_value = False
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_form_section_property("TestForm", 0, "Height", "1000", confirm=True)
+            assert result["success"] is False
+            assert result["form_name"] == "TestForm"
+            assert result["section_id"] == 0
+
+
+class TestSetFormSectionProperties:
+    """Tests for set_form_section_properties tool — destructive batch."""
+
+    def test_set_form_section_properties_blocked_without_confirmation(self):
+        """set_form_section_properties with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_section_properties("TestForm", 0, {"Height": "1000"}, confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_form_section_properties_dry_run_returns_preview(self):
+        """set_form_section_properties with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_section_properties("TestForm", 0, {"Height": "1000"}, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_form_section_properties"
+            assert result["form_name"] == "TestForm"
+            assert result["section_id"] == 0
+
+    def test_set_form_section_properties_success_with_confirmation(self):
+        """set_form_section_properties with confirm=True should return success with per-property results."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_form_section_properties.return_value = {"Height": True, "Visible": True}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_form_section_properties("TestForm", 0, {"Height": "1000", "Visible": "True"}, confirm=True)
+            assert result["success"] is True
+            assert result["form_name"] == "TestForm"
+            assert result["section_id"] == 0
+            assert "properties" in result
+            assert result["properties"]["Height"] is True
+
+    def test_set_form_section_properties_empty_result_returns_error(self):
+        """set_form_section_properties with empty result should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_form_section_properties.return_value = {}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_form_section_properties("TestForm", 0, {"Height": "1000"}, confirm=True)
+            assert result["success"] is False
+            assert "error" in result

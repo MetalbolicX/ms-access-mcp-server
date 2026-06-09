@@ -503,3 +503,129 @@ def remove_control(
         return {"success": False, "error": "No adapter available"}
     result = _com().remove_control(form_name, control_name)
     return {"success": result, "form_name": form_name, "control_name": control_name}
+
+
+# ============================================================================
+# FORM SECTION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def get_form_sections(form_name: str, connection_name: str = "default") -> dict:
+    """
+    Get all sections of a form.
+
+    Returns a list of sections with their index, name, type, visibility, and height.
+    Forms always have a detail section (index 0). Header, footer, page header,
+    and page footer sections may or may not exist.
+
+    Args:
+        form_name: Name of the form
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    sections = _com().get_form_sections(form_name)
+    if not sections:
+        return {"success": False, "error": f"No sections found for form '{form_name}'", "form": form_name}
+    return {"success": True, "form": form_name, "sections": sections}
+
+
+@mcp.tool()
+def get_form_section_properties(form_name: str, section_id: int, connection_name: str = "default") -> dict:
+    """
+    Get all properties of a specific form section.
+
+    Opens the form in design view, reads the section's Properties collection, then closes.
+
+    Args:
+        form_name: Name of the form
+        section_id: Section index (0=Detail, 1=Header, 2=Footer, 3=PageHeader, 4=PageFooter)
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    props = _com().get_form_section_properties(form_name, section_id)
+    if not props:
+        return {"success": False, "error": f"No properties found for section {section_id} of form '{form_name}'", "form": form_name, "section_id": section_id}
+    return {"success": True, "form": form_name, "section_id": section_id, "properties": props}
+
+
+@mcp.tool()
+def set_form_section_property(
+    form_name: str,
+    section_id: int,
+    property_name: str,
+    value: str,
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Set a single property of a form section.
+
+    Opens the form in design view, sets the property on the section, and saves.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form
+        section_id: Section index (0=Detail, 1=Header, 2=Footer, 3=PageHeader, 4=PageFooter)
+        property_name: Name of the property to set
+        value: Value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the change
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_form_section_property", form_name=form_name, section_id=section_id, property_name=property_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().set_form_section_property(form_name, section_id, property_name, value)
+    return {"success": result, "form_name": form_name, "section_id": section_id, "property_name": property_name, "value": value}
+
+
+@mcp.tool()
+def set_form_section_properties(
+    form_name: str,
+    section_id: int,
+    properties: dict[str, str],
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Set multiple properties of a form section at once.
+
+    Opens the form in design view, sets each property on the section, and saves.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form
+        section_id: Section index (0=Detail, 1=Header, 2=Footer, 3=PageHeader, 4=PageFooter)
+        properties: Dict of property_name -> value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the changes
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_form_section_properties", form_name=form_name, section_id=section_id)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().set_form_section_properties(form_name, section_id, properties)
+    if not result:
+        return {"success": False, "error": f"No properties set for section {section_id} of form '{form_name}'"}
+    return {"success": True, "form_name": form_name, "section_id": section_id, "properties": result}

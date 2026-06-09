@@ -68,6 +68,9 @@ class TestProtocolCompleteness:
         "get_indexes", "create_index", "drop_index",
         # Control manipulation (COM-only)
         "add_control", "remove_control",
+        # Form section manipulation (COM-only)
+        "get_form_sections", "get_form_section_properties",
+        "set_form_section_property", "set_form_section_properties",
     ]
 
     @pytest.mark.parametrize("method", ADAPTER_METHODS)
