@@ -239,3 +239,20 @@ class ComOnlyAdapterMixin:
     def remove_control(self, form_name: str, control_name: str) -> bool:
         """Remove a control from a form — requires COM automation."""
         raise NotImplementedError("remove_control requires COM automation (WinComAdapter)")
+
+    # Form section manipulation (COM-only)
+    def get_form_sections(self, form_name: str) -> list:
+        """Get all sections of a form — requires COM automation."""
+        raise NotImplementedError("get_form_sections requires COM automation (WinComAdapter)")
+
+    def get_form_section_properties(self, form_name: str, section_id: int) -> dict:
+        """Get all properties of a form section — requires COM automation."""
+        raise NotImplementedError("get_form_section_properties requires COM automation (WinComAdapter)")
+
+    def set_form_section_property(self, form_name: str, section_id: int, property_name: str, value: str) -> bool:
+        """Set a single property of a form section — requires COM automation."""
+        raise NotImplementedError("set_form_section_property requires COM automation (WinComAdapter)")
+
+    def set_form_section_properties(self, form_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a form section at once — requires COM automation."""
+        raise NotImplementedError("set_form_section_properties requires COM automation (WinComAdapter)")

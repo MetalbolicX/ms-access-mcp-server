@@ -360,6 +360,24 @@ class TestNotConnectedDefaults:
         assert isinstance(result, bool)
         assert result is False
 
+    # Form section manipulation — not-connected defaults
+    def test_wincom_get_form_sections_returns_list(self):
+        result = WinComAdapter().get_form_sections("TestForm")
+        assert isinstance(result, list)
+
+    def test_wincom_get_form_section_properties_returns_dict(self):
+        result = WinComAdapter().get_form_section_properties("TestForm", 0)
+        assert isinstance(result, dict)
+
+    def test_wincom_set_form_section_property_returns_false(self):
+        result = WinComAdapter().set_form_section_property("TestForm", 0, "Height", "720")
+        assert isinstance(result, bool)
+        assert result is False
+
+    def test_wincom_set_form_section_properties_returns_dict(self):
+        result = WinComAdapter().set_form_section_properties("TestForm", 0, {"Height": "720"})
+        assert isinstance(result, dict)
+
 
 # =============================================================================
 # Return-type invariants — verify return types are consistent
@@ -562,6 +580,27 @@ class TestReturnTypeInvariants:
         a = WinComAdapter()
         val = a.remove_control("TestForm", "txtTest")
         assert isinstance(val, bool)
+
+    # Form section manipulation — return type invariants
+    def test_wincom_get_form_sections_always_returns_list(self):
+        a = WinComAdapter()
+        val = a.get_form_sections("TestForm")
+        assert isinstance(val, list)
+
+    def test_wincom_get_form_section_properties_always_returns_dict(self):
+        a = WinComAdapter()
+        val = a.get_form_section_properties("TestForm", 0)
+        assert isinstance(val, dict)
+
+    def test_wincom_set_form_section_property_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.set_form_section_property("TestForm", 0, "Height", "720")
+        assert isinstance(val, bool)
+
+    def test_wincom_set_form_section_properties_always_returns_dict(self):
+        a = WinComAdapter()
+        val = a.set_form_section_properties("TestForm", 0, {"Height": "720"})
+        assert isinstance(val, dict)
 
 
 # =============================================================================

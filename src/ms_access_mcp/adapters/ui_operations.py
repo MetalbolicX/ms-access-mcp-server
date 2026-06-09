@@ -91,6 +91,30 @@ class UiOperations:
         }
         return type_map.get(name, 0)
 
+    @staticmethod
+    def _ac_section_name(section_id: int) -> str:
+        """Map Access AcSection integer to readable name."""
+        section_map = {
+            0: "detail",
+            1: "header",
+            2: "footer",
+            3: "page_header",
+            4: "page_footer",
+        }
+        return section_map.get(section_id, f"Section({section_id})")
+
+    @staticmethod
+    def _ac_section_id(name: str) -> int:
+        """Map readable section name to Access AcSection integer."""
+        section_map = {
+            "detail": 0,
+            "header": 1,
+            "footer": 2,
+            "page_header": 3,
+            "page_footer": 4,
+        }
+        return section_map.get(name.lower(), 0)
+
     def _save_object_to_text(self, object_type: int, object_name: str) -> str:
         """Export an Access object to text using SaveAsText.
 
@@ -768,6 +792,163 @@ class UiOperations:
                     return result
             except Exception:
                 return []
+
+        return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------ #
+    # Form section operations
+    # ------------------------------------------------------------------ #
+
+    def get_form_sections(self, form_name: str) -> list[dict]:
+        """Get all sections of a form by opening it in design view."""
+        if not self._dispatcher._started:
+            return []
+
+        def _do() -> list[dict]:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is None:
+                    return []
+
+                sections: list[dict] = []
+                for i in range(5):  # 0=acDetail, 1=acHeader, 2=acFooter, 3=acPageHeader, 4=acPageFooter
+                    try:
+                        section = form.Section(i)
+                        sections.append({
+                            "index": i,
+                            "name": str(section.Name),
+                            "section_type": self._ac_section_name(i),
+                            "visible": bool(section.Visible),
+                            "height": int(section.Height),
+                        })
+                    except Exception:
+                        pass  # Section doesn't exist on this form
+                return sections
+            except Exception:
+                return []
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def get_form_section_properties(self, form_name: str, section_id: int) -> dict:
+        """Get all properties of a specific section by opening the form in design view."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is not None:
+                    section = form.Section(section_id)
+                    props: dict[str, str] = {}
+                    for prop in section.Properties:
+                        try:
+                            props[prop.Name] = str(prop.Value)
+                        except Exception:
+                            pass
+                    return props
+                return {}
+            except Exception:
+                return {}
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_form_section_property(self, form_name: str, section_id: int, property_name: str, value: str) -> bool:
+        """Set a single property of a form section by opening the form in design view."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is not None:
+                    section = form.Section(section_id)
+                    section.Properties(property_name).Value = value
+                    self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                    return True
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def set_form_section_properties(self, form_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a form section. Returns dict of {property_name: success}."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict[str, bool]:
+            results: dict[str, bool] = {}
+            for prop_name, value in properties.items():
+                opened = False
+                try:
+                    self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                    opened = True
+
+                    try:
+                        form = self._dispatcher.access_app.Screen.ActiveForm
+                    except Exception:
+                        form = self._dispatcher.access_app.Forms(form_name)
+
+                    success = False
+                    if form is not None:
+                        try:
+                            section = form.Section(section_id)
+                            section.Properties(prop_name).Value = value
+                            success = True
+                        except Exception:
+                            pass
+                except Exception:
+                    success = False
+                finally:
+                    if opened:
+                        try:
+                            self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                        except Exception:
+                            pass
+                results[prop_name] = success
+            return results
 
         return self._dispatcher.call(_do)
 

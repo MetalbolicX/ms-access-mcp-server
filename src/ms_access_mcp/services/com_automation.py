@@ -156,3 +156,31 @@ class COMAutomationService:
         if adapter is None:
             return False
         return adapter.remove_control(form_name, control_name)
+
+    def get_form_sections(self, form_name: str) -> list:
+        """Get all sections of a form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return []
+        return adapter.get_form_sections(form_name)
+
+    def get_form_section_properties(self, form_name: str, section_id: int) -> dict:
+        """Get all properties of a specific form section."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.get_form_section_properties(form_name, section_id)
+
+    def set_form_section_property(self, form_name: str, section_id: int, property_name: str, value: str) -> bool:
+        """Set a single property of a form section."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.set_form_section_property(form_name, section_id, property_name, value)
+
+    def set_form_section_properties(self, form_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+        """Set multiple properties of a form section at once."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.set_form_section_properties(form_name, section_id, properties)

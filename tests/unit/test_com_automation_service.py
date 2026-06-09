@@ -293,3 +293,62 @@ class TestControlManipulation:
         service = COMAutomationService()
         result = service.remove_control("TestForm", "txtTest")
         assert result is False
+
+
+class TestFormSectionManipulation:
+    def test_get_form_sections_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_sections = [{"index": 0, "name": "Detail", "section_type": "detail"}]
+        mock_adapter.get_form_sections.return_value = mock_sections
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.get_form_sections("TestForm")
+        assert result == mock_sections
+        mock_adapter.get_form_sections.assert_called_once_with("TestForm")
+
+    def test_get_form_sections_without_adapter_returns_empty_list(self):
+        service = COMAutomationService()
+        result = service.get_form_sections("TestForm")
+        assert result == []
+
+    def test_get_form_section_properties_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_props = {"Height": "720", "Visible": "True"}
+        mock_adapter.get_form_section_properties.return_value = mock_props
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.get_form_section_properties("TestForm", 0)
+        assert result == mock_props
+        mock_adapter.get_form_section_properties.assert_called_once_with("TestForm", 0)
+
+    def test_get_form_section_properties_without_adapter_returns_empty_dict(self):
+        service = COMAutomationService()
+        result = service.get_form_section_properties("TestForm", 0)
+        assert result == {}
+
+    def test_set_form_section_property_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_section_property.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.set_form_section_property("TestForm", 0, "Height", "720")
+        assert result is True
+        mock_adapter.set_form_section_property.assert_called_once_with("TestForm", 0, "Height", "720")
+
+    def test_set_form_section_property_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.set_form_section_property("TestForm", 0, "Height", "720")
+        assert result is False
+
+    def test_set_form_section_properties_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_result = {"Height": True, "Visible": True}
+        mock_adapter.set_form_section_properties.return_value = mock_result
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.set_form_section_properties("TestForm", 0, {"Height": "720", "Visible": "True"})
+        assert result == mock_result
+        mock_adapter.set_form_section_properties.assert_called_once_with(
+            "TestForm", 0, {"Height": "720", "Visible": "True"}
+        )
+
+    def test_set_form_section_properties_without_adapter_returns_empty_dict(self):
+        service = COMAutomationService()
+        result = service.set_form_section_properties("TestForm", 0, {"Height": "720"})
+        assert result == {}

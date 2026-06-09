@@ -422,6 +422,22 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         return self._ui.remove_control(form_name, control_name)
 
     # ========================================================================
+    # FORM SECTION OPERATIONS
+    # ========================================================================
+
+    def get_form_sections(self, form_name: str) -> list:
+        return self._ui.get_form_sections(form_name)
+
+    def get_form_section_properties(self, form_name: str, section_id: int) -> dict:
+        return self._ui.get_form_section_properties(form_name, section_id)
+
+    def set_form_section_property(self, form_name: str, section_id: int, property_name: str, value: str) -> bool:
+        return self._ui.set_form_section_property(form_name, section_id, property_name, value)
+
+    def set_form_section_properties(self, form_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+        return self._ui.set_form_section_properties(form_name, section_id, properties)
+
+    # ========================================================================
     # REPORT OPERATIONS
     # ========================================================================
 
