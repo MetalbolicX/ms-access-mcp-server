@@ -5,7 +5,11 @@ except generate_sql which needs direct self._dispatcher.current_db access to avo
 nested dispatch deadlock.
 """
 
+import logging
+
 from ..adapters.com_dispatcher import ComDispatcher, DAO_DB_FAIL_ON_ERROR
+
+logger = logging.getLogger(__name__)
 from ..models.database import (
     TableInfo,
     FieldInfo,
@@ -106,8 +110,8 @@ class SchemaInspector:
                         fields=fields,
                         record_count=record_count,
                     ))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("get_tables failed: %s", e, exc_info=True)
             return tables
 
         return self._dispatcher.call(_do)
@@ -181,8 +185,8 @@ class SchemaInspector:
                     except Exception:
                         pass
                     queries.append(QueryInfo(name=name, sql=sql, type=qtype))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("get_queries failed: %s", e, exc_info=True)
             return queries
 
         return self._dispatcher.call(_do)
@@ -452,8 +456,8 @@ class SchemaInspector:
                         foreign_table=rel.ForeignTable,
                         attributes=str(rel.Attributes),
                     ))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("get_relationships failed: %s", e, exc_info=True)
             return relationships
 
         return self._dispatcher.call(_do)

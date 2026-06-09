@@ -312,3 +312,74 @@ class TestSchemaInspectorGetIndexes:
         assert "IX_ColB" in names
         # None should be marked primary
         assert all(not idx.is_primary for idx in result)
+
+
+class TestSchemaInspectorLoggingMigration:
+    """Bare-except logging migration for schema_inspector.py (PR 1 Task 1.4).
+
+    RED: Verify logger.warning is called when COM property access fails in
+    top-level collection iteration methods (get_tables, get_queries, get_relationships).
+    """
+
+    def test_get_tables_logs_warning_on_collection_failure(self):
+        """get_tables() must call logger.warning when the TableDefs collection access fails."""
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.is_connected.return_value = True
+
+        # Simulate a failure when accessing TableDefs
+        mock_db = MagicMock()
+        mock_db.TableDefs.side_effect = RuntimeError("DAO TableDefs unavailable")
+        mock_dispatcher.current_db = mock_db
+        mock_dispatcher.call.side_effect = lambda fn: fn()
+
+        with patch("ms_access_mcp.adapters.schema_inspector.logger") as mock_logger:
+            from ms_access_mcp.adapters.schema_inspector import SchemaInspector
+            inspector = SchemaInspector(mock_dispatcher)
+            result = inspector.get_tables()
+
+            # Should return empty and log warning
+            assert result == []
+            mock_logger.warning.assert_called()
+            # Verify the warning mentions the method name
+            warning_args = mock_logger.warning.call_args[0]
+            assert "get_tables" in warning_args[0]
+
+    def test_get_queries_logs_warning_on_collection_failure(self):
+        """get_queries() must call logger.warning when the QueryDefs collection access fails."""
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.is_connected.return_value = True
+
+        mock_db = MagicMock()
+        mock_db.QueryDefs.side_effect = RuntimeError("DAO QueryDefs unavailable")
+        mock_dispatcher.current_db = mock_db
+        mock_dispatcher.call.side_effect = lambda fn: fn()
+
+        with patch("ms_access_mcp.adapters.schema_inspector.logger") as mock_logger:
+            from ms_access_mcp.adapters.schema_inspector import SchemaInspector
+            inspector = SchemaInspector(mock_dispatcher)
+            result = inspector.get_queries()
+
+            assert result == []
+            mock_logger.warning.assert_called()
+            warning_args = mock_logger.warning.call_args[0]
+            assert "get_queries" in warning_args[0]
+
+    def test_get_relationships_logs_warning_on_collection_failure(self):
+        """get_relationships() must call logger.warning when the Relations collection access fails."""
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.is_connected.return_value = True
+
+        mock_db = MagicMock()
+        mock_db.Relations.side_effect = RuntimeError("DAO Relations unavailable")
+        mock_dispatcher.current_db = mock_db
+        mock_dispatcher.call.side_effect = lambda fn: fn()
+
+        with patch("ms_access_mcp.adapters.schema_inspector.logger") as mock_logger:
+            from ms_access_mcp.adapters.schema_inspector import SchemaInspector
+            inspector = SchemaInspector(mock_dispatcher)
+            result = inspector.get_relationships()
+
+            assert result == []
+            mock_logger.warning.assert_called()
+            warning_args = mock_logger.warning.call_args[0]
+            assert "get_relationships" in warning_args[0]
