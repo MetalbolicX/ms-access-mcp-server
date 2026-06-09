@@ -284,8 +284,6 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     procedures = _com().get_control_event_procedures(form_name, control_name)
-    if procedures is None:
-        return {"success": False, "error": f"Form module 'Form_{form_name}' not found"}
     return {
         "success": True,
         "form": form_name,
@@ -293,6 +291,41 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
         "event_procedures": procedures,
         "count": len(procedures),
     }
+
+
+@mcp.tool()
+def set_control_event_procedure(
+    form_name: str,
+    control_name: str,
+    event_name: str,
+    code: str,
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Set a control's event procedure in a form.
+
+    Opens the form in design view, sets the control's event property to
+    "[Event Procedure]", and replaces the VBA procedure with the provided code.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form containing the control.
+        control_name: Name of the control.
+        event_name: Name of the event (e.g., "Click", "Enter", "AfterUpdate").
+        code: VBA code for the event procedure body.
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the change
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_control_event_procedure", form_name=form_name, control_name=control_name, event_name=event_name)
+    if guard is not None:
+        return guard
+    result = _com().set_control_event_procedure(form_name, control_name, event_name, code)
+    return {"success": result, "form_name": form_name, "control_name": control_name, "event_name": event_name}
 
 
 # ============================================================================

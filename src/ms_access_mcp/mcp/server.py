@@ -119,7 +119,7 @@ from .com import (  # noqa: E402
     get_forms, get_reports, get_macros, get_modules,
     open_form, close_form,
     form_exists, get_form_controls, get_control_properties, set_control_property,
-    set_control_properties, get_control_event_procedures,
+    set_control_properties, get_control_event_procedures, set_control_event_procedure,
     create_form, rename_form, get_form_properties, set_form_property, set_form_properties,
     add_control, remove_control,
     get_form_sections, get_form_section_properties,

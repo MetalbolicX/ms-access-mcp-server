@@ -29,6 +29,15 @@ class TestComToolsConnectionGuards:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
+    def test_set_control_event_procedure_returns_error_when_not_connected(self):
+        """set_control_event_procedure should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "code")
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
 
 class TestLaunchAccess:
     """Tests for launch_access tool."""
@@ -250,16 +259,16 @@ class TestGetControlEventProcedures:
             assert result["count"] == 1
 
     def test_get_control_event_procedures_form_module_not_found(self):
-        """get_control_event_procedures should return error when form module not found."""
+        """get_control_event_procedures should return empty list when form module not found."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_com = MagicMock()
-        mock_com.get_control_event_procedures.return_value = None
+        mock_com.get_control_event_procedures.return_value = []  # Empty list = not found (never None)
         with patch.object(com_module, '_pool', return_value=mock_conn), \
              patch.object(com_module, '_com', return_value=mock_com):
             result = server.get_control_event_procedures("NonExistentForm", "")
-            assert result["success"] is False
-            assert "not found" in result["error"].lower()
+            assert result["success"] is True  # Returns success with empty list
+            assert result["count"] == 0
 
 
 class TestFormManipulationToolsConnectionGuards:
@@ -724,3 +733,56 @@ class TestSetFormSectionProperties:
             result = server.set_form_section_properties("TestForm", 0, {"Height": "1000"}, confirm=True)
             assert result["success"] is False
             assert "error" in result
+
+
+class TestSetControlEventProcedure:
+    """Tests for set_control_event_procedure tool — destructive."""
+
+    def test_set_control_event_procedure_blocked_without_confirmation(self):
+        """set_control_event_procedure with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_control_event_procedure_dry_run_returns_preview(self):
+        """set_control_event_procedure with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_control_event_procedure"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "btnSave"
+            assert result["event_name"] == "Click"
+
+    def test_set_control_event_procedure_success_with_confirmation(self):
+        """set_control_event_procedure with confirm=True should delegate to COM service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_control_event_procedure.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub", confirm=True)
+            assert result["success"] is True
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "btnSave"
+            assert result["event_name"] == "Click"
+            mock_com.set_control_event_procedure.assert_called_once_with("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub")
+
+    def test_set_control_event_procedure_adapter_returns_false(self):
+        """set_control_event_procedure with confirm=True but adapter returns False should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_control_event_procedure.return_value = False
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "code", confirm=True)
+            assert result["success"] is False
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "btnSave"
