@@ -1,6 +1,7 @@
 """COM Automation and form/report discovery tools for MS Access — Phase 1 SDD."""
 from .server import mcp
 from .container import get_container
+from ._helpers import guard_destructive
 
 
 def _pool():
@@ -292,3 +293,135 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
         "event_procedures": procedures,
         "count": len(procedures),
     }
+
+
+# ============================================================================
+# FORM MANIPULATION TOOLS
+# ============================================================================
+
+
+@mcp.tool()
+def create_form(form_name: str, record_source: str = "", template_name: str = "", properties: dict[str, str] | None = None, connection_name: str = "default") -> dict:
+    """
+    Create a new blank form, optionally with a RecordSource.
+
+    Args:
+        form_name: Name for the new form
+        record_source: SQL table/query to bind as RecordSource (optional)
+        template_name: Template to base the form on (optional, unused in MVP)
+        properties: Additional properties to set after creation (optional)
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.create_form(form_name, record_source, template_name, properties)
+    return {"success": result, "form_name": form_name}
+
+
+@mcp.tool()
+def rename_form(old_name: str, new_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Rename an existing form.
+
+    This is a destructive action. Set confirm=True to execute, or dry_run=True
+    to preview without making changes.
+
+    Args:
+        old_name: Current name of the form
+        new_name: New name for the form
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the rename
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "rename_form", old_name=old_name, new_name=new_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.rename_form(old_name, new_name)
+    return {"success": result, "old_name": old_name, "new_name": new_name}
+
+
+@mcp.tool()
+def get_form_properties(form_name: str, connection_name: str = "default") -> dict:
+    """
+    Get all properties of a form.
+
+    Opens the form in design view, reads Form.Properties, then closes.
+
+    Args:
+        form_name: Name of the form
+        connection_name: Connection identifier (defaults to "default")
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    props = _com().get_form_properties(form_name)
+    if not props:
+        return {"success": False, "error": f"No properties found for form '{form_name}'", "form": form_name}
+    return {"success": True, "form": form_name, "properties": props}
+
+
+@mcp.tool()
+def set_form_property(form_name: str, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Set a single property of a form.
+
+    Opens the form in design view, sets the property, and saves.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form
+        property_name: Name of the property to set
+        value: Value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the change
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_form_property", form_name=form_name, property_name=property_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().set_form_property(form_name, property_name, value)
+    return {"success": result, "form": form_name, "property": property_name, "value": value}
+
+
+@mcp.tool()
+def set_form_properties(form_name: str, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+    """
+    Set multiple properties of a form at once.
+
+    Opens the form in design view, sets each property, and saves.
+    This is a destructive action — set confirm=True to execute.
+
+    Args:
+        form_name: Name of the form
+        properties: Dict of property_name -> value to set
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the changes
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "set_form_properties", form_name=form_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = _com().set_form_properties(form_name, properties)
+    if not result:
+        return {"success": False, "error": f"No properties found for form '{form_name}'"}
+    return {"success": True, "form": form_name, "properties": result}

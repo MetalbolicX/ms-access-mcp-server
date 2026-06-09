@@ -260,3 +260,187 @@ class TestGetControlEventProcedures:
             result = server.get_control_event_procedures("NonExistentForm", "")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
+
+
+class TestFormManipulationToolsConnectionGuards:
+    """Connection guard tests for the 5 new form manipulation tools."""
+
+    @pytest.mark.parametrize("tool_func,args", [
+        (server.create_form, ("TestForm",)),
+        (server.get_form_properties, ("TestForm",)),
+        (server.rename_form, ("OldName", "NewName")),
+        (server.set_form_property, ("TestForm", "Caption", "New Caption")),
+        (server.set_form_properties, ("TestForm", {"Caption": "New Caption"})),
+    ])
+    def test_tool_returns_error_when_not_connected(self, tool_func, args):
+        """Each form manipulation tool should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = tool_func(*args)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
+class TestCreateForm:
+    """Tests for create_form tool."""
+
+    def test_create_form_success_returns_form_name(self):
+        """create_form with adapter returning True should return success with form_name."""
+        mock_adapter = MagicMock()
+        mock_adapter.create_form.return_value = True
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.create_form("TestForm", record_source="SELECT * FROM Customers")
+            assert result["success"] is True
+            assert result["form_name"] == "TestForm"
+
+    def test_create_form_failure_returns_error(self):
+        """create_form with adapter returning False should return success=False."""
+        mock_adapter = MagicMock()
+        mock_adapter.create_form.return_value = False
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.create_form("TestForm")
+            assert result["success"] is False
+            assert "form_name" in result
+
+
+class TestRenameForm:
+    """Tests for rename_form tool — destructive."""
+
+    def test_rename_form_blocked_without_confirmation(self):
+        """rename_form with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.rename_form("OldName", "NewName", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_rename_form_dry_run_returns_preview(self):
+        """rename_form with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.rename_form("OldName", "NewName", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "rename_form"
+            assert result["old_name"] == "OldName"
+            assert result["new_name"] == "NewName"
+
+    def test_rename_form_success_with_confirmation(self):
+        """rename_form with confirm=True should delegate to adapter and return success."""
+        mock_adapter = MagicMock()
+        mock_adapter.rename_form.return_value = True
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.rename_form("OldName", "NewName", confirm=True)
+            assert result["success"] is True
+            mock_adapter.rename_form.assert_called_once_with("OldName", "NewName")
+
+
+class TestGetFormProperties:
+    """Tests for get_form_properties tool."""
+
+    def test_get_form_properties_success_returns_dict(self):
+        """get_form_properties should return success with properties dict."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_form_properties.return_value = {"Caption": "Test Form", "RecordSource": "Customers"}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.get_form_properties("TestForm")
+            assert result["success"] is True
+            assert result["form"] == "TestForm"
+            assert "properties" in result
+            assert result["properties"]["Caption"] == "Test Form"
+
+    def test_get_form_properties_empty_returns_error(self):
+        """get_form_properties with empty dict should return success=False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.get_form_properties.return_value = {}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.get_form_properties("NonExistentForm")
+            assert result["success"] is False
+            assert "error" in result
+
+
+class TestSetFormProperty:
+    """Tests for set_form_property tool — destructive."""
+
+    def test_set_form_property_blocked_without_confirmation(self):
+        """set_form_property with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_property("TestForm", "Caption", "New Caption", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_form_property_dry_run_returns_preview(self):
+        """set_form_property with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_property("TestForm", "Caption", "New Caption", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_form_property"
+            assert result["form_name"] == "TestForm"
+
+    def test_set_form_property_success_with_confirmation(self):
+        """set_form_property with confirm=True should delegate to COM service."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_form_property.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_form_property("TestForm", "Caption", "New Caption", confirm=True)
+            assert result["success"] is True
+            mock_com.set_form_property.assert_called_once()
+
+
+class TestSetFormProperties:
+    """Tests for set_form_properties tool — destructive batch."""
+
+    def test_set_form_properties_blocked_without_confirmation(self):
+        """set_form_properties with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_properties("TestForm", {"Caption": "New"}, confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_set_form_properties_dry_run_returns_preview(self):
+        """set_form_properties with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(com_module, '_pool', return_value=mock_conn):
+            result = server.set_form_properties("TestForm", {"Caption": "New"}, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "set_form_properties"
+
+    def test_set_form_properties_success_with_confirmation(self):
+        """set_form_properties with confirm=True should return success with per-property results."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_com = MagicMock()
+        mock_com.set_form_properties.return_value = {"Caption": True, "Width": False}
+        with patch.object(com_module, '_pool', return_value=mock_conn), \
+             patch.object(com_module, '_com', return_value=mock_com):
+            result = server.set_form_properties("TestForm", {"Caption": "New", "Width": "1000"}, confirm=True)
+            assert result["success"] is True
+            assert "properties" in result
+            assert result["properties"]["Caption"] is True
