@@ -304,9 +304,35 @@ class TestDevCopyLifecycle:
         mock_dev.deploy_dev_copy.return_value = {"success": True}
         with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
              patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
-            result = server.deploy_dev_copy(None)
+            result = server.deploy_dev_copy(None, confirm=True)
             assert result["success"] is True
             mock_dev.deploy_dev_copy.assert_called_once()
+
+    def test_deploy_dev_copy_rejected_without_confirm(self):
+        """deploy_dev_copy must require confirm=True."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_dev = MagicMock()
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
+            result = server.deploy_dev_copy(None)
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_dev.deploy_dev_copy.assert_not_called()
+
+    def test_deploy_dev_copy_dry_run_returns_preview(self):
+        """deploy_dev_copy with dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_dev = MagicMock()
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
+            result = server.deploy_dev_copy(None, confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "deploy_dev_copy"
+            mock_dev.deploy_dev_copy.assert_not_called()
 
     def test_discard_dev_copy_delegates_to_service(self):
         """discard_dev_copy should delegate to dev_copy_service."""
@@ -317,9 +343,35 @@ class TestDevCopyLifecycle:
         mock_dev.discard_dev_copy.return_value = {"success": True}
         with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
              patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
-            result = server.discard_dev_copy(None)
+            result = server.discard_dev_copy(None, confirm=True)
             assert result["success"] is True
             mock_dev.discard_dev_copy.assert_called_once()
+
+    def test_discard_dev_copy_rejected_without_confirm(self):
+        """discard_dev_copy must require confirm=True."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_dev = MagicMock()
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
+            result = server.discard_dev_copy(None)
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_dev.discard_dev_copy.assert_not_called()
+
+    def test_discard_dev_copy_dry_run_returns_preview(self):
+        """discard_dev_copy with dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_dev = MagicMock()
+        with patch.object(dev_copy_module, '_pool', return_value=mock_conn), \
+             patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev):
+            result = server.discard_dev_copy(None, confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "discard_dev_copy"
+            mock_dev.discard_dev_copy.assert_not_called()
 
     def test_get_dev_copy_status_delegates_to_service(self):
         """get_dev_copy_status should delegate to dev_copy_service."""

@@ -5,7 +5,7 @@ the connection pool to have adapter and current_database properties.
 """
 from .server import mcp, _get_path_guard
 from .container import get_container
-from ._helpers import _pool, _get_adapter, _check_connected
+from ._helpers import _pool, _get_adapter, _check_connected, guard_destructive
 
 
 def _dev_copy():
@@ -375,7 +375,7 @@ def create_dev_copy(backup_dir: str | None = None, connection_name: str = "defau
 
 
 @mcp.tool()
-def deploy_dev_copy(production_path: str | None = None, connection_name: str = "default") -> dict:
+def deploy_dev_copy(production_path: str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Deploy the active dev copy back to production.
 
@@ -389,10 +389,14 @@ def deploy_dev_copy(production_path: str | None = None, connection_name: str = "
         production_path: Optional explicit production path. If not provided,
                         uses the production_path from the dev copy manifest.
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to proceed with deployment
+        dry_run: If True, returns preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-
+    guard = guard_destructive(confirm, dry_run, "deploy_dev_copy")
+    if guard is not None:
+        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -405,7 +409,7 @@ def deploy_dev_copy(production_path: str | None = None, connection_name: str = "
 
 
 @mcp.tool()
-def discard_dev_copy(production_path: str | None = None, connection_name: str = "default") -> dict:
+def discard_dev_copy(production_path: str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Discard the active dev copy and reconnect to production.
 
@@ -415,10 +419,14 @@ def discard_dev_copy(production_path: str | None = None, connection_name: str = 
     Args:
         production_path: Optional explicit production path.
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to proceed with discard
+        dry_run: If True, returns preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-
+    guard = guard_destructive(confirm, dry_run, "discard_dev_copy")
+    if guard is not None:
+        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}

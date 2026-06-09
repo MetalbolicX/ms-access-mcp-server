@@ -1,8 +1,10 @@
 """Linked table tools for MS Access database — Phase 1 SDD."""
 from .server import mcp
 from .container import get_container
+from ._helpers import guard_destructive
 
 from ..orchestrators.credential_vault import CredentialVault
+from ..orchestrators.connect_policy import ConnectPolicy
 
 
 def _get_vault() -> CredentialVault:
@@ -75,6 +77,11 @@ def create_linked_table(name: str, source_table: str, connect_string: str, conne
         connect_string: ODBC or other connection string (e.g., "ODBC;DSN=MyDSN")
         connection_name: Connection identifier (defaults to "default")
     """
+    # Validate connect_string via ConnectPolicy before any adapter operations
+    policy = ConnectPolicy()
+    result = policy.validate(connect_string)
+    if not result.allowed:
+        return {"success": False, "error": "; ".join(result.reasons)}
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
 
@@ -115,6 +122,12 @@ def refresh_linked_table(
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
+    # Validate connect_string via ConnectPolicy if provided
+    if connect_string is not None:
+        policy = ConnectPolicy()
+        validation_result = policy.validate(connect_string)
+        if not validation_result.allowed:
+            return {"success": False, "error": "; ".join(validation_result.reasons)}
     try:
         # Handle server_id: if provided without password, retrieve from vault
         effective_password = password
@@ -145,7 +158,7 @@ def refresh_linked_table(
 
 
 @mcp.tool()
-def unlink_table(name: str, connection_name: str = "default") -> dict:
+def unlink_table(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Unlink (delete) a linked table definition.
 
@@ -155,9 +168,14 @@ def unlink_table(name: str, connection_name: str = "default") -> dict:
     Args:
         name: Name of the linked table to unlink
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to proceed with unlink
+        dry_run: If True, returns preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "unlink_table", name=name)
+    if guard is not None:
+        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -193,7 +211,7 @@ def store_credential(server_id: str, password: str, connection_name: str = "defa
 
 
 @mcp.tool()
-def clear_credentials(connection_name: str = "default") -> dict:
+def clear_credentials(connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Clear all stored credentials from the vault.
 
@@ -201,9 +219,14 @@ def clear_credentials(connection_name: str = "default") -> dict:
 
     Args:
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to proceed with clearing all credentials
+        dry_run: If True, returns preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "clear_credentials")
+    if guard is not None:
+        return guard
     try:
         _get_vault().clear()
         return {"success": True}
@@ -243,6 +266,11 @@ def upsert_linked_table(
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
+    # Validate connect_string via ConnectPolicy before any operations
+    policy = ConnectPolicy()
+    validation_result = policy.validate(connect_string)
+    if not validation_result.allowed:
+        return {"success": False, "error": "; ".join(validation_result.reasons)}
     try:
         # Handle server_id: if provided without password, retrieve from vault
         effective_password = password

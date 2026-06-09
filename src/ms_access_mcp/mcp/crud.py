@@ -1,5 +1,6 @@
 """CRUD tools for queries, tables, and data in MS Access database — Phase 1 SDD."""
 from .server import mcp
+from ._helpers import guard_destructive
 
 
 def _pool():
@@ -299,7 +300,7 @@ def insert_data(table_name: str, data: dict | list[dict], connection_name: str =
 
 
 @mcp.tool()
-def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None = None, connection_name: str = "default") -> dict:
+def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Update rows in a table.
 
@@ -308,9 +309,17 @@ def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None =
         set_dict: Dict of column=value pairs to set
         where_dict: Dict of conditions (ANDed), a raw SQL string, or None for all rows
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True when where_dict is None (mass update)
+        dry_run: If True, returns a preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+
+    # Mass update (where_dict is None) requires confirm; targeted update proceeds
+    if where_dict is None:
+        guard = guard_destructive(confirm, dry_run, "update_data", table_name=table_name, set_dict=set_dict, where_dict=where_dict)
+        if guard is not None:
+            return guard
 
     adapter = _get_adapter(connection_name)
     if adapter is None:

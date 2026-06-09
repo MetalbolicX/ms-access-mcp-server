@@ -1,5 +1,6 @@
 """Persistence/versioning tools — export/import Access objects as text files."""
 from .server import mcp, _get_path_guard
+from ._helpers import guard_destructive
 
 
 def _pool():
@@ -74,16 +75,21 @@ def import_form_from_text(form_name: str, form_data: str, connection_name: str =
 
 
 @mcp.tool()
-def delete_form(form_name: str, connection_name: str = "default") -> dict:
+def delete_form(form_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Delete a form from the database.
 
     Args:
         form_name: Name of the form to delete
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to proceed with deletion
+        dry_run: If True, returns preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "delete_form", form_name=form_name)
+    if guard is not None:
+        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -136,16 +142,21 @@ def import_report_from_text(report_name: str, report_data: str, connection_name:
 
 
 @mcp.tool()
-def delete_report(report_name: str, connection_name: str = "default") -> dict:
+def delete_report(report_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Delete a report from the database.
 
     Args:
         report_name: Name of the report to delete
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to proceed with deletion
+        dry_run: If True, returns preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "delete_report", report_name=report_name)
+    if guard is not None:
+        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -310,6 +321,7 @@ def compare_versioning(export_dir: str, connection_name: str = "default") -> dic
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
     try:
+        export_dir = _validate_path(export_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
         return orch.compare(export_dir, adapter)

@@ -23,3 +23,25 @@ def _get_adapter(connection_name: str = "default"):
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
     return _pool().is_connected(connection_name)
+
+
+def guard_destructive(confirm: bool, dry_run: bool, action: str, **context) -> dict | None:
+    """Guard clause for destructive MCP tools.
+
+    Returns a dict (early return) if guard blocks the action, or None to proceed.
+
+    Args:
+        confirm: Must be True to proceed with the destructive action
+        dry_run: If True, returns a preview dict without executing
+        action: Name of the action (e.g. "delete_module")
+        **context: Additional context passed through to the response dict
+
+    Returns:
+        None if the operation should proceed, or a dict with dry_run=True
+        or success=False indicating the guard blocked the action.
+    """
+    if dry_run:
+        return {"dry_run": True, "action": action, **context}
+    if not confirm:
+        return {"success": False, "error": f"confirm=True required for {action}", **context}
+    return None

@@ -1,6 +1,7 @@
 """VBA Extensibility tools for MS Access database — Phase 1 SDD."""
 from .server import mcp
 from .container import get_container
+from ._helpers import guard_destructive
 
 
 def _pool():
@@ -64,7 +65,7 @@ def get_vba_code(module_name: str, connection_name: str = "default") -> dict:
 
 
 @mcp.tool()
-def set_vba_code(module_name: str, code: str, connection_name: str = "default") -> dict:
+def set_vba_code(module_name: str, code: str, connection_name: str = "default", confirm: bool = False) -> dict:
     """
     Set VBA code in a module.
 
@@ -72,9 +73,14 @@ def set_vba_code(module_name: str, code: str, connection_name: str = "default") 
         module_name: Name of the VBA module
         code: VBA code to inject
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to overwrite existing code
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+
+    guard = guard_destructive(confirm, False, "set_vba_code", module_name=module_name)
+    if guard is not None:
+        return guard
 
     adapter = _get_adapter(connection_name)
     if adapter is None:
@@ -168,16 +174,22 @@ def save_database(connection_name: str = "default") -> dict:
 
 
 @mcp.tool()
-def delete_module(module_name: str, connection_name: str = "default") -> dict:
+def delete_module(module_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
     Delete a VBA module from the database.
 
     Args:
         module_name: Name of the VBA module to delete
         connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the deletion
+        dry_run: If True, returns a preview without executing
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
+
+    guard = guard_destructive(confirm, dry_run, "delete_module", module_name=module_name)
+    if guard is not None:
+        return guard
 
     adapter = _get_adapter(connection_name)
     if adapter is None:

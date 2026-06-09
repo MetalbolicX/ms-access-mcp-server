@@ -110,9 +110,34 @@ class TestUnlinkTable:
         mock_conn.adapter.unlink_table.return_value = {"success": True}
         mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
-            result = server.unlink_table("lnkName")
+            result = server.unlink_table("lnkName", confirm=True)
             assert result["success"] is True
             mock_conn.adapter.unlink_table.assert_called_once_with("lnkName")
+
+    def test_unlink_table_rejected_without_confirm(self):
+        """unlink_table must require confirm=True."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.unlink_table("lnkName")
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_conn.adapter.unlink_table.assert_not_called()
+
+    def test_unlink_table_dry_run_returns_preview(self):
+        """unlink_table with dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.unlink_table("lnkName", confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "unlink_table"
+            assert result["name"] == "lnkName"
+            mock_conn.adapter.unlink_table.assert_not_called()
 
 
 class TestLinkedTablesComOnlyError:
@@ -180,7 +205,7 @@ class TestLinkedTablesComOnlyError:
         )
         mock_conn.get_adapter.return_value = mock_adapter
         with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
-            result = server.unlink_table("lnk")
+            result = server.unlink_table("lnk", confirm=True)
             assert result["success"] is False
             assert "COM automation" in result["error"]
             assert "WinComAdapter" in result["error"]
@@ -198,11 +223,11 @@ class TestConnectStringAllowlist:
     """
 
     def test_create_linked_table_accepts_any_connect_string(self):
-        """create_linked_table accepts any connect_string and delegates to adapter.
+        """create_linked_table accepts always-allowed connect_string prefixes.
 
-        Provider validation is handled by LinkedTableService (via ConnectPolicy)
-        for upsert operations. create_linked_table goes directly to the adapter
-        without MCP-layer validation.
+        With ConnectPolicy validation at MCP layer, only ODBC; and ACE OLEDB
+        providers are allowed by default. Unknown providers are rejected.
+        This test verifies that ODBC strings (always allowed) are accepted.
         """
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
@@ -213,7 +238,7 @@ class TestConnectStringAllowlist:
             result = server.create_linked_table(
                 "lnkName",
                 "RemoteT",
-                "Provider=Unknown.Provider;Data Source=remote.db;",
+                "ODBC;DSN=test",
             )
             assert result["success"] is True
 
@@ -248,7 +273,42 @@ class TestConnectStringAllowlist:
             assert result["success"] is True
 
     def test_create_linked_table_accepts_custom_provider(self):
-        """create_linked_table accepts custom providers (validation at service layer)."""
+        """create_linked_table rejects custom providers not in ConnectPolicy allowlist.
+
+        With ConnectPolicy validation at MCP layer, only ODBC; and ACE OLEDB
+        providers are allowed. Custom providers are rejected.
+        """
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.create_linked_table(
+                "lnkName",
+                "RemoteT",
+                "Provider=MyCustom.Provider;Data Source=remote.mdb;",
+            )
+            assert result["success"] is False
+            assert "provider" in result["error"].lower()
+
+    def test_create_linked_table_rejects_unknown_provider(self):
+        """create_linked_table rejects connect_string with unknown provider prefix."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.create_linked_table(
+                "lnkName",
+                "RemoteT",
+                "Provider=Unknown.Provider;Data Source=remote.db;",
+            )
+            assert result["success"] is False
+            assert "provider" in result["error"].lower()
+            assert "not" in result["error"].lower() and "allowlist" in result["error"].lower()
+
+    def test_create_linked_table_accepts_odbc_with_password(self):
+        """create_linked_table accepts ODBC strings (PWD stripping happens at sanitize time)."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.adapter = MagicMock()
@@ -258,7 +318,7 @@ class TestConnectStringAllowlist:
             result = server.create_linked_table(
                 "lnkName",
                 "RemoteT",
-                "Provider=MyCustom.Provider;Data Source=remote.mdb;",
+                "ODBC;DSN=MyDSN;PWD=secret;",
             )
             assert result["success"] is True
 
@@ -481,7 +541,7 @@ class TestClearCredentials:
         mock_conn.get_adapter.return_value = mock_adapter
 
         with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
-            result = server.clear_credentials()
+            result = server.clear_credentials(confirm=True)
             assert result["success"] is True
 
     def test_clear_credentials_clears_named_connection(self):
@@ -492,8 +552,33 @@ class TestClearCredentials:
         mock_conn.get_adapter.return_value = mock_adapter
 
         with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
-            result = server.clear_credentials(connection_name="default")
+            result = server.clear_credentials(connection_name="default", confirm=True)
             assert result["success"] is True
+
+    def test_clear_credentials_rejected_without_confirm(self):
+        """clear_credentials must require confirm=True because it wipes ALL credentials."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.clear_credentials()
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+
+    def test_clear_credentials_dry_run_returns_preview(self):
+        """clear_credentials with dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_adapter
+
+        with patch.object(linked_tables_module, '_pool', return_value=mock_conn):
+            result = server.clear_credentials(confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "clear_credentials"
+            mock_conn.adapter.unlink_table.assert_not_called()
 
 
 class TestUpsertLinkedTableWithServerId:

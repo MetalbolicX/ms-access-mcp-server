@@ -274,6 +274,55 @@ class TestDataCrudTools:
             assert result["success"] is True
             mock_conn.adapter.update_data.assert_called_once()
 
+    def test_update_data_mass_update_requires_confirm(self):
+        """update_data with where_dict=None (mass update) must require confirm=True."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = crud_module.update_data("T1", {"Name": "Bob"}, where_dict=None)
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_conn.adapter.update_data.assert_not_called()
+
+    def test_update_data_mass_update_with_confirm_executes(self):
+        """update_data with where_dict=None and confirm=True executes mass update."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.update_data.return_value = {"success": True, "rows_updated": 5}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = crud_module.update_data("T1", {"Name": "Bob"}, where_dict=None, confirm=True)
+            assert result["success"] is True
+            mock_conn.adapter.update_data.assert_called_once()
+
+    def test_update_data_mass_update_dry_run_returns_preview(self):
+        """update_data with where_dict=None and dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = crud_module.update_data("T1", {"Name": "Bob"}, where_dict=None, confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "update_data"
+            assert result["table_name"] == "T1"
+            mock_conn.adapter.update_data.assert_not_called()
+
+    def test_update_data_targeted_update_proceeds_without_confirm(self):
+        """update_data with where_dict dict (targeted update) proceeds without confirm."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.update_data.return_value = {"success": True, "rows_updated": 1}
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(crud_module, '_pool', return_value=mock_conn):
+            result = crud_module.update_data("T1", {"Name": "Bob"}, where_dict={"ID": 1})
+            assert result["success"] is True
+            mock_conn.adapter.update_data.assert_called_once()
+
     def test_delete_data_delegates_to_adapter(self):
         """delete_data should delegate to adapter.delete_data."""
         mock_conn = MagicMock()

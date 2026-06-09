@@ -112,9 +112,23 @@ class TestSetVbaCode:
         mock_dev_copy.compile_with_retry.return_value = {"success": True, "module": "modTest"}
         with patch.object(vba_module, '_pool', return_value=mock_conn), \
              patch.object(vba_module, '_dev_copy', return_value=mock_dev_copy):
-            result = server.set_vba_code("modTest", "Sub Test()\nEnd Sub")
+            result = server.set_vba_code("modTest", "Sub Test()\nEnd Sub", confirm=True)
             assert result["success"] is True
             mock_dev_copy.compile_with_retry.assert_called_once()
+
+    def test_set_vba_code_rejected_without_confirm(self):
+        """set_vba_code must require confirm=True because it overwrites existing code."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        mock_dev_copy = MagicMock()
+        with patch.object(vba_module, '_pool', return_value=mock_conn), \
+             patch.object(vba_module, '_dev_copy', return_value=mock_dev_copy):
+            result = server.set_vba_code("modTest", "Sub Test()\nEnd Sub")
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_dev_copy.compile_with_retry.assert_not_called()
 
 
 class TestAddVbaProcedure:
@@ -146,7 +160,7 @@ class TestDeleteModule:
         mock_conn.adapter.delete_module.return_value = True
         mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.object(vba_module, '_pool', return_value=mock_conn):
-            result = server.delete_module("modTest")
+            result = server.delete_module("modTest", confirm=True)
             assert result["success"] is True
             assert result["module"] == "modTest"
 
@@ -158,9 +172,34 @@ class TestDeleteModule:
         mock_conn.adapter.delete_module.side_effect = RuntimeError("Module in use")
         mock_conn.get_adapter.return_value = mock_conn.adapter
         with patch.object(vba_module, '_pool', return_value=mock_conn):
-            result = server.delete_module("modTest")
+            result = server.delete_module("modTest", confirm=True)
             assert result["success"] is False
             assert "Module in use" in result["error"]
+
+    def test_delete_module_rejected_without_confirm(self):
+        """delete_module must require confirm=True."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.delete_module("modTest")
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_conn.adapter.delete_module.assert_not_called()
+
+    def test_delete_module_dry_run_returns_preview(self):
+        """delete_module with dry_run=True returns preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.delete_module("modTest", confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "delete_module"
+            assert result["module_name"] == "modTest"
+            mock_conn.adapter.delete_module.assert_not_called()
 
 
 class TestVbaListProcedures:

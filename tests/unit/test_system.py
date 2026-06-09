@@ -192,9 +192,30 @@ class TestSystemToolSuccessPaths:
         mock_adapter = MagicMock()
         mock_adapter.delete_form.return_value = True
         with _patch_pool(persistence_module, mock_adapter):
-            result = server.delete_form("TestForm")
+            result = server.delete_form("TestForm", confirm=True)
             assert result["success"] is True
             assert result["form"] == "TestForm"
+
+    def test_delete_form_rejected_without_confirm(self):
+        """delete_form must require confirm=True."""
+        mock_adapter = MagicMock()
+        mock_adapter.delete_form.return_value = True
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.delete_form("TestForm")
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_adapter.delete_form.assert_not_called()
+
+    def test_delete_form_dry_run_returns_preview(self):
+        """delete_form with dry_run=True returns preview without executing."""
+        mock_adapter = MagicMock()
+        mock_adapter.delete_form.return_value = True
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.delete_form("TestForm", confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "delete_form"
+            assert result["form_name"] == "TestForm"
+            mock_adapter.delete_form.assert_not_called()
 
     def test_export_report_to_text_returns_data_on_success(self):
         """export_report_to_text should return report data on success."""
@@ -220,9 +241,30 @@ class TestSystemToolSuccessPaths:
         mock_adapter = MagicMock()
         mock_adapter.delete_report.return_value = True
         with _patch_pool(persistence_module, mock_adapter):
-            result = server.delete_report("TestReport")
+            result = server.delete_report("TestReport", confirm=True)
             assert result["success"] is True
             assert result["report"] == "TestReport"
+
+    def test_delete_report_rejected_without_confirm(self):
+        """delete_report must require confirm=True."""
+        mock_adapter = MagicMock()
+        mock_adapter.delete_report.return_value = True
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.delete_report("TestReport")
+            assert result["success"] is False
+            assert "confirm=True" in result["error"]
+            mock_adapter.delete_report.assert_not_called()
+
+    def test_delete_report_dry_run_returns_preview(self):
+        """delete_report with dry_run=True returns preview without executing."""
+        mock_adapter = MagicMock()
+        mock_adapter.delete_report.return_value = True
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.delete_report("TestReport", confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "delete_report"
+            assert result["report_name"] == "TestReport"
+            mock_adapter.delete_report.assert_not_called()
 
     def test_export_module_to_text_returns_data_on_success(self):
         """export_module_to_text should return module data on success."""
