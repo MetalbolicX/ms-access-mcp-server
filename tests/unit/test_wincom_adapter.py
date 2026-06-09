@@ -2574,3 +2574,166 @@ class TestParseScriptLines:
         assert "SELECT  1" in stmts[0]["text"]
         assert "keep" not in stmts[0]["text"]
         assert stmts[0]["line"] == 1
+
+
+class TestWinComSqlInjectionSanitization:
+    """SQL injection sanitization for update_data() and delete_data() with raw WHERE strings.
+
+    PR 1 Task 1.1 RED: Tests for _sanitize_where_string() static method on WinComAdapter.
+    """
+
+    # ------------------------------------------------------------------ #
+    # Rejected malicious strings
+    # ------------------------------------------------------------------ #
+
+    def test_sanitize_rejects_sql_comment_dash_dash(self):
+        """'; DROP TABLE x;--' must be rejected by _sanitize_where_string()."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("'; DROP TABLE x;--")
+        assert result is None, "SQL comment -- injection was not rejected"
+
+    def test_sanitize_rejects_or_1_equals_1(self):
+        """'OR 1=1' must be rejected by _sanitize_where_string()."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("OR 1=1")
+        assert result is None, "OR 1=1 injection was not rejected"
+
+    def test_sanitize_rejects_semicolon_delete(self):
+        """'1; DELETE FROM users' must be rejected by _sanitize_where_string()."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("1; DELETE FROM users")
+        assert result is None, "SemicolonDELETE injection was not rejected"
+
+    def test_sanitize_rejects_block_comment(self):
+        """'/* injected */' must be rejected by _sanitize_where_string()."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("/* injected */")
+        assert result is None, "Block comment injection was not rejected"
+
+    def test_sanitize_rejects_union_select(self):
+        """'UNION SELECT * FROM passwords--' must be rejected."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("UNION SELECT * FROM passwords--")
+        assert result is None, "UNION SELECT injection was not rejected"
+
+    def test_sanitize_rejects_drop_table(self):
+        """'DROP TABLE users' must be rejected."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("DROP TABLE users")
+        assert result is None, "DROP TABLE injection was not rejected"
+
+    # ------------------------------------------------------------------ #
+    # Accepted valid strings
+    # ------------------------------------------------------------------ #
+
+    def test_sanitize_accepts_simple_equality(self):
+        """'Name = 'John'' must be accepted by _sanitize_where_string()."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Name = 'John'")
+        assert result == "Name = 'John'", f"Valid string was rejected: {result}"
+
+    def test_sanitize_accepts_comparison_with_and(self):
+        """'Age > 25 AND Status = 'Active'' must be accepted."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Age > 25 AND Status = 'Active'")
+        assert result == "Age > 25 AND Status = 'Active'", f"Valid string was rejected: {result}"
+
+    def test_sanitize_accepts_in_clause(self):
+        """'Category IN ('A', 'B', 'C')' must be accepted."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Category IN ('A', 'B', 'C')")
+        assert result == "Category IN ('A', 'B', 'C')", f"Valid string was rejected: {result}"
+
+    def test_sanitize_accepts_like_pattern(self):
+        """'Name LIKE 'Smith%'' must be accepted."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Name LIKE 'Smith%'")
+        assert result == "Name LIKE 'Smith%'", f"Valid string was rejected: {result}"
+
+    def test_sanitize_accepts_between_clause(self):
+        """'Price BETWEEN 10 AND 100' must be accepted."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Price BETWEEN 10 AND 100")
+        assert result == "Price BETWEEN 10 AND 100", f"Valid string was rejected: {result}"
+
+    def test_sanitize_accepts_is_null(self):
+        """'Email IS NULL' must be accepted."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Email IS NULL")
+        assert result == "Email IS NULL", f"Valid string was rejected: {result}"
+
+    def test_sanitize_accepts_obrien_with_apostrophe(self):
+        """Strings with apostrophes like O'Brien must be accepted."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        result = WinComAdapter._sanitize_where_string("Name = 'O'Brien'")
+        assert result == "Name = 'O'Brien'", f"Valid string was rejected: {result}"
+
+    # ------------------------------------------------------------------ #
+    # update_data with raw string WHERE — rejection flow
+    # ------------------------------------------------------------------ #
+
+    def test_update_data_rejects_malicious_raw_where_string(self, adapter, mock_app, tmp_path):
+        """update_data with a malicious raw WHERE string must return error dict."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+
+        # Malicious raw WHERE string should be blocked
+        result = adapter.update_data(
+            "users",
+            {"name": "Hacked"},
+            where_dict="'; DROP TABLE users;--",
+        )
+        assert result["success"] is False, "Malicious WHERE was not rejected"
+        assert "disallowed characters" in result["error"].lower() or "invalid" in result["error"].lower()
+
+    def test_update_data_accepts_valid_raw_where_string(self, adapter, mock_app, tmp_path):
+        """update_data with a valid raw WHERE string must succeed."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+        adapter.insert_data("users", {"id": 1, "name": "Alice"})
+
+        result = adapter.update_data(
+            "users",
+            {"name": "Bob"},
+            where_dict="id = 1",
+        )
+        assert result["success"] is True, f"Valid WHERE was rejected: {result.get('error')}"
+
+    # ------------------------------------------------------------------ #
+    # delete_data with raw string WHERE — rejection flow
+    # ------------------------------------------------------------------ #
+
+    def test_delete_data_rejects_malicious_raw_where_string(self, adapter, mock_app, tmp_path):
+        """delete_data with a malicious raw WHERE string must return error dict."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+        adapter.insert_data("users", {"id": 1, "name": "Alice"})
+
+        result = adapter.delete_data(
+            "users",
+            where_dict="1; DELETE FROM users",
+        )
+        assert result["success"] is False, "Malicious WHERE was not rejected"
+        assert "disallowed characters" in result["error"].lower() or "invalid" in result["error"].lower()
+
+    def test_delete_data_accepts_valid_raw_where_string(self, adapter, mock_app, tmp_path):
+        """delete_data with a valid raw WHERE string must succeed."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        adapter.execute_query("CREATE TABLE users (id INTEGER, name TEXT)")
+        adapter.insert_data("users", {"id": 1, "name": "Alice"})
+        adapter.insert_data("users", {"id": 2, "name": "Bob"})
+
+        result = adapter.delete_data("users", where_dict="id = 1")
+        assert result["success"] is True, f"Valid WHERE was rejected: {result.get('error')}"
+
+        # Verify only row 1 was deleted
+        result = adapter.execute_query("SELECT COUNT(*) as cnt FROM users")
+        assert result["rows"][0]["cnt"] == 1

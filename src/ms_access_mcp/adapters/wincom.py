@@ -44,6 +44,56 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     different async workers.
     """
 
+    # Regex allowlist for raw WHERE strings in update_data/delete_data.
+    # Blocks SQL injection via semicolons, comments (--, /* */), and other
+    # SQL keywords that have no place in a simple WHERE column comparison.
+    # Permitted characters: alphanumeric, whitespace, SQL operators (. , = < > ( ) ' " - %)
+    # This must match the pattern already deployed in odbc.py update_data/delete_data.
+    _WHERE_ALLOWLIST_RE = r"^[\w\s\.\,\=\<\>\(\)\'\"\-%]+$"
+    # Dangerous DDL/DML keywords that have no legitimate use in a raw WHERE clause.
+    # Does NOT block AND/OR in general — those are standard boolean operators in
+    # valid WHERE clauses. We do block bare "OR <number>=<number>" tautologies at
+    # the start of a WHERE clause since those are always-suspicious.
+    # Does block comment markers (--) since those are SQL comment syntax.
+    _DANGEROUS_WHERE_PATTERNS = (
+        r"--",  # SQL single-line comment
+        r"/\*",  # SQL block comment start
+        r"\bDROP\b",
+        r"\bDELETE\b",
+        r"\bINSERT\b",
+        r"\bUPDATE\b",
+        r"\bALTER\b",
+        r"\bCREATE\b",
+        r"\bTRUNCATE\b",
+        r"\bEXEC\b",
+        r"\bEXECUTE\b",
+        r"\bUNION\b",
+        # Tautology patterns: OR followed by digit-comparison (e.g. OR 1=1, OR 2=2)
+        r"^\s*OR\s+\d+\s*=\s*\d+",
+    )
+
+    @staticmethod
+    def _sanitize_where_string(where_str: str) -> str | None:
+        """Validate a raw WHERE string against the SQL injection allowlist.
+
+        Args:
+            where_str: A raw SQL WHERE clause string (not a dict of conditions).
+
+        Returns:
+            The validated string if it passes the allowlist regex and contains
+            no dangerous SQL keywords, otherwise None.
+
+        Raises:
+            None — returns None for invalid strings, does not raise.
+        """
+        import re
+        if not re.match(WinComAdapter._WHERE_ALLOWLIST_RE, where_str):
+            return None
+        for pattern in WinComAdapter._DANGEROUS_WHERE_PATTERNS:
+            if re.search(pattern, where_str, re.IGNORECASE):
+                return None
+        return where_str
+
     def __init__(self, db_path: str | None = None, strategy_selector: Any | None = None) -> None:
         from .export.strategies import ExportStrategySelector
 
@@ -1166,6 +1216,16 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         if not self.is_connected():
             return {"success": False, "error": "Not connected", "affected": 0}
 
+        # Guard: raw SQL WHERE strings must pass the injection allowlist check
+        if isinstance(where_dict, str):
+            sanitized = self._sanitize_where_string(where_dict)
+            if sanitized is None:
+                return {
+                    "success": False,
+                    "error": "where_dict contains disallowed characters — SQL injection blocked",
+                    "affected": 0,
+                }
+
         def _do() -> dict:
             try:
                 db = self._dispatcher.current_db
@@ -1196,6 +1256,16 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         """
         if not self.is_connected():
             return {"success": False, "error": "Not connected", "affected": 0}
+
+        # Guard: raw SQL WHERE strings must pass the injection allowlist check
+        if isinstance(where_dict, str):
+            sanitized = self._sanitize_where_string(where_dict)
+            if sanitized is None:
+                return {
+                    "success": False,
+                    "error": "where_dict contains disallowed characters — SQL injection blocked",
+                    "affected": 0,
+                }
 
         def _do() -> dict:
             try:
