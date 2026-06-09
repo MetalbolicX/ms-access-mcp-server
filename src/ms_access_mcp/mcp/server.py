@@ -1,5 +1,8 @@
 from typing import Optional, Any
 import time
+import signal
+import atexit
+import logging
 
 # Load .env file before any config initialization (optional dependency)
 try:
@@ -22,6 +25,8 @@ from ..path_guard import PathGuard
 from ..telemetry.metrics import tool_calls_total, tool_latency_seconds
 from ..telemetry.audit import audit_log
 import uvicorn
+
+_logger = logging.getLogger(__name__)
 
 # Create FastMCP server
 mcp = FastMCP("MS Access MCP Server")
@@ -194,6 +199,43 @@ def run_http(
     if app is None:
         app = get_asgi_app(transport=transport)
     uvicorn.run(app, host=host, port=port, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
+
+
+def _graceful_shutdown() -> None:
+    """Clean up all resources on process exit.
+
+    Called via atexit and signal handlers to ensure proper cleanup when the
+    server process is terminated (e.g., when opencode closes the session).
+    This prevents orphaned MS Access instances and COM object leaks.
+    """
+    try:
+        container = get_container()
+        # Disconnect all connections in the pool to clean up COM/ODBC resources
+        for name in list(container.connection_pool.list().keys()):
+            try:
+                container.connection_pool.disconnect(name)
+            except Exception as e:
+                _logger.debug(f"Error disconnecting '{name}' during shutdown: {e}")
+    except Exception as e:
+        _logger.debug(f"Error during graceful shutdown: {e}")
+
+
+def _handle_signal(signum: int, frame: Any) -> None:
+    """Signal handler for graceful shutdown on SIGTERM/SIGINT." + " """
+    sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    _logger.info(f"Received {sig_name}, initiating graceful shutdown...")
+    _graceful_shutdown()
+    # Re-raise the signal to allow default handling
+    raise SystemExit(0)
+
+
+# Register signal handlers and atexit cleanup for graceful shutdown
+# This ensures COM resources are properly released when the session is terminated
+if hasattr(signal, 'SIGTERM'):
+    signal.signal(signal.SIGTERM, _handle_signal)
+if hasattr(signal, 'SIGINT'):
+    signal.signal(signal.SIGINT, _handle_signal)
+atexit.register(_graceful_shutdown)
 
 
 if __name__ == "__main__":

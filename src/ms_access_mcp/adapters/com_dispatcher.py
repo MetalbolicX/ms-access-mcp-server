@@ -99,8 +99,10 @@ class ComDispatcher:
         self._db_path = db_path
 
     def shutdown(self) -> None:
-        """Signal the dispatcher thread to stop and clean up COM objects."""
+        """Signal the dispatcher thread to stop and clean up COM objects." + """
         self._stopping = True
+        # Flush pending futures with CancelledError before shutting down
+        self._flush_pending_futures()
         # Put a sentinel to wake the thread
         self._call_queue.put((lambda: None, (), {}, concurrent.futures.Future()))
         if self._thread is not None:
@@ -111,6 +113,29 @@ class ComDispatcher:
         self._ado_conn = None
         self._db_path = None
         self._started = False
+
+    def _flush_pending_futures(self) -> None:
+        """Cancel all pending futures in the queue to prevent hanging calls.
+
+        Called during shutdown to ensure that any pending calls are cancelled
+        before the thread exits. This prevents the MCP client from hanging
+        when the session is terminated.
+        """
+        cancelled = 0
+        while True:
+            try:
+                fn, args, kwargs, future = self._call_queue.get_nowait()
+                # Don't cancel the sentinel (lambda: None)
+                if fn is not None:
+                    try:
+                        future.cancel()
+                        cancelled += 1
+                    except Exception:
+                        pass
+            except queue.Empty:
+                break
+        if cancelled > 0:
+            logger.debug(f"Flushed {cancelled} pending futures during shutdown")
 
     # -------------------------------------------------------------------------
     # Internal: runs on the STA thread
@@ -136,9 +161,18 @@ class ComDispatcher:
 
                 try:
                     result = fn(*args, **kwargs)
-                    future.set_result(result)
+                    # Only set result if future is still valid (not cancelled)
+                    try:
+                        future.set_result(result)
+                    except concurrent.futures.InvalidStateError:
+                        # Future was cancelled — discard result
+                        pass
                 except Exception as e:
-                    future.set_exception(e)
+                    try:
+                        future.set_exception(e)
+                    except concurrent.futures.InvalidStateError:
+                        # Future was cancelled — discard exception
+                        pass
         finally:
             # Clean up COM on the same thread
             self._release_com_safe()
