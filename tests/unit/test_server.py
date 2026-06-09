@@ -76,9 +76,12 @@ class TestReExports:
 
     def test_linked_tables_tools_are_exported(self):
         """Should export linked tables tools."""
-        from ms_access_mcp.mcp.server import get_linked_tables, create_linked_table
+        from ms_access_mcp.mcp.server import get_linked_tables, create_linked_table, refresh_linked_table, unlink_table, upsert_linked_table
         assert callable(get_linked_tables)
         assert callable(create_linked_table)
+        assert callable(refresh_linked_table)
+        assert callable(unlink_table)
+        assert callable(upsert_linked_table)
 
     def test_dev_copy_tools_are_exported(self):
         """Should export dev copy tools."""

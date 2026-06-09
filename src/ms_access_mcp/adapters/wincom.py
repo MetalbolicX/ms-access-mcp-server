@@ -487,6 +487,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                             "source_table": tdef.SourceTableName,
                             "connect_string": connect_str,
                             "type": table_type,
+                            "attributes": tdef.Attributes,
                         })
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -516,17 +517,21 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                 tdef.Connect = connect_string
                 tdef.Attributes = 0x80000000  # dbLinkAttachedTable
                 db.TableDefs.Append(tdef)
+                # Strip password immediately after link is established
+                tdef.Connect = self._strip_password(connect_string)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
 
         return self._dispatcher.call(_do)
 
-    def refresh_linked_table(self, name: str) -> dict:
+    def refresh_linked_table(self, name: str, connect_string: str | None = None) -> dict:
         """Refresh the link for a linked table.
 
         Args:
             name: Name of the linked table
+            connect_string: Optional connection string with password for re-authentication.
+                           If provided, temporarily set on TableDef before RefreshLink.
 
         Returns:
             dict with success=True or success=False and error
@@ -537,7 +542,12 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         def _do() -> dict:
             try:
                 tdef = self._dispatcher.current_db.TableDefs(name)
+                # If connect_string provided, temporarily inject password for refresh
+                if connect_string is not None:
+                    tdef.Connect = connect_string
                 tdef.RefreshLink()
+                # Strip password after refresh to prevent persistence
+                tdef.Connect = self._strip_password(tdef.Connect)
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -559,6 +569,66 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         def _do() -> dict:
             try:
                 self._dispatcher.current_db.TableDefs.Delete(name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def recreate_linked_table(
+        self,
+        name: str,
+        source_table: str,
+        connect_string: str,
+        attributes: int | None = None,
+    ) -> dict:
+        """Recreate a linked table (delete + create atomically).
+
+        Preserves hidden state by restoring attributes after creation.
+        Strips password after link is established.
+
+        Args:
+            name: Name for the linked table in the Access database
+            source_table: Name of the remote table
+            connect_string: ODBC or other connection string (may include PWD=)
+            attributes: DAO attributes to restore after creation (e.g. dbHiddenObject).
+                       If None, defaults to dbLinkAttachedTable only.
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                # Capture current attributes if not provided — use local var to avoid
+                # Python closure scoping issue (assignment makes name local to _do)
+                resolved_attrs = attributes
+                if resolved_attrs is None:
+                    try:
+                        old_tdef = db.TableDefs(name)
+                        resolved_attrs = old_tdef.Attributes
+                    except Exception:
+                        resolved_attrs = 0x80000000  # default: dbLinkAttachedTable
+
+                # Delete existing table
+                db.TableDefs.Delete(name)
+
+                # Create new table def
+                tdef = db.CreateTableDef(name)
+                tdef.SourceTableName = source_table
+                tdef.Connect = connect_string
+                tdef.Attributes = 0x80000000  # dbLinkAttachedTable
+                db.TableDefs.Append(tdef)
+
+                # Restore attributes (including hidden flag if present)
+                tdef.Attributes = resolved_attrs
+
+                # Strip password after link is established
+                tdef.Connect = self._strip_password(connect_string)
+
                 return {"success": True}
             except Exception as e:
                 return {"success": False, "error": str(e)}
@@ -924,6 +994,15 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             code = e.winerror  # type: ignore[union-attr]
 
         return {"error": error_str, "code": code, "message": message}
+
+    @staticmethod
+    def _strip_password(connect_string: str) -> str:
+        """Strip password (PWD=...) from a connection string.
+
+        Delegates to ConnectPolicy.sanitize() for canonical single-source stripping.
+        """
+        from ..orchestrators.connect_policy import ConnectPolicy
+        return ConnectPolicy().sanitize(connect_string)
 
     # ========================================================================
     # DATABASE FILE COPY

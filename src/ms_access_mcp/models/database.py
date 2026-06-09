@@ -81,3 +81,4 @@ class LinkedTableInfo(BaseModel):
     source_table: str
     connect_string: str
     type: str = "ODBC"
+    attributes: int = 0  # DAO dbHiddenObject flag (0x00000001)

@@ -76,18 +76,40 @@ def extract_schema(database_path: str) -> dict:
 
 
 @mcp.tool()
-def upload_schema(target_type: str, connection_string: str, schema_json: dict) -> dict:
+def upload_schema(
+    target_type: str,
+    connection_string: str,
+    schema_json: dict,
+    server_id: str | None = None,
+) -> dict:
     """
     Upload schema to target database.
 
     Args:
         target_type: Target database type (postgres, mysql, mariadb, sqlite, sqlserver)
-        connection_string: Connection string for target database
+        connection_string: Connection string for target database (password-less when server_id is used)
         schema_json: ExtractedSchema as dict
+        server_id: Optional server_id to retrieve password from the shared credential vault.
+            When provided, the password is injected into connection_string before use.
     """
     from ..models.migration import ExtractedSchema
+
+    effective_connection_string = connection_string
+    if server_id is not None:
+        vault = get_container().credential_vault
+        password = vault.retrieve(server_id)
+        if password is None:
+            return {
+                "success": False,
+                "error": f"server_id '{server_id}' not found in credential vault. "
+                         "Use store_credential first.",
+            }
+        # Inject PWD into the password-less connection string
+        sep = ";" if not connection_string.endswith(";") else ""
+        effective_connection_string = f"{connection_string}{sep}PWD={password}"
+
     schema = ExtractedSchema(**schema_json)
-    result = _migration().upload_schema(target_type, connection_string, schema)
+    result = _migration().upload_schema(target_type, effective_connection_string, schema)
     return result
 
 
@@ -101,13 +123,14 @@ def transfer_data(
     verification_mode: str = "full",
     table_overrides: dict | None = None,
     odbc_connection_string: str | None = None,
+    server_id: str | None = None,
 ) -> dict:
     """
     Transfer data from Access to target database.
 
     Args:
         target_type: Target database type (postgres, mysql, mariadb, sqlite, sqlserver)
-        connection_string: Connection string for target database
+        connection_string: Connection string for target database (password-less when server_id is used)
         database_path: Path to Access database
         schema_json: Optional ExtractedSchema dict (will extract if not provided)
         transfer_mode: Transfer strategy mode (auto, batch, linked)
@@ -119,8 +142,30 @@ def transfer_data(
         odbc_connection_string: Optional ODBC connection string override for passthrough.
             When provided, uses this string instead of deriving from the target connector's
             get_odbc_connection_string(). Format: "DRIVER={...};SERVER=...;PORT=...;DATABASE=...;UID=...;PWD=..."
+        server_id: Optional server_id to retrieve password from the shared credential vault.
+            When provided, the password is injected into connection_string and odbc_connection_string before use.
     """
     from ..models.migration import ExtractedSchema, TableTransferConfig
+
+    effective_connection_string = connection_string
+    effective_odbc_connection_string = odbc_connection_string
+
+    if server_id is not None:
+        vault = get_container().credential_vault
+        password = vault.retrieve(server_id)
+        if password is None:
+            return {
+                "success": False,
+                "error": f"server_id '{server_id}' not found in credential vault. "
+                         "Use store_credential first.",
+            }
+        # Inject PWD into the password-less connection string
+        sep = ";" if not connection_string.endswith(";") else ""
+        effective_connection_string = f"{connection_string}{sep}PWD={password}"
+        # Inject PWD into the password-less odbc_connection_string if provided
+        if odbc_connection_string is not None:
+            odbc_sep = ";" if not odbc_connection_string.endswith(";") else ""
+            effective_odbc_connection_string = f"{odbc_connection_string}{odbc_sep}PWD={password}"
 
     # Validate database path
     try:
@@ -154,13 +199,13 @@ def transfer_data(
 
     result = _migration().transfer_data(
         target_type,
-        connection_string,
+        effective_connection_string,
         schema,
         adapter,
         transfer_mode=transfer_mode,
         verification_mode=verification_mode,
         table_overrides=deserialized_overrides,
-        odbc_connection_string=odbc_connection_string,
+        odbc_connection_string=effective_odbc_connection_string,
     )
     if owns_connection:
         adapter.disconnect()

@@ -216,15 +216,40 @@ Private Sub RefreshLinkedTable( _
     ByVal connStr As String)
 
     Dim tdf As DAO.TableDef
+    Dim existingRemoteTableName As String
+    Dim preserveHidden As Boolean
 
     On Error GoTo ErrorHandler
 
     Set tdf = db.TableDefs(localTableName)
-    With tdf
-        .Connect = connStr
-        .SourceTableName = remoteTableName
-        .RefreshLink
-    End With
+    If Nz(tdf.Connect, vbNullString) = vbNullString Then
+        Err.Raise vbObjectError + 515, "RefreshLinkedTable", _
+                  "Existing table '" & localTableName & "' is not a linked table."
+    End If
+
+    existingRemoteTableName = Trim$(Nz(tdf.SourceTableName, vbNullString))
+    remoteTableName = Trim$(remoteTableName)
+    preserveHidden = ((tdf.Attributes And dbHiddenObject) = dbHiddenObject)
+
+    If StrComp(existingRemoteTableName, remoteTableName, vbTextCompare) <> 0 Then
+        db.TableDefs.Delete localTableName
+        db.TableDefs.Refresh
+
+        Set tdf = db.CreateTableDef(localTableName)
+        With tdf
+            .Connect = connStr
+            .SourceTableName = remoteTableName
+        End With
+
+        db.TableDefs.Append tdf
+
+        If preserveHidden Then
+            db.TableDefs(localTableName).Attributes = db.TableDefs(localTableName).Attributes Or dbHiddenObject
+        End If
+    Else
+        tdf.Connect = connStr
+        tdf.RefreshLink
+    End If
 
 ExitHandler:
     Set tdf = Nothing

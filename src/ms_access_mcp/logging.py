@@ -31,20 +31,36 @@ def set_correlation_id(correlation_id: str | None) -> None:
 
 
 class JsonFormatter(logging.Formatter):
-    """JSON log formatter with correlation ID support.
+    """JSON log formatter with correlation ID support and PWD redaction.
 
     Outputs one JSON object per log record with fields:
     timestamp, level, logger, correlation_id, tool_name, message, exc_info (optional)
+
+    PWD=... values are redacted in the message field before logging to prevent
+    credential exposure in log files.
     """
+
+    # Regex to match PWD= followed by non-semicolon chars (with optional surrounding semicolons)
+    _PWD_PATTERN = __import__("re").compile(r"PWD=[^;]*;?")
+
+    def _sanitize_message(self, message: str) -> str:
+        """Redact PWD=... from message string for safe logging.
+
+        Replaces PWD=secret with PWD=***.
+        """
+        return self._PWD_PATTERN.sub("PWD=***", message)
 
     def format(self, record: logging.LogRecord) -> str:
         try:
+            # Sanitize message to redact PWD= values
+            sanitized_message = self._sanitize_message(record.getMessage())
+
             # Build the JSON-serializable dict
             log_entry: dict[str, Any] = {
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "level": record.levelname,
                 "logger": record.name,
-                "message": record.getMessage(),
+                "message": sanitized_message,
             }
 
             # Add correlation ID if set

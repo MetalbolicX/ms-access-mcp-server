@@ -139,7 +139,10 @@ from .persistence import (  # noqa: E402
     export_schema_ddl, execute_sql_script,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
-from .linked_tables import get_linked_tables, create_linked_table, refresh_linked_table, unlink_table  # noqa: E402
+from .linked_tables import (
+    get_linked_tables, create_linked_table, refresh_linked_table, unlink_table,
+    upsert_linked_table, store_credential, clear_credentials,
+)  # noqa: E402
 from .dev_copy import (  # noqa: E402
     compact_repair, copy_database,
     export_module_backup, import_module_from_text, restore_module_backup,

@@ -10,6 +10,8 @@ from .verification import VerificationService
 from ..connectors.base import ConnectorCapabilities
 from .transfer_strategy import TransferContext, TransferStrategySelector
 from ..connectors.registry import ConnectorRegistry, _default_registry
+from ..orchestrators.credential_vault import CredentialVault
+from ..orchestrators.connect_policy import ConnectPolicy
 from .sql_builder import build_select, resolve_override, validate_columns, extract_rows
 from .topological_sorter import sort_tables_by_fk
 from .schema_extractor import SchemaExtractor
@@ -18,13 +20,19 @@ from .schema_extractor import SchemaExtractor
 class MigrationService:
     """Orchestrates schema extraction, upload, and data transfer."""
 
-    def __init__(self, connector_registry: ConnectorRegistry | None = None, job_tracker: JobTracker | None = None):
+    def __init__(
+        self,
+        connector_registry: ConnectorRegistry | None = None,
+        job_tracker: JobTracker | None = None,
+        credential_vault: CredentialVault | None = None,
+    ):
         self._tracker = job_tracker or JobTracker()
         self._schema_extractor = SchemaExtractor()
         self._schema_mapper = SchemaMapper()
         self._transfer_selector = TransferStrategySelector()
         self._verification = VerificationService()
         self._connector_registry = connector_registry or _default_registry
+        self._credential_vault = credential_vault
 
     def extract_schema(self, adapter: ISchemaAdapter, source_path: str) -> ExtractedSchema:
         """Extract schema from Access database via adapter."""
@@ -123,8 +131,13 @@ class MigrationService:
             return {"success": False, "error": f"Unknown target type: {target_type}"}
 
         connector = connector_cls()
-        if not connector.connect(connection_string):
-            return {"success": False, "error": "Failed to connect to target database", "tables_created": [], "tables_failed": []}
+        try:
+            if not connector.connect(connection_string):
+                connector.disconnect()
+                return {"success": False, "error": "Failed to connect to target database", "tables_created": [], "tables_failed": []}
+        except Exception as e:
+            connector.disconnect()
+            return {"success": False, "error": ConnectPolicy().sanitize(str(e)), "tables_created": [], "tables_failed": []}
 
         created = []
         failed = []
@@ -173,8 +186,13 @@ class MigrationService:
             return {"success": False, "job_id": job_id, "error": f"Unknown target type: {target_type}"}
 
         connector = connector_cls()
-        if not connector.connect(connection_string):
-            return {"success": False, "job_id": job_id, "error": "Failed to connect to target database"}
+        try:
+            if not connector.connect(connection_string):
+                connector.disconnect()
+                return {"success": False, "job_id": job_id, "error": "Failed to connect to target database"}
+        except Exception as e:
+            connector.disconnect()
+            return {"success": False, "job_id": job_id, "error": ConnectPolicy().sanitize(str(e))}
 
         total_tables = len(schema.tables)
         for i, table in enumerate(schema.tables):

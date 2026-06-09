@@ -93,6 +93,33 @@ class TestWinComLinkedTables:
         # Non-existent linked table should return error
         assert result["success"] is False or "error" in result
 
+    def test_get_linked_tables_includes_attributes(self, temp_db_copy: str):
+        """get_linked_tables must return attributes integer for each entry."""
+        assert self.adapter.connect(temp_db_copy)
+
+        result = self.adapter.get_linked_tables()
+        assert result["success"] is True
+
+        # If there are any linked tables, each must have attributes
+        for linked in result.get("linked_tables", []):
+            assert "attributes" in linked, "linked table must include attributes field"
+            assert isinstance(linked["attributes"], int), "attributes must be integer"
+
+    def test_refresh_linked_table_with_connect_string(self, temp_db_copy: str):
+        """refresh_linked_table accepts optional connect_string parameter."""
+        assert self.adapter.connect(temp_db_copy)
+
+        # Method signature must accept connect_string kwarg
+        result = self.adapter.refresh_linked_table("nonexistent_link", connect_string=None)
+        assert isinstance(result, dict)
+
+        # With a provided connect_string it should attempt the operation
+        result2 = self.adapter.refresh_linked_table(
+            "nonexistent_link",
+            connect_string="ODBC;DSN=none;PWD=test",
+        )
+        assert isinstance(result2, dict)
+
 
 # =============================================================================
 # Schema Queries

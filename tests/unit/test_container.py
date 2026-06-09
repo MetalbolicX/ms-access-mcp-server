@@ -60,3 +60,20 @@ class TestServiceContainer:
         from ms_access_mcp.services.backend_selector import BackendSelector
 
         assert isinstance(c.connection_pool._backend_selector, BackendSelector)
+
+    def test_container_has_credential_vault(self):
+        """Container should hold a credential_vault instance for shared credential access."""
+        c = container.get_container()
+        assert hasattr(c, "credential_vault")
+        assert c.credential_vault is not None
+
+    def test_container_credential_vault_is_shared_singleton(self):
+        """The container's credential_vault should be the same instance used by linked_tables."""
+        c = container.get_container()
+        from ms_access_mcp.orchestrators.credential_vault import CredentialVault
+
+        assert isinstance(c.credential_vault, CredentialVault)
+        # The vault should be usable: store and retrieve round-trips correctly
+        c.credential_vault.store("test-srv", "test-pwd")
+        assert c.credential_vault.retrieve("test-srv") == "test-pwd"
+        c.credential_vault.clear()

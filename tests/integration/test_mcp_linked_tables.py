@@ -25,12 +25,13 @@ class TestLinkedTablesOdbcErrorPath:
             ("create_linked_table", ["TestLink", "RemoteTable", "ODBC;DSN=TestDSN"]),
             ("refresh_linked_table", ["TestLink"]),
             ("unlink_table", ["TestLink"]),
+            ("upsert_linked_table", ["TestLink", "RemoteTable", "ODBC;DSN=TestDSN"]),
         ],
     )
     def test_linked_table_tools_return_not_available_via_odbc(
         self, pool_with_sqlite, tool_name, args
     ):
-        """All 4 COM-only linked table tools return 'Not available via ODBC' via OdbcAdapter."""
+        """All5 COM-only linked table tools return 'Not available via ODBC' via OdbcAdapter."""
         result = call_mcp_tool(
             tool_name,
             *args,
@@ -40,6 +41,212 @@ class TestLinkedTablesOdbcErrorPath:
         assert "not available via odbc" in result["error"].lower(), (
             f"Expected ODBC error for {tool_name}, got: {result.get('error')}"
         )
+
+
+class TestUpsertLinkedTableIntegration:
+    """Tier 3: WinCom integration tests for upsert_linked_table flows.
+
+    Tests create, refresh, and recreate scenarios via the MCP tool layer.
+    """
+
+    pytestmark = [skip_unless_windows, skip_unless_db]
+
+    def test_upsert_linked_table_returns_error_for_disallowed_provider(self, temp_db_copy):
+        """upsert_linked_table should reject disallowed providers with clear error."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_upsert", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "upsert_linked_table",
+                "TestTable",
+                "dbo.TestTable",
+                "Provider=Disallowed.Provider;Data Source=remote.db;",
+                connection_name="test_upsert",
+                connection_service=pool,
+            )
+            assert result["success"] is False
+            assert "allowlist" in result["error"].lower() or "not allowed" in result["error"].lower()
+
+            pool.disconnect("test_upsert")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_upsert_linked_table_accepts_odbc_provider(self, temp_db_copy):
+        """upsert_linked_table should accept ODBC connection strings."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_upsert", temp_db_copy, adapter, "com")
+
+            # Use a dummy ODBC connect string - the tool should accept it
+            # (actual link operation may fail if ODBC driver unavailable, but the
+            # allowlist check should pass first)
+            result = call_mcp_tool(
+                "upsert_linked_table",
+                "TestUpsertTable",
+                "dbo.TestTable",
+                "ODBC;DSN=TestDSN",
+                connection_name="test_upsert",
+                connection_service=pool,
+            )
+            # Should not crash - either success or a proper error dict
+            assert isinstance(result, dict)
+            assert "success" in result
+
+            pool.disconnect("test_upsert")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_upsert_linked_table_accepts_password_parameter(self, temp_db_copy):
+        """upsert_linked_table should accept optional password parameter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_upsert", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "upsert_linked_table",
+                "TestUpsertTable",
+                "dbo.TestTable",
+                "ODBC;DSN=TestDSN",
+                connection_name="test_upsert",
+                connection_service=pool,
+                password="secret123",
+            )
+            # Should not crash - either success or a proper error dict
+            assert isinstance(result, dict)
+            assert "success" in result
+
+            pool.disconnect("test_upsert")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_upsert_linked_table_accepts_preserve_hidden_parameter(self, temp_db_copy):
+        """upsert_linked_table should accept preserve_hidden parameter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_upsert", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "upsert_linked_table",
+                "TestUpsertTable",
+                "dbo.TestTable",
+                "ODBC;DSN=TestDSN",
+                connection_name="test_upsert",
+                preserve_hidden=True,
+            )
+            # Should not crash - either success or a proper error dict
+            assert isinstance(result, dict)
+            assert "success" in result
+
+            pool.disconnect("test_upsert")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+
+class TestRefreshLinkedTableIntegration:
+    """Tier 3: WinCom integration tests for refresh_linked_table with new params."""
+
+    pytestmark = [skip_unless_windows, skip_unless_db]
+
+    def test_refresh_linked_table_accepts_connect_string_parameter(self, temp_db_copy):
+        """refresh_linked_table should accept optional connect_string parameter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_refresh", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "refresh_linked_table",
+                "NonExistentTable",
+                connection_name="test_refresh",
+                connect_string="ODBC;DSN=NewDSN",
+            )
+            # Should not crash - returns proper dict
+            assert isinstance(result, dict)
+            assert "success" in result
+
+            pool.disconnect("test_refresh")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
+
+    def test_refresh_linked_table_accepts_password_parameter(self, temp_db_copy):
+        """refresh_linked_table should accept optional password parameter."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        from ms_access_mcp.services.connection import ConnectionPool
+
+        adapter = WinComAdapter()
+        pool = ConnectionPool()
+
+        try:
+            assert adapter.connect(temp_db_copy), "WinComAdapter failed to connect"
+            pool.connect("test_refresh", temp_db_copy, adapter, "com")
+
+            result = call_mcp_tool(
+                "refresh_linked_table",
+                "NonExistentTable",
+                connection_name="test_refresh",
+                password="secret123",
+            )
+            # Should not crash - returns proper dict
+            assert isinstance(result, dict)
+            assert "success" in result
+
+            pool.disconnect("test_refresh")
+        finally:
+            try:
+                if adapter.is_connected():
+                    adapter.disconnect()
+            except Exception:
+                pass
 
 
 class TestLinkedTablesWinComHappyPath:

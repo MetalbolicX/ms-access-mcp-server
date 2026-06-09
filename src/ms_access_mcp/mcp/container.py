@@ -17,6 +17,7 @@ from ..connectors.registry import ConnectorRegistry, _default_registry
 from ..config import ServerConfig
 from ..auth import ApiKeyMiddleware
 from ..path_guard import PathGuard
+from ..orchestrators.credential_vault import CredentialVault
 
 
 @dataclass
@@ -31,6 +32,7 @@ class ServiceContainer:
     config: Optional[ServerConfig] = None
     path_guard: Optional[PathGuard] = None
     auth_middleware: Optional[ApiKeyMiddleware] = None
+    credential_vault: Optional[CredentialVault] = None
 
 
 _container: Optional[ServiceContainer] = None
@@ -44,12 +46,14 @@ def get_container() -> ServiceContainer:
     global _container
     if _container is None:
         connection_pool = ConnectionPool(backend_selector=BackendSelector())
+        credential_vault = CredentialVault()
         _container = ServiceContainer(
             connection_pool=connection_pool,
             com_automation=COMAutomationService(connection_pool=connection_pool),
-            migration=MigrationService(connector_registry=_default_registry),
+            migration=MigrationService(connector_registry=_default_registry, credential_vault=credential_vault),
             dev_copy=DevCopyService(),
             connector_registry=_default_registry,
+            credential_vault=credential_vault,
         )
     return _container
 

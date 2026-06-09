@@ -196,9 +196,13 @@ class ComOnlyAdapterMixin:
         """Create a linked table — requires COM automation."""
         raise NotImplementedError("create_linked_table requires COM automation (WinComAdapter)")
 
-    def refresh_linked_table(self, name: str) -> dict:
+    def refresh_linked_table(self, name: str, connect_string: str | None = None) -> dict:
         """Refresh a linked table — requires COM automation."""
         raise NotImplementedError("refresh_linked_table requires COM automation (WinComAdapter)")
+
+    def recreate_linked_table(self, name: str, source_table: str, connect_string: str, attributes: int | None = None) -> dict:
+        """Recreate a linked table (delete + create) — requires COM automation."""
+        raise NotImplementedError("recreate_linked_table requires COM automation (WinComAdapter)")
 
     def unlink_table(self, name: str) -> dict:
         """Unlink a table — requires COM automation."""

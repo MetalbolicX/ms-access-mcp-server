@@ -487,3 +487,86 @@ class TestExecuteRawSql:
             svc = MigrationService()
             result = svc.execute_raw_sql("SELECT 1", adapter)
             assert result["rows_affected"] == expected, f"Expected {expected}, got {result['rows_affected']}"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# MigrationService — exception sanitization
+# ═══════════════════════════════════════════════════════════════════════
+
+class TestExceptionSanitization:
+    """Tests that MigrationService exceptions are sanitized to prevent password leaks."""
+
+    def test_upload_schema_sanitizes_exception_with_password(self):
+        """upload_schema catches connector exceptions and sanitizes PWD= from error strings."""
+        from ms_access_mcp.orchestrators.connect_policy import ConnectPolicy
+
+        svc = MigrationService()
+
+        # Create a mock connector that raises an exception echoing the connection string
+        mock_connector = MagicMock()
+        mock_connector.connect.side_effect = RuntimeError(
+            "Connection failed: DRIVER={PostgreSQL};SERVER=localhost;PWD=secret123;DATABASE=test"
+        )
+
+        # Register it so svc can find it
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = lambda: mock_connector
+        svc._connector_registry = mock_registry
+
+        result = svc.upload_schema(
+            "postgres",
+            "DRIVER={PostgreSQL};SERVER=localhost;PWD=secret123;DATABASE=test",
+            ExtractedSchema(source="src", version="1.0", tables=[]),
+        )
+
+        assert result["success"] is False
+        # Password must NOT appear in the error
+        assert "secret123" not in result["error"]
+        assert "PWD=" not in result["error"]
+        # Error should still be informative
+        assert "Connection failed" in result["error"] or "DRIVER" in result["error"]
+
+    def test_transfer_data_sanitizes_exception_with_password(self):
+        """transfer_data catches connector exceptions and sanitizes PWD= from error strings."""
+        svc = MigrationService()
+
+        mock_connector = MagicMock()
+        mock_connector.connect.side_effect = RuntimeError(
+            "ODBC error: DRIVER={PostgreSQL};SERVER=localhost;PWD=topsecret;DATABASE=mydb"
+        )
+
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = lambda: mock_connector
+        svc._connector_registry = mock_registry
+
+        result = svc.transfer_data(
+            "postgres",
+            "DRIVER={PostgreSQL};SERVER=localhost;PWD=topsecret;DATABASE=mydb",
+            ExtractedSchema(source="src", version="1.0", tables=[]),
+            MagicMock(),
+        )
+
+        assert result["success"] is False
+        assert "topsecret" not in result["error"]
+        assert "PWD=" not in result["error"]
+
+    def test_upload_schema_sanitizes_exception_with_no_password(self):
+        """upload_schema sanitization handles connection strings without PWD gracefully."""
+        svc = MigrationService()
+
+        mock_connector = MagicMock()
+        mock_connector.connect.side_effect = RuntimeError("Connection refused to localhost")
+
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = lambda: mock_connector
+        svc._connector_registry = mock_registry
+
+        result = svc.upload_schema(
+            "postgres",
+            "DRIVER={PostgreSQL};SERVER=localhost;DATABASE=test",
+            ExtractedSchema(source="src", version="1.0", tables=[]),
+        )
+
+        assert result["success"] is False
+        # Error message should be preserved as-is (no PWD to strip)
+        assert "Connection refused" in result["error"]

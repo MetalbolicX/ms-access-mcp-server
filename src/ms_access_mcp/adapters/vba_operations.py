@@ -24,6 +24,12 @@ _logger = get_logger(__name__)
 # Compile command IDs by Access version (most likely first)
 _COMPILE_CMD_IDS = [301, 206, 317, 232]
 
+# Module-level cache for preserve_trusted_locations (read once, cache for process lifetime)
+try:
+    _PRESERVE_TRUSTED_LOCATIONS = ServerConfig().preserve_trusted_locations
+except Exception:
+    _PRESERVE_TRUSTED_LOCATIONS = False
+
 
 class VbaOperations:
     """VBA operations requiring COM automation.
@@ -108,12 +114,6 @@ class VbaOperations:
             pass  # Not on Windows
         except Exception:
             pass  # Best-effort
-
-    # Module-level cache for preserve_trusted_locations (read once, cache for process lifetime)
-try:
-    _PRESERVE_TRUSTED_LOCATIONS = ServerConfig().preserve_trusted_locations
-except Exception:
-    _PRESERVE_TRUSTED_LOCATIONS = False
 
     # ------------------------------------------------------------------ #
     # Trusted Locations wrapper

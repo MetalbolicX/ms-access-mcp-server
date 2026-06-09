@@ -1,0 +1,14 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ms-access": {
+      "command": [
+        "D:\\code\\python\\ms-access-mcp-server\\.venv\\Scripts\\python.exe",
+        "-m",
+        "ms_access_mcp.mcp.server"
+      ],
+      "enabled": true,
+      "type": "local"
+    }
+  }
+}

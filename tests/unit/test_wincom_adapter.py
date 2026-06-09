@@ -142,6 +142,10 @@ class MockDaoTableDef:
     def CreateField(self, name: str, type_val: int, size: int = 0) -> MockDaoField:
         return MockDaoField(name, type_val, size)
 
+    def RefreshLink(self) -> None:
+        """Mock RefreshLink — no-op for testing."""
+        pass
+
     def __repr__(self) -> str:
         return f"<MockDaoTableDef '{self.Name}'>"
 
@@ -341,6 +345,13 @@ class MockDaoDatabase:
         self._query_defs = MockDaoQueryDefs()
         self._relations = MockDaoRelations()
         self.RecordsAffected = 0
+        self._table_cache: dict[str, MockDaoTableDef] = {}
+        self._table_defs: MockDaoTableDefs | None = None
+
+    @property
+    def _tables(self) -> dict[str, MockDaoTableDef]:
+        """Direct access to TableDefs tables for test setup."""
+        return self._table_defs._tables if self._table_defs else {}
 
     def Close(self) -> None:
         """No-op: all OpenDatabase calls share one connection.
@@ -353,7 +364,11 @@ class MockDaoDatabase:
 
     @property
     def TableDefs(self) -> MockDaoTableDefs:
-        return MockDaoTableDefs(self._conn, list(self._table_cache.values()) if hasattr(self, '_table_cache') else None)
+        if self._table_defs is None:
+            self._table_defs = MockDaoTableDefs(
+                self._conn, list(self._table_cache.values())
+            )
+        return self._table_defs
 
     @property
     def QueryDefs(self) -> MockDaoQueryDefs:
@@ -1717,6 +1732,171 @@ class TestWinComLinkedTables:
         adapter.connect(str(db_path))
         result = adapter.unlink_table("nonexistent")
         assert result["success"] is True  # mock deletes silently
+
+    # ========================================================================
+    # RED tests for PR 2: password stripping, hidden restore, recreate
+    # ========================================================================
+
+    def test_get_linked_tables_includes_attributes(self, adapter, mock_app, tmp_path):
+        """get_linked_tables must return attributes integer for each entry."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+        # First access TableDefs to populate the cached instance
+        _ = adapter._dispatcher._current_db.TableDefs
+        # Inject a mock linked table with attributes into the cached TableDefs
+        mock_dao_tdef = MockDaoTableDef(
+            name="ODBC_Linked",
+            attributes=0x80000001,  # dbLinkAttachedTable | dbHiddenObject
+            connect="ODBC;DSN=mydsn;PWD=secret",
+            source_table_name="dbo.Orders",
+        )
+        # Update the cached TableDefs instance directly
+        adapter._dispatcher._current_db._table_defs._tables["ODBC_Linked"] = mock_dao_tdef
+
+        result = adapter.get_linked_tables()
+        assert result["success"] is True
+        linked = result["linked_tables"]
+        assert len(linked) == 1
+        assert linked[0]["name"] == "ODBC_Linked"
+        assert "attributes" in linked[0]
+        assert linked[0]["attributes"] == 0x80000001
+
+    def test_create_linked_table_strips_password_after_append(self, adapter, mock_app, tmp_path):
+        """create_linked_table must strip PWD= from Connect after successful Append."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        result = adapter.create_linked_table(
+            "NewLink",
+            "dbo.Orders",
+            "ODBC;DSN=mydsn;PWD=secret123",
+        )
+        assert result["success"] is True
+
+        # Verify the stored Connect has password stripped
+        stored = adapter._dispatcher._current_db._tables["NewLink"]
+        assert "PWD=secret123" not in stored.Connect
+        assert "PWD=" not in stored.Connect
+
+    def test_refresh_linked_table_accepts_optional_connect_string(self, adapter, mock_app, tmp_path):
+        """refresh_linked_table must accept optional connect_string parameter."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        # Inject a mock linked table with a RefreshLink method
+        mock_tdef = MockDaoTableDef(
+            name="ExistingLink",
+            attributes=0x80000000,
+            connect="ODBC;DSN=mydsn",
+            source_table_name="dbo.Orders",
+        )
+        mock_tdef._refresh_called = False
+        mock_tdef._connect_before_refresh = None
+
+        def mock_refresh_link():
+            mock_tdef._refresh_called = True
+            mock_tdef._connect_before_refresh = mock_tdef.Connect
+
+        mock_tdef.RefreshLink = mock_refresh_link
+        # Ensure TableDefs cache is populated before setting up mock tables
+        _ = adapter._dispatcher._current_db.TableDefs
+        adapter._dispatcher._current_db._tables["ExistingLink"] = mock_tdef
+
+        # Call with optional connect_string — password should be re-injected
+        result = adapter.refresh_linked_table(
+            "ExistingLink",
+            connect_string="ODBC;DSN=mydsn;PWD=injected",
+        )
+        assert result["success"] is True
+        assert mock_tdef._refresh_called is True
+        # Password should have been temporarily applied
+        assert "PWD=injected" in mock_tdef._connect_before_refresh
+
+    def test_refresh_linked_table_strips_password_after_refresh(self, adapter, mock_app, tmp_path):
+        """refresh_linked_table must strip PWD= from Connect after RefreshLink."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        mock_tdef = MockDaoTableDef(
+            name="ExistingLink",
+            attributes=0x80000000,
+            connect="ODBC;DSN=mydsn",  # password already stripped
+            source_table_name="dbo.Orders",
+        )
+        # Ensure TableDefs cache is populated before setting up mock tables
+        _ = adapter._dispatcher._current_db.TableDefs
+        adapter._dispatcher._current_db._tables["ExistingLink"] = mock_tdef
+
+        result = adapter.refresh_linked_table(
+            "ExistingLink",
+            connect_string="ODBC;DSN=mydsn;PWD=secret456",
+        )
+        assert result["success"] is True
+        # After refresh, Connect must be password-stripped
+        assert "PWD=" not in mock_tdef.Connect
+
+    def test_recreate_linked_table_restores_hidden_attribute(self, adapter, mock_app, tmp_path):
+        """recreate_linked_table must restore dbHiddenObject flag after recreate."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        # Pre-existing table with hidden flag
+        old_tdef = MockDaoTableDef(
+            name="HiddenLink",
+            attributes=0x80000001,  # dbLinkAttachedTable | dbHiddenObject
+            connect="ODBC;DSN=mydsn;PWD=secret",
+            source_table_name="dbo.OldName",
+        )
+        # Ensure TableDefs cache is populated before setting up mock tables
+        _ = adapter._dispatcher._current_db.TableDefs
+        adapter._dispatcher._current_db._tables["HiddenLink"] = old_tdef
+
+        result = adapter.recreate_linked_table(
+            "HiddenLink",
+            "dbo.NewName",
+            "ODBC;DSN=mydsn;PWD=secret",
+            attributes=0x80000001,  # pass hidden flag
+        )
+        assert result["success"] is True
+
+        # New table must have hidden flag restored
+        new_tdef = adapter._dispatcher._current_db._tables["HiddenLink"]
+        assert new_tdef.Attributes == 0x80000001
+        assert new_tdef.SourceTableName == "dbo.NewName"
+        # And password stripped
+        assert "PWD=" not in new_tdef.Connect
+
+    def test_recreate_linked_table_strips_password_after_recreate(self, adapter, mock_app, tmp_path):
+        """recreate_linked_table must strip PWD= from Connect after recreate."""
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter.connect(str(db_path))
+
+        old_tdef = MockDaoTableDef(
+            name="MyLink",
+            attributes=0x80000000,
+            connect="ODBC;DSN=mydsn",
+            source_table_name="dbo.OldName",
+        )
+        # Ensure TableDefs cache is populated before setting up mock tables
+        _ = adapter._dispatcher._current_db.TableDefs
+        adapter._dispatcher._current_db._tables["MyLink"] = old_tdef
+
+        result = adapter.recreate_linked_table(
+            "MyLink",
+            "dbo.NewName",
+            "ODBC;DSN=mydsn;PWD=secret789",
+            attributes=None,
+        )
+        assert result["success"] is True
+
+        new_tdef = adapter._dispatcher._current_db._tables["MyLink"]
+        assert "PWD=secret789" not in new_tdef.Connect
 
 
 class TestWinComVersioningExport:
