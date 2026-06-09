@@ -82,3 +82,13 @@ class LinkedTableInfo(BaseModel):
     connect_string: str
     type: str = "ODBC"
     attributes: int = 0  # DAO dbHiddenObject flag (0x00000001)
+
+
+class IndexInfo(BaseModel):
+    """Describes an index on a table — used by get_indexes."""
+
+    name: str
+    columns: list[str] = Field(default_factory=list)
+    is_unique: bool = False
+    is_primary: bool = False
+    ignore_nulls: bool = False
