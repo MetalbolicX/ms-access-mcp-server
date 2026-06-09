@@ -61,6 +61,36 @@ class UiOperations:
         }
         return type_map.get(ctrl_type, f"Control({ctrl_type})")
 
+    @staticmethod
+    def _access_control_type_id(name: str) -> int:
+        """Map readable control type name to Access AcControlType integer."""
+        type_map = {
+            "TextBox": 100,
+            "Label": 101,
+            "CommandButton": 102,
+            "OptionButton": 103,
+            "ComboBox": 104,
+            "ListBox": 105,
+            "SubForm": 106,
+            "ToggleButton": 107,
+            "CheckBox": 108,
+            "OptionGroup": 109,
+            "TabControl": 110,
+            "Page": 111,
+            "Image": 112,
+            "BoundObjectFrame": 114,
+            "ObjectFrame": 115,
+            "Line": 118,
+            "Rectangle": 119,
+            "PageBreak": 120,
+            "Attachment": 122,
+            "NavigationButton": 123,
+            "NavigationControl": 124,
+            "WebBrowserControl": 126,
+            "EmptyCell": 128,
+        }
+        return type_map.get(name, 0)
+
     def _save_object_to_text(self, object_type: int, object_name: str) -> str:
         """Export an Access object to text using SaveAsText.
 
@@ -569,6 +599,85 @@ class UiOperations:
                 except Exception:
                     results[prop_name] = False
             return results
+
+        return self._dispatcher.call(_do)
+
+    def add_control(self, form_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+        """Add a control to a form by opening it in design view, creating the control, and setting its name and properties."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                type_int = self._access_control_type_id(control_type)
+                if type_int == 0:
+                    return False
+
+                ctrl = self._dispatcher.access_app.DoCmd.CreateControl(form_name, type_int, section)
+                ctrl.Name = control_name
+
+                if properties:
+                    for prop_name, value in properties.items():
+                        try:
+                            ctrl.Properties(prop_name).Value = value
+                        except Exception:
+                            pass
+
+                self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                return True
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acSaveNo=2
+                    except Exception:
+                        pass
+
+        return self._dispatcher.call(_do)
+
+    def remove_control(self, form_name: str, control_name: str) -> bool:
+        """Remove a control from a form by opening it in design view, selecting the control, and running the delete command."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            opened = False
+            try:
+                self._dispatcher.access_app.DoCmd.OpenForm(form_name, 1)  # acDesign=1
+                opened = True
+
+                try:
+                    form = self._dispatcher.access_app.Screen.ActiveForm
+                except Exception:
+                    form = self._dispatcher.access_app.Forms(form_name)
+
+                if form is not None:
+                    for i in range(form.Controls.Count):
+                        try:
+                            ctrl = form.Controls(i)
+                            if ctrl.Name == control_name:
+                                ctrl.SetFocus()
+                                self._dispatcher.access_app.DoCmd.RunCommand(365)  # acCmdDelete
+                                self._dispatcher.access_app.DoCmd.Close(2, form_name, 1)  # acSaveYes=1
+                                return True
+                        except Exception:
+                            pass
+
+                self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)  # acSaveNo=2
+                return False
+            except Exception:
+                return False
+            finally:
+                if opened:
+                    try:
+                        self._dispatcher.access_app.DoCmd.Close(2, form_name, 2)
+                    except Exception:
+                        pass
 
         return self._dispatcher.call(_do)
 

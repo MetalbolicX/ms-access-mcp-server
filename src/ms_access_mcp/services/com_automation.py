@@ -142,3 +142,17 @@ class COMAutomationService:
         if adapter is None:
             return {}
         return adapter.set_form_properties(form_name, properties)
+
+    def add_control(self, form_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+        """Add a control to a form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.add_control(form_name, control_type, control_name, section, properties)
+
+    def remove_control(self, form_name: str, control_name: str) -> bool:
+        """Remove a control from a form."""
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.remove_control(form_name, control_name)

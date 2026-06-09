@@ -66,6 +66,8 @@ class TestProtocolCompleteness:
         "vba_list_procedures", "vba_get_procedure", "vba_replace_procedure",
         # Index operations
         "get_indexes", "create_index", "drop_index",
+        # Control manipulation (COM-only)
+        "add_control", "remove_control",
     ]
 
     @pytest.mark.parametrize("method", ADAPTER_METHODS)
@@ -347,6 +349,17 @@ class TestNotConnectedDefaults:
         result = WinComAdapter().set_form_properties("TestForm", {"Caption": "Hello"})
         assert isinstance(result, dict)
 
+    # Control manipulation — not-connected defaults
+    def test_wincom_add_control_returns_false(self):
+        result = WinComAdapter().add_control("TestForm", "TextBox", "txtTest")
+        assert isinstance(result, bool)
+        assert result is False
+
+    def test_wincom_remove_control_returns_false(self):
+        result = WinComAdapter().remove_control("TestForm", "txtTest")
+        assert isinstance(result, bool)
+        assert result is False
+
 
 # =============================================================================
 # Return-type invariants — verify return types are consistent
@@ -539,6 +552,17 @@ class TestReturnTypeInvariants:
         val = a.set_form_properties("TestForm", {"prop": "val"})
         assert isinstance(val, dict)
 
+    # Control manipulation — return type invariants
+    def test_wincom_add_control_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.add_control("TestForm", "TextBox", "txtTest")
+        assert isinstance(val, bool)
+
+    def test_wincom_remove_control_always_returns_bool(self):
+        a = WinComAdapter()
+        val = a.remove_control("TestForm", "txtTest")
+        assert isinstance(val, bool)
+
 
 # =============================================================================
 # ODBC-only constraints — ODBC must raise NotImplementedError for COM-only ops
@@ -647,6 +671,15 @@ class TestOdbcNotImplemented:
     def test_set_form_properties_raises(self):
         with pytest.raises(NotImplementedError):
             OdbcAdapter().set_form_properties("TestForm", {})
+
+    # Control manipulation — ODBC raises NotImplementedError
+    def test_add_control_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().add_control("TestForm", "TextBox", "txtTest")
+
+    def test_remove_control_raises(self):
+        with pytest.raises(NotImplementedError):
+            OdbcAdapter().remove_control("TestForm", "txtTest")
 
 
 # =============================================================================

@@ -415,6 +415,12 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
         return self._ui.get_control_event_procedures(form_name, control_name)
 
+    def add_control(self, form_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+        return self._ui.add_control(form_name, control_type, control_name, section, properties)
+
+    def remove_control(self, form_name: str, control_name: str) -> bool:
+        return self._ui.remove_control(form_name, control_name)
+
     # ========================================================================
     # REPORT OPERATIONS
     # ========================================================================

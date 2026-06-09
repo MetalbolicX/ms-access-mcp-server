@@ -231,3 +231,11 @@ class ComOnlyAdapterMixin:
     def set_form_properties(self, form_name: str, properties: dict[str, Any]) -> dict[str, bool]:
         """Set multiple form properties at once — requires COM automation."""
         raise NotImplementedError("set_form_properties requires COM automation (WinComAdapter)")
+
+    def add_control(self, form_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+        """Add a control to a form — requires COM automation."""
+        raise NotImplementedError("add_control requires COM automation (WinComAdapter)")
+
+    def remove_control(self, form_name: str, control_name: str) -> bool:
+        """Remove a control from a form — requires COM automation."""
+        raise NotImplementedError("remove_control requires COM automation (WinComAdapter)")

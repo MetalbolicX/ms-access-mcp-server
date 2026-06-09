@@ -265,3 +265,31 @@ class TestFormManipulation:
         service = COMAutomationService()
         result = service.set_form_properties("TestForm", {"Caption": "Hello"})
         assert result == {}
+
+
+class TestControlManipulation:
+    def test_add_control_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.add_control.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.add_control("TestForm", "TextBox", "txtTest")
+        assert result is True
+        mock_adapter.add_control.assert_called_once_with("TestForm", "TextBox", "txtTest", 0, None)
+
+    def test_add_control_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.add_control("TestForm", "TextBox", "txtTest")
+        assert result is False
+
+    def test_remove_control_with_adapter(self):
+        mock_adapter = MagicMock()
+        mock_adapter.remove_control.return_value = True
+        service = COMAutomationService(adapter=mock_adapter)
+        result = service.remove_control("TestForm", "txtTest")
+        assert result is True
+        mock_adapter.remove_control.assert_called_once_with("TestForm", "txtTest")
+
+    def test_remove_control_without_adapter_returns_false(self):
+        service = COMAutomationService()
+        result = service.remove_control("TestForm", "txtTest")
+        assert result is False
