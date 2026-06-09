@@ -5,6 +5,7 @@ This dispatcher serializes all COM calls through a single STA thread so that
 any async worker can drive the adapter without thread-affinity errors.
 """
 
+import logging
 import os
 import queue
 import subprocess
@@ -13,6 +14,8 @@ import threading
 import concurrent.futures
 import time
 from typing import Optional, Callable, Any
+
+logger = logging.getLogger(__name__)
 
 # DAO DBEngine.Execute option flags
 DAO_DB_FAIL_ON_ERROR = 128
@@ -187,18 +190,33 @@ class ComDispatcher:
 
             self._access_app = None
 
-            # 5. Force-kill fallback (Windows only)
+            # 5. Force-kill fallback (Windows only) — PID-scoped to avoid killing other Access instances
             if not quit_ok and sys.platform == 'win32':
+                pid_killed = False
                 try:
+                    import win32process
+                    hwnd = app.hWndAccessApp()
+                    _, pid = win32process.GetWindowThreadProcessId(hwnd)
                     subprocess.run(
-                        ["taskkill", "/F", "/IM", "MSACCESS.EXE"],
+                        ["taskkill", "/F", "/PID", str(pid)],
                         capture_output=True, text=True, timeout=10
                     )
+                    pid_killed = True
                 except Exception as e:
-                    errors.append(f"taskkill: {e}")
+                    errors.append(f"PID-scoped taskkill: {e}")
+
+                # Fallback: if PID extraction failed, use /IM (kills all Access instances)
+                if not pid_killed:
+                    try:
+                        subprocess.run(
+                            ["taskkill", "/F", "/IM", "MSACCESS.EXE"],
+                            capture_output=True, text=True, timeout=10
+                        )
+                    except Exception as e:
+                        errors.append(f"taskkill /IM fallback: {e}")
 
         if errors:
-            print(f"[ComDispatcher] Cleanup completed with {len(errors)} warning(s): {'; '.join(errors)}")
+            logger.warning(f"Cleanup completed with {len(errors)} warning(s): {'; '.join(errors)}")
 
     @staticmethod
     def _dismiss_access_dialogs() -> None:
