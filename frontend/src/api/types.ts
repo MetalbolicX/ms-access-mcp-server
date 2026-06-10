@@ -42,6 +42,35 @@ export interface QueriesResponse {
   count: number
 }
 
+// Database statistics (dashboard-refinement PR1 response shape)
+export interface DatabaseStatistics {
+  success: boolean
+  objects: {
+    tables: number
+    queries: number
+    forms: number
+    reports: number
+    macros: number
+    modules: number
+  }
+  file: {
+    name: string
+    size_bytes: number
+    modified: string
+  }
+  system: {
+    access_version: string | null
+    com_available: boolean
+  }
+}
+
+// Generic object-name list (forms, reports, macros, modules)
+export interface ObjectListResponse {
+  success: boolean
+  items: string[]
+  count: number
+}
+
 export interface RelationshipInfo {
   name: string
   table: string

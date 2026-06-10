@@ -1,18 +1,18 @@
 import os
-from typing import Any, Optional
-import pyodbc
-from .base import AccessAdapter
-from .interfaces import IDataAdapter, ISchemaAdapter
-from .com_only_mixin import ComOnlyAdapterMixin
-from ..models.database import (
-    TableInfo,
-    RelationshipInfo,
-    QueryInfo,
-    LinkedTableInfo,
-    IndexInfo,
-)
-from ..models.migration import TableSchema, ColumnSchema, UnknownMetadata
+from datetime import datetime
+from typing import Any
 
+import pyodbc
+
+from ..models.database import (
+    IndexInfo,
+    QueryInfo,
+    RelationshipInfo,
+    TableInfo,
+)
+from ..models.migration import ColumnSchema, TableSchema, UnknownMetadata
+from .com_only_mixin import ComOnlyAdapterMixin
+from .interfaces import IDataAdapter, ISchemaAdapter
 
 # Connection string templates for Access databases
 ACCESS_DRIVER = "{Microsoft Access Driver (*.mdb, *.accdb)}"
@@ -34,8 +34,8 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     def __init__(self, db_path: str | None = None, strategy_selector: Any | None = None) -> None:
         from .export.strategies import ExportStrategySelector
 
-        self._conn: Optional[pyodbc.Connection] = None
-        self._db_path: Optional[str] = db_path
+        self._conn: pyodbc.Connection | None = None
+        self._db_path: str | None = db_path
         self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
         self._driver_name: str = (
             os.environ.get("ACCESS_MCP_ODBC_DRIVER", self.DEFAULT_DRIVER).strip()
@@ -98,7 +98,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     # IDataAdapter — Data CRUD
     # ========================================================================
 
-    def execute_query(self, sql: str, params: Optional[list] = None) -> dict:
+    def execute_query(self, sql: str, params: list | None = None) -> dict:
         """Execute a SQL query and return results."""
         if not self.is_connected():
             return {"success": False, "rows": [], "count": 0, "columns": [], "error": "Not connected"}
@@ -432,6 +432,128 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         except Exception:
             pass
         return queries
+
+    # ========================================================================
+    # Statistics (ISchemaAdapter)
+    # ========================================================================
+
+    # MSysObjects Type codes (Access system table):
+    #   1 = Local table, 4 = Linked table (ODBC), 6 = Linked (with PK)
+    #   5 = Saved query
+    #   -32768 = Form, -32764 = Report, -32766 = Macro, -32761 = Module
+    _STAT_TYPE_LOCAL_TABLE = 1
+    _STAT_TYPE_LINKED_ODBC = 4
+    _STAT_TYPE_SAVED_QUERY = 5
+    _STAT_TYPE_LINKED_PK = 6
+    _STAT_TYPE_FORM = -32768
+    _STAT_TYPE_REPORT = -32764
+    _STAT_TYPE_MACRO = -32766
+    _STAT_TYPE_MODULE = -32761
+
+    # Aggregate of (Type, "objects key") for the GROUP BY iteration.
+    # Tables: local + linked-ODBC + linked-with-PK.  Forms/Reports/Macros/Modules
+    # are negative magic numbers.  Queries are Type 5.
+    _STAT_TYPE_MAP: dict[int, str] = {}  # populated below
+
+    @classmethod
+    def _build_stat_type_map(cls) -> dict[int, str]:
+        return {
+            cls._STAT_TYPE_LOCAL_TABLE: "tables",
+            cls._STAT_TYPE_LINKED_ODBC: "tables",
+            cls._STAT_TYPE_LINKED_PK: "tables",
+            cls._STAT_TYPE_SAVED_QUERY: "queries",
+            cls._STAT_TYPE_FORM: "forms",
+            cls._STAT_TYPE_REPORT: "reports",
+            cls._STAT_TYPE_MACRO: "macros",
+            cls._STAT_TYPE_MODULE: "modules",
+        }
+
+    _EMPTY_OBJECT_COUNTS: dict[str, int] = {
+        "tables": 0, "queries": 0, "forms": 0,
+        "reports": 0, "macros": 0, "modules": 0,
+    }
+
+    def _empty_stat_response(self, *, warning: str | None = None) -> dict:
+        """Build a statistics response with all-zero counts and the degraded file info."""
+        db_path = self._db_path or ""
+        response = {
+            "success": True,
+            "objects": {**self._EMPTY_OBJECT_COUNTS},
+            "file": {
+                "name": os.path.basename(db_path) if db_path else "",
+                "size_bytes": 0,
+                "modified": "",
+            },
+            "system": {"access_version": None, "com_available": False},
+        }
+        if warning:
+            response["warning"] = warning
+        return response
+
+    def _file_info(self) -> dict:
+        """Build the file section from self._db_path (gracefully degrades on errors)."""
+        db_path = self._db_path or ""
+        if not db_path or not os.path.exists(db_path):
+            return {
+                "name": os.path.basename(db_path) if db_path else "",
+                "size_bytes": 0,
+                "modified": "",
+            }
+        try:
+            stat = os.stat(db_path)
+            return {
+                "name": os.path.basename(db_path),
+                "size_bytes": int(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            }
+        except Exception:
+            return {
+                "name": os.path.basename(db_path),
+                "size_bytes": 0,
+                "modified": "",
+            }
+
+    def get_database_statistics(self) -> dict:
+        """Get O(1) database statistics via single MSysObjects aggregate query.
+
+        Returns zero counts and a warning when the user lacks read permission
+        on MSysObjects (the Access ODBC driver does not reliably expose
+        forms/reports/macros/modules via MSysObjects, so those are best-effort).
+        """
+        if not self.is_connected():
+            return self._empty_stat_response()
+
+        cur = self._conn.cursor()
+        try:
+            cur.execute(
+                "SELECT Type, Count(*) FROM MSysObjects "
+                "GROUP BY Type"
+            )
+            rows = cur.fetchall()
+        except Exception:
+            return self._empty_stat_response(
+                warning="MSysObjects access denied — counts unavailable"
+            )
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+
+        type_map = self._build_stat_type_map()
+        counts = {**self._EMPTY_OBJECT_COUNTS}
+        for row in rows:
+            type_code = int(row[0])
+            key = type_map.get(type_code)
+            if key is not None:
+                counts[key] += int(row[1])
+
+        return {
+            "success": True,
+            "objects": counts,
+            "file": self._file_info(),
+            "system": {"access_version": None, "com_available": False},
+        }
 
     def create_query(self, name: str, sql: str) -> dict:
         """Create a new stored query (Access querydef implemented as SQL view)."""

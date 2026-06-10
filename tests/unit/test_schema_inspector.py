@@ -383,3 +383,204 @@ class TestSchemaInspectorLoggingMigration:
             mock_logger.warning.assert_called()
             warning_args = mock_logger.warning.call_args[0]
             assert "get_relationships" in warning_args[0]
+
+
+# =============================================================================
+# Mock DAO objects for get_database_statistics testing (PR1)
+# =============================================================================
+
+
+class MockDaoCollection:
+    """Mock DAO collection with .Count and __call__(index) — used for AllForms etc."""
+    def __init__(self, items: list):
+        self._items = list(items)
+
+    def __call__(self, index: int):
+        return self._items[index]
+
+    def __iter__(self):
+        return iter(self._items)
+
+    @property
+    def Count(self) -> int:
+        return len(self._items)
+
+
+class MockDaoProject:
+    """Mock Access.CurrentProject — exposes AllX collections."""
+    def __init__(
+        self,
+        forms: list | None = None,
+        reports: list | None = None,
+        macros: list | None = None,
+        modules: list | None = None,
+    ):
+        self.AllForms = MockDaoCollection(forms or [])
+        self.AllReports = MockDaoCollection(reports or [])
+        self.AllMacros = MockDaoCollection(macros or [])
+        self.AllModules = MockDaoCollection(modules or [])
+
+
+class MockCurrentProject:
+    """Mock Access.Application.CurrentProject."""
+    def __init__(self, project: MockDaoProject):
+        self._project = project
+
+    def __getattr__(self, name):
+        return getattr(self._project, name)
+
+
+class MockAccessApp:
+    """Mock Access.Application — exposes CurrentDb, CurrentProject, Version."""
+    def __init__(self, db: "MockDaoDatabaseForStats", project: MockDaoProject, version: str = "16.0"):
+        self._db = db
+        self._project = project
+        self.Version = version
+
+    @property
+    def CurrentDb(self):
+        return self._db
+
+    @property
+    def CurrentProject(self):
+        return self._project
+
+
+class MockDaoDatabaseForStats:
+    """Mock DAO Database — exposes TableDefs, QueryDefs, Relations, Name, Version."""
+    def __init__(
+        self,
+        db_path: str = r"C:\fake\db.accdb",
+        version: str = "4.0",
+        tables: list | None = None,
+        queries: list | None = None,
+        relations: list | None = None,
+    ):
+        self.Name = db_path
+        self.Version = version
+        self.TableDefs = MockDaoCollection(tables or [])
+        self.QueryDefs = MockDaoCollection(queries or [])
+        self.Relations = MockDaoCollection(relations or [])
+
+
+# =============================================================================
+# PR1: get_database_statistics tests
+# =============================================================================
+
+
+class TestSchemaInspectorGetDatabaseStatistics:
+    """Test SchemaInspector.get_database_statistics() (PR1 — backend stats tool)."""
+
+    def _make_inspector(self, *, db: MockDaoDatabaseForStats, project: MockDaoProject) -> SchemaInspector:
+        """Build a SchemaInspector wired to a mock dispatcher that exposes
+        access_app.CurrentDb and access_app.CurrentProject."""
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.is_connected.return_value = True
+        mock_dispatcher.call.side_effect = lambda fn: fn()
+        mock_dispatcher.access_app = MockAccessApp(db=db, project=project)
+        mock_dispatcher.current_db = db
+        return SchemaInspector(mock_dispatcher)
+
+    # ------------------------------------------------------------------ #
+    # Not connected — must return zero counts
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_not_connected_returns_zero_counts(self):
+        """get_database_statistics returns zero counts when not connected."""
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.is_connected.return_value = False
+        inspector = SchemaInspector(mock_dispatcher)
+        result = inspector.get_database_statistics()
+
+        assert result["success"] is True
+        assert result["objects"] == {
+            "tables": 0, "queries": 0, "forms": 0,
+            "reports": 0, "macros": 0, "modules": 0,
+        }
+        assert result["system"]["com_available"] is False
+        assert result["system"]["access_version"] is None
+
+    # ------------------------------------------------------------------ #
+    # Happy path — DAO .Count properties (RED: not implemented yet)
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_returns_dao_counts(self):
+        """get_database_statistics returns counts from DAO .Count properties."""
+        db = MockDaoDatabaseForStats(
+            db_path=r"C:\fake\db.accdb",
+            version="4.0",
+            tables=[MagicMock(Name="T1"), MagicMock(Name="T2"), MagicMock(Name="T3")],  # 3 tables
+            queries=[MagicMock(Name="Q1")],  # 1 query
+            relations=[MagicMock(Name="R1"), MagicMock(Name="R2")],  # 2 relations
+        )
+        project = MockDaoProject(
+            forms=[MagicMock(Name="F1")],  # 1 form
+            reports=[MagicMock(Name="R1"), MagicMock(Name="R2")],  # 2 reports
+            macros=[],  # 0 macros
+            modules=[MagicMock(Name="M1")],  # 1 module
+        )
+        inspector = self._make_inspector(db=db, project=project)
+
+        with patch("os.path.basename", return_value="db.accdb"), \
+             patch("os.stat") as mock_stat:
+            mock_stat.return_value.st_size = 4096
+            mock_stat.return_value.st_mtime = 1718000000
+            result = inspector.get_database_statistics()
+
+        assert result["success"] is True
+        assert result["objects"]["tables"] == 3
+        assert result["objects"]["queries"] == 1
+        assert result["objects"]["forms"] == 1
+        assert result["objects"]["reports"] == 2
+        assert result["objects"]["macros"] == 0
+        assert result["objects"]["modules"] == 1
+        assert result["system"]["com_available"] is True
+        assert result["system"]["access_version"] == "16.0"
+        assert result["file"]["name"] == "db.accdb"
+        assert result["file"]["size_bytes"] == 4096
+        assert result["file"]["modified"]  # ISO timestamp, non-empty
+
+    # ------------------------------------------------------------------ #
+    # File info: derives name, size, modified from db.Name + os.stat
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_populates_file_info_from_db_name(self):
+        """file.name is os.path.basename(db.Name); size from os.stat; modified from mtime."""
+        db = MockDaoDatabaseForStats(
+            db_path=r"C:\path\to\my_database.accdb",
+            version="4.0",
+        )
+        project = MockDaoProject()
+        inspector = self._make_inspector(db=db, project=project)
+
+        with patch("os.path.basename", return_value="my_database.accdb") as mock_basename, \
+             patch("os.stat") as mock_stat:
+            mock_stat.return_value.st_size = 9999
+            mock_stat.return_value.st_mtime = 1718000000
+            result = inspector.get_database_statistics()
+
+        mock_basename.assert_called_with(r"C:\path\to\my_database.accdb")
+        assert result["file"]["name"] == "my_database.accdb"
+        assert result["file"]["size_bytes"] == 9999
+        # Modified should be ISO 8601 timestamp
+        assert "T" in result["file"]["modified"]
+
+    # ------------------------------------------------------------------ #
+    # access_version: comes from app.Version
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_uses_app_version(self):
+        """system.access_version is taken from app.Version."""
+        db = MockDaoDatabaseForStats(version="4.0")
+        project = MockDaoProject()
+        inspector = self._make_inspector(db=db, project=project)
+        # Override access_app.Version for this test
+        inspector._dispatcher.access_app.Version = "14.0"
+
+        with patch("os.path.basename", return_value="x.accdb"), \
+             patch("os.stat") as mock_stat:
+            mock_stat.return_value.st_size = 1
+            mock_stat.return_value.st_mtime = 1
+            result = inspector.get_database_statistics()
+
+        assert result["system"]["access_version"] == "14.0"

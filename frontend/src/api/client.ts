@@ -1,4 +1,6 @@
 // Native fetch API client — no axios, web standard only
+import type { DatabaseStatistics, ObjectListResponse } from './types'
+
 const API_BASE = 'http://localhost:8000'
 
 interface RequestOptions {
@@ -79,6 +81,37 @@ export const schemaApi = {
     apiRequest<{ success: boolean; nodes: any[]; edges: any[]; node_count: number; edge_count: number }>('/mcp/tools/call', {
       method: 'POST',
       body: { name: 'get_er_diagram', arguments: {} },
+    }),
+
+  // dashboard-refinement PR2: aggregate statistics + per-object list endpoints
+  getDatabaseStatistics: () =>
+    apiRequest<DatabaseStatistics>('/mcp/tools/call', {
+      method: 'POST',
+      body: { name: 'get_database_statistics', arguments: {} },
+    }),
+
+  listForms: () =>
+    apiRequest<ObjectListResponse>('/mcp/tools/call', {
+      method: 'POST',
+      body: { name: 'get_forms', arguments: {} },
+    }),
+
+  listReports: () =>
+    apiRequest<ObjectListResponse>('/mcp/tools/call', {
+      method: 'POST',
+      body: { name: 'get_reports', arguments: {} },
+    }),
+
+  listMacros: () =>
+    apiRequest<ObjectListResponse>('/mcp/tools/call', {
+      method: 'POST',
+      body: { name: 'get_macros', arguments: {} },
+    }),
+
+  listModules: () =>
+    apiRequest<ObjectListResponse>('/mcp/tools/call', {
+      method: 'POST',
+      body: { name: 'get_modules', arguments: {} },
     }),
 }
 

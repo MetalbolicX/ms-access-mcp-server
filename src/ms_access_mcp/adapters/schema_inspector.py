@@ -6,23 +6,25 @@ nested dispatch deadlock.
 """
 
 import logging
+import os
+from datetime import datetime
 
-from ..adapters.com_dispatcher import ComDispatcher, DAO_DB_FAIL_ON_ERROR
+from ..adapters.com_dispatcher import ComDispatcher
 
 logger = logging.getLogger(__name__)
 from ..models.database import (
-    TableInfo,
     FieldInfo,
-    RelationshipInfo,
     ForeignKeyInfo,
-    QueryInfo,
     IndexInfo,
+    QueryInfo,
+    RelationshipInfo,
+    TableInfo,
 )
 from ..models.migration import (
-    TableSchema,
     ColumnSchema,
     ForeignKeySchema,
     IndexSchema,
+    TableSchema,
     UnknownMetadata,
 )
 
@@ -592,6 +594,72 @@ class SchemaInspector:
     # ------------------------------------------------------------------ #
     # generate_sql
     # ------------------------------------------------------------------ #
+
+    def get_database_statistics(self) -> dict:
+        """Get O(1) database statistics — counts, file info, version.
+
+        Returns dict with top-level keys: success, objects, file, system.
+        Returns zero counts with com_available=False when not connected.
+        """
+        if not self._dispatcher.is_connected():
+            return {
+                "success": True,
+                "objects": {
+                    "tables": 0, "queries": 0, "forms": 0,
+                    "reports": 0, "macros": 0, "modules": 0,
+                },
+                "file": {"name": "", "size_bytes": 0, "modified": ""},
+                "system": {"access_version": None, "com_available": False},
+            }
+
+        def _do() -> dict:
+            try:
+                app = self._dispatcher.access_app
+                db = app.CurrentDb
+                project = app.CurrentProject
+
+                objects = {
+                    "tables": int(db.TableDefs.Count),
+                    "queries": int(db.QueryDefs.Count),
+                    "forms": int(project.AllForms.Count),
+                    "reports": int(project.AllReports.Count),
+                    "macros": int(project.AllMacros.Count),
+                    "modules": int(project.AllModules.Count),
+                }
+
+                # File info — db.Name is the full path to the .accdb file
+                db_path = str(db.Name)
+                stat = os.stat(db_path)
+                file_info = {
+                    "name": os.path.basename(db_path),
+                    "size_bytes": int(stat.st_size),
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+
+                system_info = {
+                    "access_version": str(app.Version),
+                    "com_available": True,
+                }
+
+                return {
+                    "success": True,
+                    "objects": objects,
+                    "file": file_info,
+                    "system": system_info,
+                }
+            except Exception as e:
+                logger.warning("get_database_statistics failed: %s", e, exc_info=True)
+                return {
+                    "success": True,
+                    "objects": {
+                        "tables": 0, "queries": 0, "forms": 0,
+                        "reports": 0, "macros": 0, "modules": 0,
+                    },
+                    "file": {"name": "", "size_bytes": 0, "modified": ""},
+                    "system": {"access_version": None, "com_available": False},
+                }
+
+        return self._dispatcher.call(_do)
 
     def generate_sql(self, output_path: str) -> dict:
         """Generate Jet SQL DDL and write to output_path.

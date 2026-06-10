@@ -2,37 +2,32 @@ import os
 import shutil
 import sys
 from datetime import datetime
-from typing import Optional, Callable, Any
-from .base import AccessAdapter
-from .interfaces import IDataAdapter, ISchemaAdapter, IUiAdapter
-from .com_dispatcher import ComDispatcher, DAO_DB_FAIL_ON_ERROR
-from .vba_operations import VbaOperations
-from .ui_operations import UiOperations
-from .versioning_io import VersioningIo
-from .db_operations import DbOperations
-from .schema_inspector import SchemaInspector
+from typing import Any
+
+from ..logging import get_logger
 from ..models.database import (
-    TableInfo,
+    ControlInfo,
+    ForeignKeyInfo,
     FormInfo,
-    ReportInfo,
+    IndexInfo,
     MacroInfo,
     ModuleInfo,
-    ControlInfo,
-    RelationshipInfo,
     QueryInfo,
-    LinkedTableInfo,
-    ForeignKeyInfo,
-    FieldInfo,
-    IndexInfo,
+    RelationshipInfo,
+    ReportInfo,
+    TableInfo,
 )
 from ..models.migration import (
     TableSchema,
-    ColumnSchema,
-    ForeignKeySchema,
-    IndexSchema,
     UnknownMetadata,
 )
-from ..logging import get_logger
+from .com_dispatcher import DAO_DB_FAIL_ON_ERROR, ComDispatcher
+from .db_operations import DbOperations
+from .interfaces import IDataAdapter, ISchemaAdapter, IUiAdapter
+from .schema_inspector import SchemaInspector
+from .ui_operations import UiOperations
+from .vba_operations import VbaOperations
+from .versioning_io import VersioningIo
 
 _logger = get_logger(__name__)
 
@@ -115,7 +110,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         # Wire VbaOperations to UiOperations for shared _load_object_from_text (acModule=5 path)
         self._vba.set_load_text(self._ui._load_object_from_text)
         # State mirrors what dispatcher holds for query purposes
-        self._ado_conn: Optional[Any] = None
+        self._ado_conn: Any | None = None
         # Export strategy registry (injectable for testing)
         self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
 
@@ -628,6 +623,20 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             return []
         return self._schema.get_indexes(table_name)
 
+    def get_database_statistics(self) -> dict:
+        """Get O(1) database statistics via SchemaInspector (DAO .Count)."""
+        if not self.is_connected():
+            return {
+                "success": True,
+                "objects": {
+                    "tables": 0, "queries": 0, "forms": 0,
+                    "reports": 0, "macros": 0, "modules": 0,
+                },
+                "file": {"name": "", "size_bytes": 0, "modified": ""},
+                "system": {"access_version": None, "com_available": False},
+            }
+        return self._schema.get_database_statistics()
+
     def create_index(
         self,
         table_name: str,
@@ -921,7 +930,6 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             return {"success": False, "error": f"Source file not found: {source_path}"}
 
         def _do() -> dict:
-            import shutil
             try:
                 original_size = os.path.getsize(source_path)
 
@@ -1107,7 +1115,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
         def _do() -> dict:
             try:
-                with open(script_path, "r", encoding="utf-8") as f:
+                with open(script_path, encoding="utf-8") as f:
                     raw_sql = f.read()
             except Exception as e:
                 err = self._extract_com_error(e)

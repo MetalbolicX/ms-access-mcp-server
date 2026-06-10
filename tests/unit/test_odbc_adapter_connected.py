@@ -559,3 +559,146 @@ class TestOdbcAdapterCompactRepair(ConnectedAdapterTestBase):
         """compact_repair with repair action raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
             self.adapter.compact_repair("repair", "src.accdb", "dst.accdb")
+
+
+class TestOdbcAdapterGetDatabaseStatistics(ConnectedAdapterTestBase):
+    """Test OdbcAdapter.get_database_statistics (PR1 — backend stats tool)."""
+
+    def _make_real_db_file(self) -> str:
+        """Create a real temporary file on disk so os.path.getsize works."""
+        fd, path = tempfile.mkstemp(suffix=".accdb")
+        os.write(fd, b"x" * 2048)
+        os.close(fd)
+        return path
+
+    # ------------------------------------------------------------------ #
+    # Not connected — returns zero counts with com_available=False
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_not_connected_returns_zero_counts(self):
+        """get_database_statistics returns zero counts and com_available=False when not connected."""
+        self.adapter._conn = None
+        self.adapter._db_path = None
+        result = self.adapter.get_database_statistics()
+        assert result["success"] is True
+        assert result["objects"] == {
+            "tables": 0, "queries": 0, "forms": 0,
+            "reports": 0, "macros": 0, "modules": 0,
+        }
+        assert result["system"]["com_available"] is False
+        assert result["system"]["access_version"] is None
+
+    # ------------------------------------------------------------------ #
+    # Happy path — aggregate MSysObjects rows by Type
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_aggregates_msysobjects_by_type(self):
+        """MSysObjects rows (Type, COUNT) are summed into the objects bucket."""
+        # Type codes per Access MSysObjects:
+        # 1 = local table, 4 = linked ODBC, 6 = linked w/ PK (also user tables)
+        # 5 = saved query
+        # -32768 = form, -32764 = report, -32766 = macro, -32761 = module
+        rows = [
+            (1, 10),    # 10 local tables
+            (4, 2),     # 2 linked ODBC tables
+            (6, 3),     # 3 linked w/PK tables  (also user tables)
+            (5, 4),     # 4 saved queries
+            (-32768, 2),    # 2 forms
+            (-32764, 1),    # 1 report
+            (-32766, 0),    # 0 macros
+            (-32761, 5),    # 5 modules
+        ]
+        self.mock_cursor.fetchall.return_value = rows
+
+        db_path = self._make_real_db_file()
+        self.adapter._db_path = db_path
+        try:
+            result = self.adapter.get_database_statistics()
+        finally:
+            os.unlink(db_path)
+
+        assert result["success"] is True
+        # 1+4+6 → 15 tables
+        assert result["objects"]["tables"] == 15
+        assert result["objects"]["queries"] == 4
+        assert result["objects"]["forms"] == 2
+        assert result["objects"]["reports"] == 1
+        assert result["objects"]["macros"] == 0
+        assert result["objects"]["modules"] == 5
+        assert result["system"]["com_available"] is False
+        assert result["system"]["access_version"] is None
+        assert result["file"]["name"] == os.path.basename(db_path)
+        assert result["file"]["size_bytes"] == 2048
+        assert result["file"]["modified"]  # ISO 8601 timestamp, non-empty
+
+    # ------------------------------------------------------------------ #
+    # Empty database — no MSysObjects rows
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_empty_database_returns_zero_counts(self):
+        """Empty MSysObjects result → all zero counts, no error."""
+        self.mock_cursor.fetchall.return_value = []
+        db_path = self._make_real_db_file()
+        self.adapter._db_path = db_path
+        try:
+            result = self.adapter.get_database_statistics()
+        finally:
+            os.unlink(db_path)
+
+        assert result["success"] is True
+        assert result["objects"]["tables"] == 0
+        assert result["objects"]["queries"] == 0
+        assert result["objects"]["forms"] == 0
+        assert result["objects"]["reports"] == 0
+        assert result["objects"]["macros"] == 0
+        assert result["objects"]["modules"] == 0
+        assert "warning" not in result
+
+    # ------------------------------------------------------------------ #
+    # Permission denied on MSysObjects
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_permission_denied_returns_warning(self):
+        """MSysObjects query raising an exception returns zero counts with a warning."""
+        import pyodbc
+        self.mock_cursor.execute.side_effect = pyodbc.ProgrammingError(
+            "SELECT permission denied on object 'MSysObjects'"
+        )
+        db_path = self._make_real_db_file()
+        self.adapter._db_path = db_path
+        try:
+            result = self.adapter.get_database_statistics()
+        finally:
+            os.unlink(db_path)
+
+        assert result["success"] is True
+        assert result["objects"] == {
+            "tables": 0, "queries": 0, "forms": 0,
+            "reports": 0, "macros": 0, "modules": 0,
+        }
+        assert "warning" in result
+        # File info degrades gracefully — name preserved, size/modified zeroed out
+        assert result["file"]["name"] == os.path.basename(db_path)
+        assert result["file"]["size_bytes"] == 0
+        assert result["file"]["modified"] == ""
+        assert result["system"]["com_available"] is False
+
+    # ------------------------------------------------------------------ #
+    # SQL query — must query MSysObjects, not a different table
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_runs_msysobjects_group_by(self):
+        """Implementation must issue a SELECT against MSysObjects grouped by Type."""
+        self.mock_cursor.fetchall.return_value = []
+        db_path = self._make_real_db_file()
+        self.adapter._db_path = db_path
+        try:
+            self.adapter.get_database_statistics()
+        finally:
+            os.unlink(db_path)
+
+        # Verify a SELECT against MSysObjects was issued
+        assert self.mock_cursor.execute.called
+        sql_arg = self.mock_cursor.execute.call_args[0][0]
+        assert "MSysObjects" in sql_arg
+        assert "GROUP BY" in sql_arg.upper()

@@ -1,5 +1,5 @@
 """Schema and metadata tools for MS Access database — Phase 1 SDD."""
-from .server import mcp, _get_path_guard
+from .server import _get_path_guard, mcp
 
 
 def _pool():
@@ -184,3 +184,26 @@ def get_er_diagram(connection_name: str = "default") -> dict:
         "node_count": len(nodes),
         "edge_count": len(edges),
     }
+
+
+@mcp.tool()
+def get_database_statistics(connection_name: str = "default") -> dict:
+    """
+    Get O(1) database statistics — object counts, file size, version.
+
+    Args:
+        connection_name: Connection identifier (defaults to "default")
+
+    Returns:
+        dict with top-level keys:
+          - success (bool)
+          - objects: {tables, queries, forms, reports, macros, modules}
+          - file: {name, size_bytes, modified}
+          - system: {access_version, com_available}
+        ODBC adapters may also include a "warning" key when MSysObjects
+        access is denied — counts degrade to zero with a descriptive message.
+    """
+    adapter = _ensure_connected(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "Not connected to database"}
+    return adapter.get_database_statistics()

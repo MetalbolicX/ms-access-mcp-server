@@ -5,10 +5,17 @@ IDataAdapter and ISchemaAdapter only.
 """
 
 from typing import Any, Protocol, runtime_checkable
+
 from ..models.database import (
-    TableInfo, FormInfo, ReportInfo, MacroInfo, ModuleInfo,
-    ControlInfo, RelationshipInfo, QueryInfo, IndexInfo,
-    DatabasePropertyInfo,
+    ControlInfo,
+    FormInfo,
+    IndexInfo,
+    MacroInfo,
+    ModuleInfo,
+    QueryInfo,
+    RelationshipInfo,
+    ReportInfo,
+    TableInfo,
 )
 from ..models.migration import TableSchema, UnknownMetadata
 
@@ -41,6 +48,7 @@ class ISchemaAdapter(IConnectionManager, Protocol):
     def get_relationships(self) -> list[RelationshipInfo]: ...
     def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]: ...
     def generate_sql(self, output_path: str) -> dict: ...
+    def get_database_statistics(self) -> dict: ...
     def get_queries(self) -> list[QueryInfo]: ...
     def create_query(self, name: str, sql: str) -> dict: ...
     def set_query_sql(self, name: str, sql: str) -> dict: ...

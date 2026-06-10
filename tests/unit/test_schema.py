@@ -239,3 +239,116 @@ class TestGetErDiagram:
             assert result["edge_count"] == 1
             assert result["nodes"][0]["id"] == "Customers"
             assert result["edges"][0]["source"] == "Customers"
+
+
+class TestGetDatabaseStatistics:
+    """Tests for get_database_statistics tool (PR1: backend stats tool)."""
+
+    def _patch_connected_adapter(self, mock_adapter=None):
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter or MagicMock()
+        return patch.object(schema_module, '_pool', return_value=mock_conn)
+
+    # ------------------------------------------------------------------ #
+    # Guard: not connected
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_returns_error_when_not_connected(self):
+        """get_database_statistics should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            result = schema_module.get_database_statistics()
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+    # ------------------------------------------------------------------ #
+    # Happy path — response shape (RED: tool does not exist yet)
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_returns_objects_file_system_keys(self):
+        """get_database_statistics must return top-level success/objects/file/system keys."""
+        expected = {
+            "success": True,
+            "objects": {
+                "tables": 15,
+                "queries": 8,
+                "forms": 3,
+                "reports": 5,
+                "macros": 2,
+                "modules": 1,
+            },
+            "file": {
+                "name": "db.accdb",
+                "size_bytes": 2457600,
+                "modified": "2026-06-10T12:00:00",
+            },
+            "system": {
+                "access_version": "16.0",
+                "com_available": True,
+            },
+        }
+        mock_adapter = MagicMock()
+        mock_adapter.get_database_statistics.return_value = expected
+        with self._patch_connected_adapter(mock_adapter):
+            result = schema_module.get_database_statistics()
+            assert result["success"] is True
+            assert "objects" in result
+            assert "file" in result
+            assert "system" in result
+            assert result["objects"]["tables"] == 15
+            assert result["objects"]["queries"] == 8
+            assert result["file"]["name"] == "db.accdb"
+            assert result["file"]["size_bytes"] == 2457600
+            assert result["system"]["access_version"] == "16.0"
+            assert result["system"]["com_available"] is True
+
+    # ------------------------------------------------------------------ #
+    # Delegation: forwards to adapter.get_database_statistics
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_delegates_to_adapter(self):
+        """get_database_statistics must call adapter.get_database_statistics()."""
+        expected = {
+            "success": True,
+            "objects": {"tables": 1, "queries": 0, "forms": 0, "reports": 0, "macros": 0, "modules": 0},
+            "file": {"name": "x.accdb", "size_bytes": 0, "modified": ""},
+            "system": {"access_version": None, "com_available": False},
+        }
+        mock_adapter = MagicMock()
+        mock_adapter.get_database_statistics.return_value = expected
+        with self._patch_connected_adapter(mock_adapter):
+            result = schema_module.get_database_statistics()
+            mock_adapter.get_database_statistics.assert_called_once_with()
+            assert result == expected
+
+    # ------------------------------------------------------------------ #
+    # Default connection_name = "default"
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_uses_default_connection_name(self):
+        """get_database_statistics must check is_connected with the 'default' connection."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock(
+            get_database_statistics=MagicMock(return_value={"success": True})
+        )
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            schema_module.get_database_statistics()
+            mock_conn.is_connected.assert_called_with("default")
+
+    # ------------------------------------------------------------------ #
+    # Custom connection_name flows through
+    # ------------------------------------------------------------------ #
+
+    def test_get_database_statistics_uses_custom_connection_name(self):
+        """get_database_statistics must forward the connection_name to the pool."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = MagicMock(
+            get_database_statistics=MagicMock(return_value={"success": True})
+        )
+        with patch.object(schema_module, '_pool', return_value=mock_conn):
+            schema_module.get_database_statistics(connection_name="secondary")
+            mock_conn.is_connected.assert_called_with("secondary")

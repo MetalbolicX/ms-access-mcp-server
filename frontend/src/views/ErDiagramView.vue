@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { VueFlow, useVueFlow } from '@vue-flow/core'
+import { ref, watch } from 'vue'
+import { VueFlow, useVueFlow, MiniMap, Controls } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import { useQuery } from '@tanstack/vue-query'
 import { schemaApi } from '../api/client'
 import type { ERDiagramResponse } from '../api/types'
+import { applyDagreLayout } from './erDiagramLayout'
 
 const { data, isLoading, error } = useQuery<ERDiagramResponse>({
   queryKey: ['er-diagram'],
@@ -17,34 +18,53 @@ const nodes = ref<any[]>([])
 const edges = ref<any[]>([])
 const { fitView } = useVueFlow()
 
-onMounted(() => {
-  if (data.value?.success) {
-    nodes.value = data.value.nodes.map((n) => ({
+// Build vue-flow nodes/edges from the API response and run them through
+// the dagre layout helper. Using `watch(immediate: true)` so that the
+// diagram refreshes when the query refetches (e.g. after connecting to
+// a different database), not just on first mount.
+watch(
+  data,
+  (newData) => {
+    if (!newData?.success) {
+      nodes.value = []
+      edges.value = []
+      return
+    }
+
+    const rawNodes = newData.nodes.map((n) => ({
       id: n.id,
-      position: { x: Math.random() * 400, y: Math.random() * 300 },
       data: n.data,
       style: {
-        background: '#fff',
-        border: '1px solid #409eff',
+        background: 'var(--color-bg-secondary)',
+        border: '1px solid var(--color-border)',
         borderRadius: '8px',
         padding: '10px',
         minWidth: '180px',
         fontSize: '13px',
+        color: 'var(--color-text-primary)',
       },
     }))
 
-    edges.value = data.value.edges.map((e) => ({
+    const rawEdges = newData.edges.map((e) => ({
       id: e.id,
       source: e.source,
       target: e.target,
       label: e.label,
       animated: e.animated,
-      style: { stroke: '#409eff' },
+      style: { stroke: 'var(--color-accent)' },
     }))
 
+    // Deterministic layered layout — replaces the previous Math.random()
+    // positions and makes the diagram render the same way on every load.
+    const layouted = applyDagreLayout(rawNodes, rawEdges)
+    nodes.value = layouted.nodes
+    edges.value = layouted.edges
+
+    // Wait one tick for Vue Flow to mount before fitting the viewport.
     setTimeout(() => fitView({ padding: 0.2 }), 200)
-  }
-})
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -71,6 +91,14 @@ onMounted(() => {
         :default-viewport="{ zoom: 0.8 }"
         class="vue-flow"
       >
+        <MiniMap
+          pannable
+          zoomable
+          :node-color="'var(--color-accent)'"
+          :mask-color="'rgba(15, 15, 15, 0.7)'"
+        />
+        <Controls />
+
         <template #node="{ data: nodeData }">
           <div class="table-node">
             <div class="table-node-header">{{ nodeData.label }}</div>
@@ -112,6 +140,7 @@ onMounted(() => {
     font-size: 24px;
     font-weight: 700;
     margin: 0;
+    color: var(--color-text-primary);
   }
 }
 
@@ -126,12 +155,13 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  background: #fafafa;
+  background: var(--color-bg-primary);
 }
 
 .vue-flow {
   width: 100%;
   height: 100%;
+  background: var(--color-bg-primary);
 }
 
 .loading,
@@ -146,16 +176,16 @@ onMounted(() => {
 }
 
 .error {
-  color: var(--color-danger);
+  color: var(--color-error);
 }
 
 .table-node {
-  background: #fff;
-  border: 1px solid var(--color-accent);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   min-width: 160px;
   font-size: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-md);
 
   &-header {
     background: var(--color-accent);
@@ -177,7 +207,7 @@ onMounted(() => {
   gap: 12px;
 
   &:hover {
-    background: #f0f7ff;
+    background: var(--color-bg-hover);
   }
 }
 
@@ -192,11 +222,11 @@ onMounted(() => {
 }
 
 .edge-label {
-  background: #fff;
-  border: 1px solid #409eff;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-accent);
   border-radius: 4px;
   padding: 2px 6px;
   font-size: 10px;
-  color: #409eff;
+  color: var(--color-accent);
 }
 </style>
