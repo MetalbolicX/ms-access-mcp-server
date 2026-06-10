@@ -1681,11 +1681,138 @@ class UiOperations:
                 for i in range(all_macros.Count):
                     macro_obj = all_macros(i)
                     try:
-                        macros.append(MacroInfo(name=macro_obj.Name, type="Macro"))
+                        date_created = ""
+                        date_modified = ""
+                        try:
+                            if macro_obj.Properties.Exists("DateCreated"):
+                                date_created = str(macro_obj.Properties("DateCreated"))
+                        except Exception:
+                            pass
+                        try:
+                            if macro_obj.Properties.Exists("DateModified"):
+                                date_modified = str(macro_obj.Properties("DateModified"))
+                        except Exception:
+                            pass
+                        macros.append(MacroInfo(
+                            name=macro_obj.Name,
+                            type="Macro",
+                            date_created=date_created,
+                            date_modified=date_modified,
+                        ))
                     except Exception:
                         pass
             except Exception:
                 pass
             return macros
+
+        return self._dispatcher.call(_do)
+
+    def macro_exists(self, macro_name: str) -> bool:
+        """Check if a macro exists."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                all_macros = self._dispatcher.access_app.CurrentProject.AllMacros
+                for i in range(all_macros.Count):
+                    if all_macros(i).Name == macro_name:
+                        return True
+            except Exception:
+                pass
+            return False
+
+        return self._dispatcher.call(_do)
+
+    def create_macro(self, macro_name: str) -> bool:
+        """Create an empty macro via LoadFromText using a minimal XML template.
+
+        Uses the existing _load_object_from_text helper which handles UTF-16-LE
+        encoding and temp file management. The XML template's Macro Name
+        attribute is replaced with the target name before import.
+        """
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                template = (
+                    '<?xml version="1.0" encoding="UTF-16" standalone="no"?>\n'
+                    "<Macros>\n"
+                    '  <Macro Name="TemplateMacro">\n'
+                    "    <Statements/>\n"
+                    "  </Macro>\n"
+                    "</Macros>\n"
+                )
+                xml = template.replace("TemplateMacro", macro_name)
+                return self._load_object_from_text(8, macro_name, xml)
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def rename_macro(self, old_name: str, new_name: str) -> bool:
+        """Rename a macro via DoCmd.Rename with acMacro=8."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher.access_app.DoCmd.Rename(new_name, 8, old_name)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def delete_macro(self, macro_name: str) -> bool:
+        """Delete a macro via DoCmd.DeleteObject with acMacro=8."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher.access_app.DoCmd.DeleteObject(8, macro_name)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def run_macro(self, macro_name: str) -> bool:
+        """Execute a macro via DoCmd.RunMacro."""
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                self._dispatcher.access_app.DoCmd.RunMacro(macro_name)
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def get_macro_properties(self, macro_name: str) -> dict:
+        """Get all properties of a macro by reading its AccessObject Properties collection."""
+        if not self._dispatcher._started:
+            return {}
+
+        def _do() -> dict:
+            try:
+                all_macros = self._dispatcher.access_app.CurrentProject.AllMacros
+                for i in range(all_macros.Count):
+                    macro_obj = all_macros(i)
+                    if macro_obj.Name == macro_name:
+                        props: dict[str, str] = {}
+                        for prop in macro_obj.Properties:
+                            try:
+                                props[prop.Name] = str(prop.Value)
+                            except Exception:
+                                pass
+                        return props
+            except Exception:
+                pass
+            return {}
 
         return self._dispatcher.call(_do)

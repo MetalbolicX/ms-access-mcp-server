@@ -41,6 +41,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 @mcp.tool()
 def get_linked_tables(connection_name: str = "default") -> dict:
     """
@@ -52,11 +59,9 @@ def get_linked_tables(connection_name: str = "default") -> dict:
     Args:
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.get_linked_tables()
         return result
@@ -117,11 +122,9 @@ def refresh_linked_table(
         password: Optional password for re-injection during refresh
         server_id: Optional server_id to retrieve password from vault
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     # Validate connect_string via ConnectPolicy if provided
     if connect_string is not None:
         policy = ConnectPolicy()
@@ -261,11 +264,9 @@ def upsert_linked_table(
         preserve_hidden: If True, preserve dbHiddenObject flag on recreate (default True)
         server_id: Optional server_id to retrieve password from vault (if password not provided)
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     # Validate connect_string via ConnectPolicy before any operations
     policy = ConnectPolicy()
     validation_result = policy.validate(connect_string)

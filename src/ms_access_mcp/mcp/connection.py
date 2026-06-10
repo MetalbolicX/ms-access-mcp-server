@@ -20,12 +20,6 @@ def _pool():
     return get_container().connection_pool
 
 
-def _com():
-    """Lazy accessor for COM automation service (avoids circular import at module level)."""
-    from .container import get_container
-    return get_container().com_automation
-
-
 @mcp.tool()
 def connect_access(database_path: str, use_com: bool = False, name: str = "default") -> dict:
     """

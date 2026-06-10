@@ -3,6 +3,13 @@ from .server import mcp
 from ._helpers import _get_adapter, _check_connected
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 @mcp.tool()
 def analyze_query(
     sql: str,
@@ -24,12 +31,9 @@ def analyze_query(
     Returns:
         dict with execution, complexity, schema_analysis, and recommendations
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
 
     try:
         from ..services.query_analyzer import QueryAnalyzerService

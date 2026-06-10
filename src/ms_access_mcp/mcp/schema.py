@@ -21,6 +21,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 def _get_table_schema(adapter, table_name: str):
     """Find a table by name from the adapter's table list."""
     tables = adapter.get_tables()
@@ -36,11 +43,9 @@ def get_tables(connection_name: str = "default") -> dict:
     Get all user tables from the connected database.
     Excludes system tables (MSys*).
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     tables = adapter.get_tables()
     return {"success": True, "tables": [t.model_dump() for t in tables], "count": len(tables)}
 
@@ -58,11 +63,9 @@ def get_indexes(table_name: str, connection_name: str = "default") -> dict:
         Indexes for the table. WinCom returns all indexes (primary and secondary).
         ODBC returns an empty list due to DAO-only limitation.
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     indexes = adapter.get_indexes(table_name)
     return {"success": True, "indexes": [idx.model_dump() for idx in indexes], "count": len(indexes)}
 
@@ -76,11 +79,9 @@ def get_table_schema(table_name: str, connection_name: str = "default") -> dict:
         table_name: Name of the table
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     table = _get_table_schema(adapter, table_name)
     if table is None:
         return {"success": False, "error": f"Table '{table_name}' not found"}
@@ -95,11 +96,9 @@ def get_relationships(connection_name: str = "default") -> dict:
     Args:
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     relationships = adapter.get_relationships()
     return {
         "success": True,
@@ -150,11 +149,9 @@ def get_er_diagram(connection_name: str = "default") -> dict:
         nodes: List of table nodes with columns
         edges: List of relationship edges (FK connections)
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     tables = adapter.get_tables()
     relationships = adapter.get_relationships()
 

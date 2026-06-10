@@ -5,7 +5,7 @@ the connection pool to have adapter and current_database properties.
 """
 from .server import mcp, _get_path_guard
 from .container import get_container
-from ._helpers import _pool, _get_adapter, _check_connected, guard_destructive
+from ._helpers import _pool, _get_adapter, _check_connected, guard_destructive, _validate_path
 
 
 def _dev_copy():
@@ -26,12 +26,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
-def _validate_path(path: str) -> str:
-    """Validate a path through PathGuard, returning absolute path or raising."""
-    guard = _get_path_guard()
-    if guard is not None:
-        return guard.validate(path)
-    return path
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 def _get_current_db_path(connection_name: str = "default"):
     """Get current database path for a connection."""
     try:
@@ -126,11 +127,9 @@ def export_module_backup(module_name: str, backup_dir: str | None = None, connec
         backup_dir: Optional custom backup directory (default: {tempdir}/ms_access_dev/backups/)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
@@ -152,11 +151,9 @@ def import_module_from_text(module_name: str, file_path: str, connection_name: s
         file_path: Path to the .bas text file
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         file_path = _validate_path(file_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -176,11 +173,9 @@ def restore_module_backup(module_name: str, backup_path: str, connection_name: s
         backup_path: Path to the .bas backup file
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         backup_path = _validate_path(backup_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -200,11 +195,9 @@ def export_form_backup(form_name: str, backup_dir: str | None = None, connection
         backup_dir: Optional custom backup directory
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
@@ -227,11 +220,9 @@ def import_form_from_file(form_name: str, file_path: str, connection_name: str =
         file_path: Path to the .txt file
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         file_path = _validate_path(file_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -251,11 +242,9 @@ def restore_form_backup(form_name: str, backup_path: str, connection_name: str =
         backup_path: Path to the .txt backup file
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         backup_path = _validate_path(backup_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -275,11 +264,9 @@ def export_report_backup(report_name: str, backup_dir: str | None = None, connec
         backup_dir: Optional custom backup directory
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
         orch = VersioningOrchestrator()
@@ -298,11 +285,9 @@ def import_report_from_file(report_name: str, file_path: str, connection_name: s
         file_path: Path to the .txt file
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         file_path = _validate_path(file_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -322,11 +307,9 @@ def restore_report_backup(report_name: str, backup_path: str, connection_name: s
         backup_path: Path to the .txt backup file
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         backup_path = _validate_path(backup_path)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator

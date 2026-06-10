@@ -103,7 +103,7 @@ def _init_http_config() -> None:
 
 
 # Import tool modules to register their @mcp.tool() decorators
-from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports  # noqa: E402, F811
+from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports, macros  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
@@ -121,7 +121,7 @@ from .crud import (  # noqa: E402
 from .export import export_data  # noqa: E402
 from .com import (  # noqa: E402
     launch_access, close_access,
-    get_forms, get_reports, get_macros, get_modules,
+    get_forms, get_modules,
     open_form, close_form,
     form_exists, get_form_controls, get_control_properties, set_control_property,
     set_control_properties, get_control_event_procedures, set_control_event_procedure,
@@ -144,19 +144,23 @@ from .system import (  # noqa: E402
 from .persistence import (  # noqa: E402
     export_form_to_text, import_form_from_text, delete_form,
     export_report_to_text, import_report_from_text, delete_report,
-    export_module_to_text, export_macro_to_text,
+    export_module_to_text, export_macro_to_text, import_macro_from_text,
     export_query_to_text, import_query_from_text,
     export_all_versioning, import_all_versioning, compare_versioning,
     export_schema_ddl, execute_sql_script,
 )
 from .reports import (  # noqa: E402
-    report_exists, create_report, rename_report,
+    report_exists, get_reports, create_report, rename_report,
     get_report_properties, set_report_property, set_report_properties,
     get_report_controls, get_report_control_properties,
     set_report_control_property, set_report_control_properties,
     add_report_control, remove_report_control,
     get_report_sections, get_report_section_properties,
     set_report_section_property, set_report_section_properties,
+)
+from .macros import (  # noqa: E402
+    macro_exists, get_macros, get_macro_properties,
+    create_macro, rename_macro, delete_macro, run_macro,
 )
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import (

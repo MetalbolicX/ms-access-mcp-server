@@ -1,6 +1,6 @@
 """Persistence/versioning tools — export/import Access objects as text files."""
 from .server import mcp, _get_path_guard
-from ._helpers import guard_destructive
+from ._helpers import guard_destructive, _validate_path
 
 
 def _pool():
@@ -22,12 +22,11 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
-def _validate_path(path: str) -> str:
-    """Validate a path through PathGuard, returning the absolute path or raising."""
-    guard = _get_path_guard()
-    if guard is not None:
-        return guard.validate(path)
-    return path
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
 
 
 # ============================================================================
@@ -44,11 +43,9 @@ def export_form_to_text(form_name: str, connection_name: str = "default") -> dic
         form_name: Name of the form to export
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.export_form_to_text(form_name)
     if not result:
         return {"success": False, "error": f"Failed to export form '{form_name}'"}
@@ -65,11 +62,9 @@ def import_form_from_text(form_name: str, form_data: str, connection_name: str =
         form_data: Text representation of the form (from export_form_to_text)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.import_form_from_text(form_name, form_data)
     return {"success": result, "form": form_name, "message": "Form imported" if result else "Import failed"}
 
@@ -111,11 +106,9 @@ def export_report_to_text(report_name: str, connection_name: str = "default") ->
         report_name: Name of the report to export
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.export_report_to_text(report_name)
     if not result:
         return {"success": False, "error": f"Failed to export report '{report_name}'"}
@@ -132,11 +125,9 @@ def import_report_from_text(report_name: str, report_data: str, connection_name:
         report_data: Text representation of the report (from export_report_to_text)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.import_report_from_text(report_name, report_data)
     return {"success": result, "report": report_name, "message": "Report imported" if result else "Import failed"}
 
@@ -178,11 +169,9 @@ def export_module_to_text(module_name: str, connection_name: str = "default") ->
         module_name: Name of the VBA module to export
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.export_module_to_text(module_name)
     if not result:
         return {"success": False, "error": f"Module '{module_name}' not found or empty"}
@@ -200,15 +189,47 @@ def export_macro_to_text(macro_name: str, connection_name: str = "default") -> d
         macro_name: Name of the macro to export
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.export_macro_to_text(macro_name)
     if not result:
         return {"success": False, "error": f"Macro '{macro_name}' not found"}
     return {"success": True, "macro": macro_name, "data": result}
+
+
+@mcp.tool()
+def import_macro_from_text(
+    macro_name: str,
+    macro_data: str,
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Import a macro from text representation (LoadFromText).
+
+    This is a destructive action — it will overwrite any existing macro of
+    the same name. Set confirm=True to execute, or dry_run=True to preview
+    without making changes.
+
+    Args:
+        macro_name: Name of the macro to create/replace
+        macro_data: Text representation of the macro
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the import
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(confirm, dry_run, "import_macro_from_text", macro=macro_name)
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.import_macro_from_text(macro_name, macro_data)
+    return {"success": result, "macro": macro_name}
 
 
 @mcp.tool()
@@ -220,11 +241,9 @@ def export_query_to_text(query_name: str, connection_name: str = "default") -> d
         query_name: Name of the query to export
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.export_query_to_text(query_name)
     if not result:
         return {"success": False, "error": f"Query '{query_name}' not found or empty"}
@@ -241,11 +260,9 @@ def import_query_from_text(query_name: str, query_data: str, connection_name: st
         query_data: Text representation of the query (SQL or Access query definition)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.import_query_from_text(query_name, query_data)
     return {"success": result, "query": query_name, "message": "Query imported" if result else "Import failed"}
 
@@ -267,11 +284,9 @@ def export_all_versioning(output_dir: str, connection_name: str = "default") -> 
         output_dir: Directory to export files to
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         output_dir = _validate_path(output_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -290,11 +305,9 @@ def import_all_versioning(input_dir: str, connection_name: str = "default") -> d
         input_dir: Directory containing versioned objects
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         input_dir = _validate_path(input_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -315,11 +328,9 @@ def compare_versioning(export_dir: str, connection_name: str = "default") -> dic
         export_dir: Directory containing previous exports
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         export_dir = _validate_path(export_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -341,11 +352,9 @@ def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict
         output_dir: Directory to write DDL files to
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         output_dir = _validate_path(output_dir)
         from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
@@ -367,11 +376,9 @@ def execute_sql_script(script_path: str, connection_name: str = "default") -> di
         script_path: Path to the .sql file containing Jet SQL statements
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         script_path = _validate_path(script_path)
         result = adapter.execute_sql_script(script_path)

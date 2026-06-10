@@ -25,6 +25,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 @mcp.tool()
 def get_vba_projects(connection_name: str = "default") -> dict:
     """
@@ -33,11 +40,9 @@ def get_vba_projects(connection_name: str = "default") -> dict:
     Args:
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     project_name = adapter.get_vba_project_name()
     if project_name:
         return {"success": True, "projects": [project_name], "count": 1}
@@ -53,11 +58,9 @@ def get_vba_code(module_name: str, connection_name: str = "default") -> dict:
         module_name: Name of the VBA module
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     code = adapter.get_vba_code(module_name)
     if not code:
         return {"success": False, "error": f"Module '{module_name}' not found or empty"}

@@ -59,6 +59,8 @@ class ReportInfo(BaseModel):
 class MacroInfo(BaseModel):
     name: str
     type: str = "Macro"
+    date_created: str = ""
+    date_modified: str = ""
 
 
 class ModuleInfo(BaseModel):

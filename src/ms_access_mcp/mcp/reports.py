@@ -1,15 +1,11 @@
 """Report manipulation tools for MS Access — PR1 Core/CRUD/Properties."""
 from .server import mcp
 from .container import get_container
-from ._helpers import guard_destructive
+from ._helpers import guard_destructive, _com
 
 
 def _pool():
     return get_container().connection_pool
-
-
-def _com():
-    return get_container().com_automation
 
 
 def _get_adapter(connection_name: str = "default"):
@@ -23,6 +19,13 @@ def _get_adapter(connection_name: str = "default"):
 def _check_connected(connection_name: str = "default"):
     """Check if a named connection is connected."""
     return _pool().is_connected(connection_name)
+
+
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
 
 
 # ============================================================================
@@ -39,13 +42,26 @@ def report_exists(report_name: str, connection_name: str = "default") -> dict:
         report_name: Name of the report to check
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     exists = adapter.report_exists(report_name)
     return {"success": True, "exists": exists, "report": report_name}
+
+
+@mcp.tool()
+def get_reports(connection_name: str = "default") -> dict:
+    """
+    Get all reports in the database.
+
+    Args:
+        connection_name: Connection identifier (defaults to "default")
+    """
+    adapter = _ensure_connected(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "Not connected to database"}
+    reports = adapter.get_reports()
+    return {"success": True, "reports": [r.model_dump() for r in reports], "count": len(reports)}
 
 
 # ============================================================================
@@ -65,11 +81,9 @@ def create_report(report_name: str, record_source: str = "", template_name: str 
         properties: Additional properties to set after creation (optional)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     result = adapter.create_report(report_name, record_source, template_name, properties)
     return {"success": result, "report_name": report_name}
 
@@ -112,11 +126,9 @@ def get_report_properties(report_name: str, connection_name: str = "default") ->
         report_name: Name of the report
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     props = _com().get_report_properties(report_name)
     if not props:
         return {"success": False, "error": f"No properties found for report '{report_name}'", "report": report_name}
@@ -196,11 +208,9 @@ def get_report_controls(report_name: str, connection_name: str = "default") -> d
         report_name: Name of the report
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     controls = adapter.get_report_controls(report_name)
     return {"success": True, "controls": [c.model_dump() for c in controls], "count": len(controls)}
 
@@ -217,11 +227,9 @@ def get_report_control_properties(report_name: str, control_name: str, connectio
         control_name: Name of the control
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     props = _com().get_report_control_properties(report_name, control_name)
     if not props:
         return {"success": False, "error": f"No properties found for control '{control_name}' in report '{report_name}'", "report": report_name, "control": control_name}
@@ -360,11 +368,9 @@ def get_report_sections(report_name: str, connection_name: str = "default") -> d
         report_name: Name of the report
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     sections = adapter.get_report_sections(report_name)
     return {"success": True, "report": report_name, "sections": sections, "count": len(sections)}
 
@@ -381,11 +387,9 @@ def get_report_section_properties(report_name: str, section_id: int, connection_
         section_id: Section index (0=detail, 1=header, 2=footer, 3=page_header, 4=page_footer)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     props = _com().get_report_section_properties(report_name, section_id)
     if not props:
         return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}

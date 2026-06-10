@@ -45,6 +45,47 @@ class TestReportExists:
             assert "Not connected" in result["error"]
 
 
+class TestGetReports:
+    """Tests for get_reports tool."""
+
+    def test_get_reports_returns_report_list(self):
+        """get_reports should return success with report list."""
+        mock_report = MagicMock()
+        mock_report.model_dump.return_value = {"name": "TestReport"}
+        mock_adapter = MagicMock()
+        mock_adapter.get_reports.return_value = [mock_report]
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_reports()
+            assert result["success"] is True
+            assert result["count"] == 1
+            assert result["reports"][0]["name"] == "TestReport"
+
+    def test_get_reports_empty_returns_zero_count(self):
+        """get_reports with no reports should return empty list with count 0."""
+        mock_adapter = MagicMock()
+        mock_adapter.get_reports.return_value = []
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_reports()
+            assert result["success"] is True
+            assert result["count"] == 0
+            assert result["reports"] == []
+
+    def test_get_reports_returns_error_when_not_connected(self):
+        """get_reports should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
+            result = server.get_reports()
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
 class TestCreateReport:
     """Tests for create_report tool."""
 

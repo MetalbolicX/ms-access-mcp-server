@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from .server import mcp, _get_path_guard
 from .container import get_container
+from ._helpers import _validate_path
 from ..services.backend_selector import BackendSelector, SCHEMA_CAPS, DATA_READ_CAPS
 
 
@@ -14,14 +15,6 @@ def _pool():
 def _migration():
     """Lazy accessor for the migration service."""
     return get_container().migration
-
-
-def _validate_path(path: str) -> str:
-    """Validate a path through PathGuard, returning absolute path or raising."""
-    guard = _get_path_guard()
-    if guard is not None:
-        return guard.validate(path)
-    return path
 
 
 def _find_connection_by_path(database_path: str):

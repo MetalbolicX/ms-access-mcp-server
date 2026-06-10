@@ -25,6 +25,21 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _com():
+    """Lazy accessor for COM automation service (avoids circular import at module level)."""
+    from .container import get_container
+    return get_container().com_automation
+
+
+def _validate_path(path: str) -> str:
+    """Validate a path through PathGuard, returning the absolute path or raising."""
+    from .server import _get_path_guard
+    guard = _get_path_guard()
+    if guard is not None:
+        return guard.validate(path)
+    return path
+
+
 def guard_destructive(confirm: bool, dry_run: bool, action: str, **context) -> dict | None:
     """Guard clause for destructive MCP tools.
 

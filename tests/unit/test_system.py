@@ -295,6 +295,53 @@ class TestSystemToolSuccessPaths:
             assert result["macro"] == "TestMacro"
             assert result["data"]["name"] == "TestMacro"
 
+    def test_import_macro_from_text_delegates_to_adapter(self):
+        """import_macro_from_text should delegate to adapter.import_macro_from_text."""
+        mock_adapter = MagicMock()
+        mock_adapter.import_macro_from_text.return_value = True
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.import_macro_from_text("TestMacro", "<macro/>", confirm=True)
+            mock_adapter.import_macro_from_text.assert_called_once_with("TestMacro", "<macro/>")
+            assert result["success"] is True
+            assert result["macro"] == "TestMacro"
+
+    def test_import_macro_from_text_returns_error_when_not_connected(self):
+        """import_macro_from_text should return error when not connected."""
+        mock_pool = MagicMock()
+        mock_pool.is_connected.return_value = False
+        with patch.object(persistence_module, '_pool', return_value=mock_pool):
+            result = server.import_macro_from_text("TestMacro", "<macro/>", confirm=True)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+    def test_import_macro_from_text_blocked_without_confirmation(self):
+        """import_macro_from_text with confirm=False should be blocked by guard."""
+        mock_adapter = MagicMock()
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.import_macro_from_text("TestMacro", "<macro/>")
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+            mock_adapter.import_macro_from_text.assert_not_called()
+
+    def test_import_macro_from_text_dry_run_returns_preview(self):
+        """import_macro_from_text with dry_run=True should return preview without executing."""
+        mock_adapter = MagicMock()
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.import_macro_from_text("TestMacro", "<macro/>", confirm=True, dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "import_macro_from_text"
+            assert result["macro"] == "TestMacro"
+            mock_adapter.import_macro_from_text.assert_not_called()
+
+    def test_import_macro_from_text_returns_failure_on_failure(self):
+        """import_macro_from_text with adapter returning False should return success=False."""
+        mock_adapter = MagicMock()
+        mock_adapter.import_macro_from_text.return_value = False
+        with _patch_pool(persistence_module, mock_adapter):
+            result = server.import_macro_from_text("TestMacro", "<macro/>", confirm=True)
+            assert result["success"] is False
+            assert result["macro"] == "TestMacro"
+
     def test_export_all_versioning_delegates_to_versioning_orchestrator(self):
         """export_all_versioning should delegate to VersioningOrchestrator.export_all."""
         mock_adapter = MagicMock()

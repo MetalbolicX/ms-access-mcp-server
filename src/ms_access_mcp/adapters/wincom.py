@@ -512,6 +512,24 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_macros(self) -> list[MacroInfo]:
         return self._ui.get_macros()
 
+    def macro_exists(self, macro_name: str) -> bool:
+        return self._ui.macro_exists(macro_name)
+
+    def create_macro(self, macro_name: str) -> bool:
+        return self._ui.create_macro(macro_name)
+
+    def rename_macro(self, old_name: str, new_name: str) -> bool:
+        return self._ui.rename_macro(old_name, new_name)
+
+    def delete_macro(self, macro_name: str) -> bool:
+        return self._ui.delete_macro(macro_name)
+
+    def run_macro(self, macro_name: str) -> bool:
+        return self._ui.run_macro(macro_name)
+
+    def get_macro_properties(self, macro_name: str) -> dict:
+        return self._ui.get_macro_properties(macro_name)
+
     # Delegated to VbaOperations
     def get_vba_project_name(self) -> str:
         return self._vba.get_vba_project_name()

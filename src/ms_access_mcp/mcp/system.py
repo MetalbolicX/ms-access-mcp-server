@@ -22,6 +22,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 @mcp.tool()
 def get_system_tables(connection_name: str = "default") -> dict:
     """
@@ -30,11 +37,9 @@ def get_system_tables(connection_name: str = "default") -> dict:
     Args:
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     tables = adapter.get_system_tables()
     return {"success": True, "system_tables": [t.model_dump() for t in tables], "count": len(tables)}
 
@@ -48,11 +53,9 @@ def get_object_metadata(object_name: str, connection_name: str = "default") -> d
         object_name: Name of the database object
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     metadata = adapter.get_object_metadata(object_name)
     if not metadata:
         return {"success": False, "error": f"Object '{object_name}' not found"}

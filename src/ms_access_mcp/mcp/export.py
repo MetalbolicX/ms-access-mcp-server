@@ -26,6 +26,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 @mcp.tool()
 def export_data(
     sql: str,
@@ -68,7 +75,8 @@ def export_data(
         A dict with ``success`` (bool), ``rows_exported`` (int),
         ``file_path`` (str), and optionally ``error`` (str).
     """
-    if not _check_connected(connection_name):
+    adapter = _ensure_connected(connection_name)
+    if adapter is None:
         return {"success": False, "error": "Not connected to database"}
 
     # Validate output path
@@ -78,10 +86,6 @@ def export_data(
             file_path = path_guard.validate(file_path)
         except ValueError as e:
             return {"success": False, "error": str(e)}
-
-    adapter = _get_adapter(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "No adapter available"}
 
     try:
         # Forward format-specific options as keyword arguments

@@ -156,6 +156,34 @@ class ComOnlyAdapterMixin:
         """Export a macro to text — requires COM automation."""
         raise NotImplementedError("export_macro_to_text requires COM automation (WinComAdapter)")
 
+    # ========================================================================
+    # Macro CRUD operations (COM-only)
+    # ========================================================================
+
+    def macro_exists(self, macro_name: str) -> bool:
+        """Check if a macro exists — requires COM automation."""
+        raise NotImplementedError("macro_exists requires COM automation (WinComAdapter)")
+
+    def create_macro(self, macro_name: str) -> bool:
+        """Create an empty macro — requires COM automation."""
+        raise NotImplementedError("create_macro requires COM automation (WinComAdapter)")
+
+    def rename_macro(self, old_name: str, new_name: str) -> bool:
+        """Rename a macro — requires COM automation."""
+        raise NotImplementedError("rename_macro requires COM automation (WinComAdapter)")
+
+    def delete_macro(self, macro_name: str) -> bool:
+        """Delete a macro — requires COM automation."""
+        raise NotImplementedError("delete_macro requires COM automation (WinComAdapter)")
+
+    def run_macro(self, macro_name: str) -> bool:
+        """Execute a macro — requires COM automation."""
+        raise NotImplementedError("run_macro requires COM automation (WinComAdapter)")
+
+    def get_macro_properties(self, macro_name: str) -> dict:
+        """Get all properties of a macro — requires COM automation."""
+        raise NotImplementedError("get_macro_properties requires COM automation (WinComAdapter)")
+
     def export_all_versioning(self, output_dir: str) -> dict:
         """Export all versioned objects — requires COM automation."""
         raise NotImplementedError("export_all_versioning requires COM automation (WinComAdapter)")

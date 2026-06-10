@@ -296,3 +296,39 @@ class COMAutomationService:
         if adapter is None:
             return {}
         return adapter.set_report_section_properties(report_name, section_id, properties)
+
+    def macro_exists(self, macro_name: str) -> bool:
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.macro_exists(macro_name)
+
+    def create_macro(self, macro_name: str) -> bool:
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.create_macro(macro_name)
+
+    def rename_macro(self, old_name: str, new_name: str) -> bool:
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.rename_macro(old_name, new_name)
+
+    def delete_macro(self, macro_name: str) -> bool:
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.delete_macro(macro_name)
+
+    def run_macro(self, macro_name: str) -> bool:
+        adapter = self._get_adapter()
+        if adapter is None:
+            return False
+        return adapter.run_macro(macro_name)
+
+    def get_macro_properties(self, macro_name: str) -> dict:
+        adapter = self._get_adapter()
+        if adapter is None:
+            return {}
+        return adapter.get_macro_properties(macro_name)

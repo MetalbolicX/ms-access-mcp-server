@@ -22,6 +22,13 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
+
+
 # ============================================================================
 # QUERY CRUD
 # ============================================================================
@@ -30,11 +37,9 @@ def _check_connected(connection_name: str = "default"):
 @mcp.tool()
 def get_queries(connection_name: str = "default") -> dict:
     """Get all saved queries from the database."""
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         queries = adapter.get_queries()
         return {"success": True, "queries": [q.model_dump() for q in queries], "count": len(queries)}
@@ -52,11 +57,9 @@ def create_query(name: str, sql: str, connection_name: str = "default") -> dict:
         sql: SQL statement for the query
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.create_query(name, sql)
         return result
@@ -74,11 +77,9 @@ def set_query_sql(name: str, sql: str, connection_name: str = "default") -> dict
         sql: New SQL statement
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.set_query_sql(name, sql)
         return result
@@ -136,11 +137,9 @@ def create_table(table_name: str, columns: list[dict], connection_name: str = "d
                  - nullable (bool, optional): Whether column allows NULL (default True)
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.create_table(table_name, columns)
         return result
@@ -203,11 +202,9 @@ def create_index(
         ignore_null: If True, adds WITH IGNORE NULL clause (default False).
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    adapter = _get_adapter(connection_name)
+    adapter = _ensure_connected(connection_name)
     if adapter is None:
-        return {"success": False, "error": "No adapter available"}
+        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.create_index(table_name, index_name, columns, unique, ignore_null)
         return result
