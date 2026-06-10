@@ -590,6 +590,23 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         """Get all foreign key relationships from DAO Relations collection."""
         return self._schema.get_relationships()
 
+    def create_relationship(
+        self,
+        table_name: str,
+        relationship_name: str,
+        columns: list[str],
+        foreign_table: str,
+        foreign_columns: list[str],
+    ) -> dict:
+        """Create a foreign key relationship via DAO."""
+        return self._schema.create_relationship(
+            table_name, relationship_name, columns, foreign_table, foreign_columns,
+        )
+
+    def delete_relationship(self, table_name: str, relationship_name: str) -> dict:
+        """Delete a foreign key relationship via DAO."""
+        return self._schema.delete_relationship(table_name, relationship_name)
+
     def get_indexes(self, table_name: str) -> list[IndexInfo]:
         """Get all indexes for a table via SchemaInspector.
 

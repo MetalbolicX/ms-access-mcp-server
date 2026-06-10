@@ -826,6 +826,76 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def create_relationship(
+        self,
+        table_name: str,
+        relationship_name: str,
+        columns: list[str],
+        foreign_table: str,
+        foreign_columns: list[str],
+    ) -> dict:
+        """Create a foreign key relationship via ODBC DDL.
+
+        Jet SQL: ALTER TABLE [table] ADD CONSTRAINT [name] FOREIGN KEY (col_list)
+                 REFERENCES [foreign_table] (fk_col_list)
+
+        Args:
+            table_name: Child table containing the foreign key
+            relationship_name: Name for the new constraint
+            columns: List of column names in the child table
+            foreign_table: Parent table being referenced
+            foreign_columns: List of column names in the parent table
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        if len(columns) != len(foreign_columns):
+            return {
+                "success": False,
+                "error": "columns and foreign_columns must have same length",
+            }
+
+        try:
+            col_list = ", ".join(f"[{col}]" for col in columns)
+            fk_col_list = ", ".join(f"[{col}]" for col in foreign_columns)
+            sql = (
+                f"ALTER TABLE [{table_name}] ADD CONSTRAINT [{relationship_name}] "
+                f"FOREIGN KEY ({col_list}) REFERENCES [{foreign_table}] ({fk_col_list})"
+            )
+            cursor = self._conn.cursor()
+            cursor.execute(sql)
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def delete_relationship(self, table_name: str, relationship_name: str) -> dict:
+        """Delete a foreign key relationship via ODBC DDL.
+
+        Jet SQL: ALTER TABLE [table] DROP CONSTRAINT [name]
+
+        Args:
+            table_name: Child table containing the constraint
+            relationship_name: Name of the constraint to drop
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        try:
+            sql = f"ALTER TABLE [{table_name}] DROP CONSTRAINT [{relationship_name}]"
+            cursor = self._conn.cursor()
+            cursor.execute(sql)
+            cursor.close()
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def _alter_table_add_column_sql(self, table_name: str, params: dict) -> str:
         """Generate ALTER TABLE ADD COLUMN SQL."""
         name = params["name"]

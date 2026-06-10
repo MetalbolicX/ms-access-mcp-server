@@ -450,15 +450,96 @@ class SchemaInspector:
                     rel = db.Relations(i)
                     if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
                         continue
+                    child_cols = []
+                    parent_cols = []
+                    for j in range(rel.Fields.Count):
+                        child_cols.append(rel.Fields(j).Name)
+                        parent_cols.append(rel.Fields(j).ForeignName)
                     relationships.append(RelationshipInfo(
                         name=rel.Name,
                         table=rel.Table,
                         foreign_table=rel.ForeignTable,
                         attributes=str(rel.Attributes),
+                        columns=child_cols,
+                        foreign_columns=parent_cols,
                     ))
             except Exception as e:
                 logger.warning("get_relationships failed: %s", e, exc_info=True)
             return relationships
+
+        return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------ #
+    # create_relationship
+    # ------------------------------------------------------------------ #
+
+    def create_relationship(
+        self,
+        table_name: str,
+        relationship_name: str,
+        columns: list[str],
+        foreign_table: str,
+        foreign_columns: list[str],
+    ) -> dict:
+        """Create a foreign key relationship via DAO.
+
+        Args:
+            table_name: Child table containing the foreign key
+            relationship_name: Name for the new relation
+            columns: List of column names in the child table
+            foreign_table: Parent table being referenced
+            foreign_columns: List of column names in the parent table
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+        if len(columns) != len(foreign_columns):
+            return {
+                "success": False,
+                "error": "columns and foreign_columns must have same length",
+            }
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                rel = db.CreateRelation(relationship_name, table_name, foreign_table)
+                for i in range(len(columns)):
+                    f = rel.CreateField(columns[i])
+                    f.ForeignName = foreign_columns[i]
+                    rel.Fields.Append(f)
+                db.Relations.Append(rel)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------ #
+    # delete_relationship
+    # ------------------------------------------------------------------ #
+
+    def delete_relationship(self, table_name: str, relationship_name: str) -> dict:
+        """Delete a foreign key relationship via DAO.
+
+        Args:
+            table_name: Child table containing the constraint
+            relationship_name: Name of the relation to drop
+
+        Returns:
+            dict with success=True or success=False and error
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                db.Relations.Delete(relationship_name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
 
         return self._dispatcher.call(_do)
 

@@ -29,6 +29,8 @@ class RelationshipInfo(BaseModel):
     table: str
     foreign_table: str
     attributes: str = ""
+    columns: list[str] = Field(default_factory=list)
+    foreign_columns: list[str] = Field(default_factory=list)
 
 
 class ForeignKeyInfo(BaseModel):

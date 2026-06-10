@@ -176,6 +176,18 @@ class ComOnlyAdapterMixin:
         """Delete a macro — requires COM automation."""
         raise NotImplementedError("delete_macro requires COM automation (WinComAdapter)")
 
+    # ========================================================================
+    # Relation operations (COM-only)
+    # ========================================================================
+
+    def create_relationship(self, table_name: str, relationship_name: str, columns: list[str], foreign_table: str, foreign_columns: list[str]) -> dict:
+        """Create a foreign key relationship — requires COM automation."""
+        raise NotImplementedError("create_relationship requires COM automation (WinComAdapter)")
+
+    def delete_relationship(self, table_name: str, relationship_name: str) -> dict:
+        """Delete a foreign key relationship — requires COM automation."""
+        raise NotImplementedError("delete_relationship requires COM automation (WinComAdapter)")
+
     def run_macro(self, macro_name: str) -> bool:
         """Execute a macro — requires COM automation."""
         raise NotImplementedError("run_macro requires COM automation (WinComAdapter)")

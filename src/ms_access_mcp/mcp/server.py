@@ -103,7 +103,7 @@ def _init_http_config() -> None:
 
 
 # Import tool modules to register their @mcp.tool() decorators
-from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports, macros  # noqa: E402, F811
+from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports, macros, relations  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
@@ -162,6 +162,7 @@ from .macros import (  # noqa: E402
     macro_exists, get_macros, get_macro_properties,
     create_macro, rename_macro, delete_macro, run_macro,
 )
+from .relations import create_relationship, delete_relationship  # noqa: E402
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import (
     get_linked_tables, create_linked_table, refresh_linked_table, unlink_table,
