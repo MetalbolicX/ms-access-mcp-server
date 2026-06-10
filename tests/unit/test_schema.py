@@ -134,7 +134,7 @@ class TestGetIndexes:
         with patch.object(schema_module, '_pool', return_value=mock_conn):
             result = schema_module.get_indexes("Customers")
             assert result["success"] is False
-            assert "No adapter" in result["error"]
+            assert "Not connected" in result["error"]
 
     def test_get_indexes_returns_multiple_indexes(self):
         """get_indexes should return multiple index dumps."""
@@ -196,7 +196,10 @@ class TestGenerateSql:
         mock_conn.adapter = MagicMock()
         mock_conn.adapter.generate_sql.return_value = {"success": True, "file_path": "/tmp/out.sql"}
         mock_conn.get_adapter.return_value = mock_conn.adapter
-        with patch.object(schema_module, '_pool', return_value=mock_conn):
+        with (
+            patch.object(schema_module, '_pool', return_value=mock_conn),
+            patch.object(schema_module, '_get_path_guard', return_value=None),
+        ):
             result = schema_module.generate_sql("/tmp/out.sql")
             assert result["success"] is True
             mock_conn.adapter.generate_sql.assert_called_once_with("/tmp/out.sql")

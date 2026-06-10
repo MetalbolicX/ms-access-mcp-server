@@ -387,6 +387,7 @@ class TestWinComAdapterExecuteSqlScriptConnected:
         # Mock the database object with a controllable Execute
         self.mock_db = MagicMock()
         self.adapter._dispatcher._current_db = self.mock_db
+        self.adapter._dispatcher._ado_conn = self.mock_db
 
     def teardown_method(self):
         self._connected_patch.stop()
@@ -566,8 +567,8 @@ class TestWinComAdapterExecuteSqlScriptConnected:
         finally:
             os.unlink(temp_path)
 
-    def test_execute_called_with_db_fail_on_error_flag(self):
-        """Execute is called with DAO_DB_FAIL_ON_ERROR (128) flag."""
+    def test_execute_called_with_db(self):
+        """Execute is called with the SQL statement text via ADO."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False) as f:
             f.write("SELECT 1;")
             temp_path = f.name
@@ -575,7 +576,7 @@ class TestWinComAdapterExecuteSqlScriptConnected:
             self.adapter.execute_sql_script(temp_path)
             self.mock_db.Execute.assert_called_once()
             args, _ = self.mock_db.Execute.call_args
-            assert args[1] == 128
+            assert "SELECT 1" in args[0]
         finally:
             os.unlink(temp_path)
 
