@@ -103,7 +103,7 @@ def _init_http_config() -> None:
 
 
 # Import tool modules to register their @mcp.tool() decorators
-from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports, macros, relations  # noqa: E402, F811
+from . import connection, schema, crud, export, com, vba, system, persistence, migration, linked_tables, dev_copy, analysis, reports, macros, relations, raw_sql, db_properties  # noqa: E402, F811
 
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
@@ -134,6 +134,7 @@ from .vba import (  # noqa: E402
     get_vba_projects, get_vba_code,
     set_vba_code, add_vba_procedure,
     compile_vba, save_database, delete_module,
+    create_module, rename_module, module_exists,
     vba_list_procedures, vba_get_procedure, vba_replace_procedure,
     save_query,
 )
@@ -163,6 +164,7 @@ from .macros import (  # noqa: E402
     create_macro, rename_macro, delete_macro, run_macro,
 )
 from .relations import create_relationship, delete_relationship  # noqa: E402
+from .raw_sql import execute_raw_sql  # noqa: E402
 from .migration import extract_schema, upload_schema, transfer_data, get_migration_status  # noqa: E402
 from .linked_tables import (
     get_linked_tables, create_linked_table, refresh_linked_table, unlink_table,
@@ -176,6 +178,7 @@ from .dev_copy import (  # noqa: E402
     create_dev_copy, deploy_dev_copy, discard_dev_copy, get_dev_copy_status,
 )
 from .analysis import analyze_query  # noqa: E402
+from .db_properties import get_database_properties, set_database_property  # noqa: E402
 
 
 def get_asgi_app(transport: str = "http"):

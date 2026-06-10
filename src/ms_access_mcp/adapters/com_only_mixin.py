@@ -120,6 +120,18 @@ class ComOnlyAdapterMixin:
         """Delete a VBA module — requires COM automation."""
         raise NotImplementedError("delete_module requires COM automation (WinComAdapter)")
 
+    def create_module(self, module_name: str, module_type: int = 1) -> bool:
+        """Create a VBA module — requires COM automation."""
+        raise NotImplementedError("create_module requires COM automation (WinComAdapter)")
+
+    def rename_module(self, old_name: str, new_name: str) -> bool:
+        """Rename a VBA module — requires COM automation."""
+        raise NotImplementedError("rename_module requires COM automation (WinComAdapter)")
+
+    def module_exists(self, module_name: str) -> bool:
+        """Check if a VBA module exists — requires COM automation."""
+        raise NotImplementedError("module_exists requires COM automation (WinComAdapter)")
+
     def vba_list_procedures(self, module_name: str) -> list[dict]:
         """List all procedures in a VBA module — requires COM automation."""
         raise NotImplementedError("vba_list_procedures requires COM automation (WinComAdapter)")
@@ -300,3 +312,15 @@ class ComOnlyAdapterMixin:
     def set_control_event_procedure(self, form_name: str, control_name: str, event_name: str, code: str) -> bool:
         """Set a control's event procedure — requires COM automation."""
         raise NotImplementedError("set_control_event_procedure requires COM automation (WinComAdapter)")
+
+    # ========================================================================
+    # Database property operations (COM-only)
+    # ========================================================================
+
+    def get_database_properties(self, names=None) -> dict:
+        """Get database properties — requires COM automation."""
+        raise NotImplementedError("get_database_properties requires COM automation (WinComAdapter)")
+
+    def set_database_property(self, name: str, value: str, type: str | None = None) -> bool:
+        """Set a database property — requires COM automation."""
+        raise NotImplementedError("set_database_property requires COM automation (WinComAdapter)")

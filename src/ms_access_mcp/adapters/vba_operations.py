@@ -343,6 +343,85 @@ class VbaOperations:
 
         return self._dispatcher.call(_do)
 
+    def create_module(self, module_name: str, module_type: int = 1) -> bool:
+        """Create a new VBA module in the database.
+
+        Args:
+            module_name: Name for the new module
+            module_type: vbext_ComponentType — 1 = standard module, 2 = class module
+
+        Returns:
+            True on success, False on exception or missing project
+        """
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
+            try:
+                comp = vb_project.VBComponents.Add(module_type)
+                comp.Name = module_name
+                return True
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def rename_module(self, old_name: str, new_name: str) -> bool:
+        """Rename an existing VBA module.
+
+        Args:
+            old_name: Current name of the module
+            new_name: New name for the module
+
+        Returns:
+            True on success, False if not found or on error
+        """
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            vb_project = self._get_vb_project()
+            if vb_project is None:
+                return False
+            try:
+                for comp in vb_project.VBComponents:
+                    if comp.Name == old_name:
+                        comp.Name = new_name
+                        return True
+                return False
+            except Exception:
+                return False
+
+        return self._dispatcher.call(_do)
+
+    def module_exists(self, module_name: str) -> bool:
+        """Check if a VBA module exists in the database.
+
+        Uses CurrentProject.AllModules (0-based DAO collection) which is
+        lighter than the VBE.VBComponents enumeration.
+
+        Returns:
+            True if a module with the given name exists, False otherwise
+        """
+        if not self._dispatcher._started:
+            return False
+
+        def _do() -> bool:
+            try:
+                # AllModules is a 0-based DAO collection
+                for i in range(self._dispatcher.access_app.CurrentProject.AllModules.Count):
+                    mod = self._dispatcher.access_app.CurrentProject.AllModules(i)
+                    if mod.Name == module_name:
+                        return True
+            except Exception:
+                return False
+            return False
+
+        return self._dispatcher.call(_do)
+
     def save_database(self) -> dict:
         """Save all VBA modules and database changes.
 

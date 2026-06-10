@@ -96,3 +96,18 @@ class IndexInfo(BaseModel):
     is_unique: bool = False
     is_primary: bool = False
     ignore_nulls: bool = False
+
+
+class DatabasePropertyInfo(BaseModel):
+    """Describes a single database property (DAO `CurrentDb.Properties`).
+
+    `type` is the high-level DAO type name as a string — one of:
+    "Text" (10), "Long" (4), "Boolean" (1), "Double" (7), "Date" (8), "Byte" (2).
+    `built_in` is True for Access-managed properties (e.g. AppTitle), False for
+    user-defined custom properties.
+    """
+
+    name: str
+    value: str
+    type: str  # "Text" | "Long" | "Boolean" | "Double" | "Date" | "Byte"
+    built_in: bool = False

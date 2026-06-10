@@ -29,6 +29,9 @@ class TestVbaConnectionGuards:
         ("vba_get_procedure", server.vba_get_procedure, ("modTest", "ProcName")),
         ("vba_replace_procedure", server.vba_replace_procedure, ("modTest", "ProcName", "Sub ProcName()\nEnd Sub")),
         ("save_query", server.save_query, ("QueryName", "SELECT 1")),
+        ("create_module", server.create_module, ("NewModule",)),
+        ("rename_module", server.rename_module, ("OldName", "NewName")),
+        ("module_exists", server.module_exists, ("MyModule",)),
     ])
     def test_vba_tools_return_error_when_not_connected(self, tool_name, tool_func, args):
         """Each VBA tool should return error when not connected."""
@@ -355,3 +358,173 @@ class TestSaveQuery:
             result = server.save_query("NewQuery", "SELECT 1", overwrite=True)
             assert result["success"] is True
             assert result["action"] == "created"
+
+
+class TestCreateModule:
+    """Tests for create_module tool — destructive."""
+
+    def test_create_module_blocked_without_confirmation(self):
+        """create_module with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.create_module("NewModule", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_create_module_dry_run_returns_preview(self):
+        """create_module with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.create_module("NewModule", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "create_module"
+            assert result["module_name"] == "NewModule"
+            assert result["module_type"] == "standard"
+
+    def test_create_module_success_with_confirmation(self):
+        """create_module with confirm=True should delegate to adapter with module_type=1."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.create_module.return_value = True
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.create_module("NewModule", confirm=True)
+            assert result["success"] is True
+            assert result["module"] == "NewModule"
+            assert result["type"] == "standard"
+            mock_conn.adapter.create_module.assert_called_once_with("NewModule", 1)
+
+    def test_create_module_class_type(self):
+        """create_module with module_type='class' should pass 2 to adapter."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.create_module.return_value = True
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.create_module("MyClass", confirm=True, module_type="class")
+            assert result["success"] is True
+            assert result["type"] == "class"
+            mock_conn.adapter.create_module.assert_called_once_with("MyClass", 2)
+
+    def test_create_module_invalid_type_returns_error(self):
+        """create_module with invalid module_type should return error before adapter call."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.create_module("NewModule", confirm=True, module_type="invalid")
+            assert result["success"] is False
+            assert "Invalid module_type" in result["error"]
+            mock_conn.adapter.create_module.assert_not_called()
+
+    def test_create_module_returns_error_when_not_connected(self):
+        """create_module should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.create_module("NewModule", confirm=True)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
+class TestRenameModule:
+    """Tests for rename_module tool — destructive."""
+
+    def test_rename_module_blocked_without_confirmation(self):
+        """rename_module with confirm=False should be blocked by guard."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.rename_module("OldName", "NewName", confirm=False)
+            assert result["success"] is False
+            assert "confirm=True required" in result["error"]
+
+    def test_rename_module_dry_run_returns_preview(self):
+        """rename_module with dry_run=True should return preview without executing."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.rename_module("OldName", "NewName", dry_run=True)
+            assert result["dry_run"] is True
+            assert result["action"] == "rename_module"
+            assert result["old_name"] == "OldName"
+            assert result["new_name"] == "NewName"
+
+    def test_rename_module_success_with_confirmation(self):
+        """rename_module with confirm=True should delegate to adapter."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.rename_module.return_value = True
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.rename_module("OldName", "NewName", confirm=True)
+            assert result["success"] is True
+            assert result["old_name"] == "OldName"
+            assert result["new_name"] == "NewName"
+            mock_conn.adapter.rename_module.assert_called_once_with("OldName", "NewName")
+
+    def test_rename_module_failure_returns_error(self):
+        """rename_module should return error when adapter.rename_module returns False."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.adapter = MagicMock()
+        mock_conn.adapter.rename_module.return_value = False
+        mock_conn.get_adapter.return_value = mock_conn.adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.rename_module("NonExistent", "NewName", confirm=True)
+            assert result["success"] is False
+            assert "OldName" not in result or result.get("success") is False
+
+    def test_rename_module_returns_error_when_not_connected(self):
+        """rename_module should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.rename_module("OldName", "NewName", confirm=True)
+            assert result["success"] is False
+            assert "Not connected" in result["error"]
+
+
+class TestModuleExists:
+    """Tests for module_exists tool."""
+
+    def test_module_exists_returns_true_when_exists(self):
+        """module_exists should return exists=True when module is found."""
+        mock_adapter = MagicMock()
+        mock_adapter.module_exists.return_value = True
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.module_exists("MyModule")
+            assert result["success"] is True
+            assert result["exists"] is True
+            assert result["module"] == "MyModule"
+
+    def test_module_exists_returns_false_when_not_found(self):
+        """module_exists should return exists=False when module not found."""
+        mock_adapter = MagicMock()
+        mock_adapter.module_exists.return_value = False
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.module_exists("NonExistent")
+            assert result["success"] is True
+            assert result["exists"] is False
+            assert result["module"] == "NonExistent"
+
+    def test_module_exists_returns_error_when_not_connected(self):
+        """module_exists should return error when not connected."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        with patch.object(vba_module, '_pool', return_value=mock_conn):
+            result = server.module_exists("MyModule")
+            assert result["success"] is False
+            assert "Not connected" in result["error"]

@@ -9,6 +9,7 @@ from .com_dispatcher import ComDispatcher, DAO_DB_FAIL_ON_ERROR
 from .vba_operations import VbaOperations
 from .ui_operations import UiOperations
 from .versioning_io import VersioningIo
+from .db_operations import DbOperations
 from .schema_inspector import SchemaInspector
 from ..models.database import (
     TableInfo,
@@ -101,6 +102,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         self._dispatcher = ComDispatcher()
         self._vba = VbaOperations(self._dispatcher)
         self._ui = UiOperations(self._dispatcher, vba=self._vba)
+        self._db_ops = DbOperations(self._dispatcher)
         self._schema = SchemaInspector(self._dispatcher)
         self._versioning = VersioningIo(
             dispatcher=self._dispatcher,
@@ -548,6 +550,15 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
     def delete_module(self, module_name: str) -> bool:
         return self._vba.delete_module(module_name)
+
+    def create_module(self, module_name: str, module_type: int = 1) -> bool:
+        return self._vba.create_module(module_name, module_type)
+
+    def rename_module(self, old_name: str, new_name: str) -> bool:
+        return self._vba.rename_module(old_name, new_name)
+
+    def module_exists(self, module_name: str) -> bool:
+        return self._vba.module_exists(module_name)
 
     def save_database(self) -> dict:
         return self._vba.save_database()
@@ -1258,6 +1269,14 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     # ========================================================================
     # DATABASE FILE COPY
     # ========================================================================
+
+    def get_database_properties(self, names=None) -> dict:
+        """Get database properties (DAO CurrentDb.Properties) — see DbOperations."""
+        return self._db_ops.get_database_properties(names)
+
+    def set_database_property(self, name: str, value: str, type: str | None = None) -> bool:
+        """Create or update a database property — see DbOperations."""
+        return self._db_ops.set_database_property(name, value, type)
 
     def copy_database(self, source: str, dest: str) -> bool:
         """Copy a database file using shutil.copy2.

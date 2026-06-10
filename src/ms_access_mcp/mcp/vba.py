@@ -4,6 +4,11 @@ from .container import get_container
 from ._helpers import guard_destructive
 
 
+# Mapping of user-friendly module_type strings to vbext_ComponentType integers.
+# 1 = vbext_ct_StdModule, 2 = vbext_ct_ClassModule.
+_MODULE_TYPES = {"standard": 1, "class": 2}
+
+
 def _pool():
     return get_container().connection_pool
 
@@ -324,3 +329,102 @@ def save_query(query_name: str, sql: str, overwrite: bool = False, connection_na
         if result.get("success"):
             return {"success": True, "query": query_name, "action": "created"}
         return {"success": False, "error": f"Failed to create query: {result.get('error', 'Unknown error')}"}
+
+
+@mcp.tool()
+def create_module(
+    module_name: str,
+    module_type: str = "standard",
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Create a new empty VBA module in the database.
+
+    This is a destructive action. Set confirm=True to execute, or dry_run=True
+    to preview without making changes.
+
+    Args:
+        module_name: Name for the new module
+        module_type: "standard" (default) or "class"
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the create
+        dry_run: If True, returns a preview without executing
+    """
+    if module_type not in _MODULE_TYPES:
+        return {
+            "success": False,
+            "error": f"Invalid module_type '{module_type}'. Must be one of {sorted(_MODULE_TYPES)}",
+        }
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(
+        confirm, dry_run, "create_module",
+        module_name=module_name, module_type=module_type,
+    )
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        ok = adapter.create_module(module_name, _MODULE_TYPES[module_type])
+        return {"success": bool(ok), "module": module_name, "type": module_type}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def rename_module(
+    old_name: str,
+    new_name: str,
+    connection_name: str = "default",
+    confirm: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Rename an existing VBA module.
+
+    This is a destructive action. Set confirm=True to execute, or dry_run=True
+    to preview without making changes.
+
+    Args:
+        old_name: Current name of the module
+        new_name: New name for the module
+        connection_name: Connection identifier (defaults to "default")
+        confirm: Must be True to execute the rename
+        dry_run: If True, returns a preview without executing
+    """
+    if not _check_connected(connection_name):
+        return {"success": False, "error": "Not connected to database"}
+    guard = guard_destructive(
+        confirm, dry_run, "rename_module",
+        old_name=old_name, new_name=new_name,
+    )
+    if guard is not None:
+        return guard
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    try:
+        ok = adapter.rename_module(old_name, new_name)
+        return {"success": bool(ok), "old_name": old_name, "new_name": new_name}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def module_exists(module_name: str, connection_name: str = "default") -> dict:
+    """
+    Check if a VBA module exists in the database.
+
+    Args:
+        module_name: Name of the module to check
+        connection_name: Connection identifier (defaults to "default")
+    """
+    adapter = _ensure_connected(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "Not connected to database"}
+    exists = adapter.module_exists(module_name)
+    return {"success": True, "exists": bool(exists), "module": module_name}
