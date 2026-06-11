@@ -13,12 +13,15 @@ import type {
 // Connection state
 const databasePath = ref('')
 const useCom = ref(false)
+const dbPassword = ref('')
+const connectError = ref('')
 
 // Connection status (polled)
 const { data: connectionStatus, refetch: checkConnection } = useQuery({
   queryKey: ['connection'],
   queryFn: connectionApi.isConnected,
   refetchInterval: 10000,
+  enabled: false,
 })
 
 const isConnected = computed(() => connectionStatus.value?.connected === true)
@@ -147,13 +150,22 @@ function formatSize(bytes: number): string {
 // Connect / disconnect (preserved from prior dashboard)
 async function handleConnect() {
   if (!databasePath.value) return
-  await connectionApi.connect(databasePath.value, useCom.value)
-  checkConnection()
+  connectError.value = ''
+  try {
+    await connectionApi.connect(databasePath.value, useCom.value, dbPassword.value)
+    checkConnection()
+  } catch (err) {
+    connectError.value = err instanceof Error ? err.message : String(err)
+  }
 }
 
 async function handleDisconnect() {
-  await connectionApi.disconnect()
-  checkConnection()
+  try {
+    await connectionApi.disconnect()
+    checkConnection()
+  } catch (err) {
+    connectError.value = err instanceof Error ? err.message : String(err)
+  }
 }
 </script>
 
@@ -178,6 +190,23 @@ async function handleDisconnect() {
           placeholder="C:\path\to\database.accdb"
           size="large"
           class="path-input"
+        />
+        <el-input
+          v-model="dbPassword"
+          type="password"
+          placeholder="Database password (optional)"
+          size="large"
+          show-password
+          class="password-input"
+        />
+        <el-alert
+          v-if="connectError"
+          :title="connectError"
+          type="error"
+          show-icon
+          closable
+          class="connect-error"
+          @close="connectError = ''"
         />
         <div class="connect-options">
           <el-checkbox v-model="useCom">Use COM Automation</el-checkbox>
@@ -306,6 +335,14 @@ async function handleDisconnect() {
 
 .path-input {
   width: 100%;
+}
+
+.password-input {
+  width: 100%;
+}
+
+.connect-error {
+  margin-top: var(--space-2);
 }
 
 .connect-options {

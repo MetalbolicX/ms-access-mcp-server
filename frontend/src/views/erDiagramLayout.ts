@@ -3,7 +3,7 @@
 // deterministic layered graph layout so the diagram renders stably and
 // looks the same on every load.
 import dagre from '@dagrejs/dagre'
-import type { Node, Edge } from '@vue-flow/core'
+import type { Node, Edge, XYPosition } from '@vue-flow/core'
 
 export interface LayoutOptions {
   rankdir?: 'TB' | 'LR' | 'BT' | 'RL'
@@ -24,6 +24,8 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
   nodeHeight: 100,
 }
 
+type LayoutNode = Omit<Node, 'position'>& { position?: XYPosition }
+
 /**
  * Compute deterministic (x, y) positions for Vue Flow nodes using dagre.
  * Preserves node `data` and `style` and returns edges untouched. The
@@ -31,7 +33,7 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
  * contract) — dagre returns the CENTER, so we shift by half the node size.
  */
 export function applyDagreLayout(
-  nodes: Node[],
+  nodes: LayoutNode[],
   edges: Edge[],
   options: LayoutOptions = {},
 ): { nodes: Node[]; edges: Edge[] } {

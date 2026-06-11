@@ -8,9 +8,9 @@ import type { Node, Edge } from '@vue-flow/core'
 // Minimal Vue Flow node/edge shapes for the layout function. We use unknown
 // in `data` because the layout function must not care about payload shape.
 const mockNodes: Node[] = [
-  { id: 'Orders', data: { label: 'Orders', columns: [] } },
-  { id: 'Customers', data: { label: 'Customers', columns: [] } },
-  { id: 'Products', data: { label: 'Products', columns: [] } },
+  { id: 'Orders', data: { label: 'Orders', columns: [] }, position: { x: 0, y: 0 } },
+  { id: 'Customers', data: { label: 'Customers', columns: [] }, position: { x: 0, y: 0 } },
+  { id: 'Products', data: { label: 'Products', columns: [] }, position: { x: 0, y: 0 } },
 ]
 
 const mockEdges: Edge[] = [

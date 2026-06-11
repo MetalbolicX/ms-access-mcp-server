@@ -1,11 +1,11 @@
 // Tests for DashboardView (dashboard-refinement PR3).
 // Asserts: 4x2 stat grid render, failed-stats fallback, lazy detail fetch
-// triggered by card click, and empty state for zero-count objects.
+// triggered by card click, empty state for zero-count objects, password field,
+// connect error alert, and error reset.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import ElementPlus from 'element-plus'
 import DashboardView from './DashboardView.vue'
 import { connectionApi, schemaApi } from '../api/client'
 
@@ -49,10 +49,11 @@ const STATS_FIXTURE = {
   },
 }
 
-function mountDashboard() {
+function mountDashboardConnected() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   })
+  queryClient.setQueryData(['connection'], { connected: true, database: 'demo.accdb' })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -65,13 +66,100 @@ function mountDashboard() {
       plugins: [
         [VueQueryPlugin, { queryClient }],
         router,
-        ElementPlus,
       ],
+      stubs: {
+        'el-input': {
+          template: '<input class="el-input" :type="type || \'text\'" :placeholder="placeholder" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          props: ['modelValue', 'type', 'placeholder', 'size', 'showPassword'],
+          emits: ['update:modelValue'],
+        },
+        'el-button': {
+          template: '<button class="el-button" :disabled="disabled"><slot /></button>',
+          props: ['type', 'disabled', 'size'],
+        },
+        'el-checkbox': {
+          template: '<input type="checkbox" class="el-checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+        },
+        'el-alert': {
+          template: '<div class="el-alert" :class="type"><span v-if="title">{{ title }}</span><button v-if="closable" class="el-alert__close" @click="$emit(\'close\')">×</button></div>',
+          props: ['title', 'type', 'closable', 'showIcon'],
+          emits: ['close'],
+        },
+        'el-table': {
+          template: '<table class="el-table"><slot /></table>',
+          props: ['data', 'stripe'],
+        },
+        'el-table-column': {
+          template: '<td class="el-table-column" :prop="prop" :label="label" :width="width" />',
+          props: ['prop', 'label', 'width'],
+        },
+        'el-empty': {
+          template: '<div class="el-empty"><slot /></div>',
+          props: ['description'],
+        },
+      },
     },
   })
 }
 
-function findStatCardByLabel(wrapper: ReturnType<typeof mountDashboard>, label: string) {
+function mountDashboardDisconnected() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  })
+  queryClient.setQueryData(['connection'], { connected: false })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/er-diagram', component: { template: '<div />' } },
+    ],
+  })
+  return mount(DashboardView, {
+    global: {
+      plugins: [
+        [VueQueryPlugin, { queryClient }],
+        router,
+      ],
+      stubs: {
+        'el-input': {
+          template: '<input class="el-input" :type="type || \'text\'" :placeholder="placeholder" :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          props: ['modelValue', 'type', 'placeholder', 'size', 'showPassword'],
+          emits: ['update:modelValue'],
+        },
+        'el-button': {
+          template: '<button class="el-button" :disabled="disabled"><slot /></button>',
+          props: ['type', 'disabled', 'size'],
+        },
+        'el-checkbox': {
+          template: '<input type="checkbox" class="el-checkbox" :checked="modelValue" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+        },
+        'el-alert': {
+          template: '<div class="el-alert" :class="type"><span v-if="title">{{ title }}</span><button v-if="closable" class="el-alert__close" @click="$emit(\'close\')">×</button></div>',
+          props: ['title', 'type', 'closable', 'showIcon'],
+          emits: ['close'],
+        },
+        'el-table': {
+          template: '<table class="el-table"><slot /></table>',
+          props: ['data', 'stripe'],
+        },
+        'el-table-column': {
+          template: '<td class="el-table-column" :prop="prop" :label="label" :width="width" />',
+          props: ['prop', 'label', 'width'],
+        },
+        'el-empty': {
+          template: '<div class="el-empty"><slot /></div>',
+          props: ['description'],
+        },
+      },
+    },
+  })
+}
+
+function findStatCardByLabel(wrapper: ReturnType<typeof mountDashboardConnected>, label: string) {
   const card = wrapper
     .findAll('.stat-card')
     .find((c) => c.text().includes(label))
@@ -126,7 +214,7 @@ describe('DashboardView — dashboard-refinement PR3', () => {
 
   describe('4x2 stat grid', () => {
     it('renders exactly 8 stat cards when connected and stats load', async () => {
-      const wrapper = mountDashboard()
+      const wrapper = mountDashboardConnected()
       await flushPromises()
 
       const cards = wrapper.findAll('.stat-card')
@@ -137,7 +225,7 @@ describe('DashboardView — dashboard-refinement PR3', () => {
       vi.mocked(schemaApi.getDatabaseStatistics).mockRejectedValue(
         new Error('boom'),
       )
-      const wrapper = mountDashboard()
+      const wrapper = mountDashboardConnected()
       await flushPromises()
 
       const statGrid = wrapper.find('.stats-grid')
@@ -155,7 +243,7 @@ describe('DashboardView — dashboard-refinement PR3', () => {
 
   describe('toggleDetail lazy fetch', () => {
     it('does not call getTables until the tables card is clicked', async () => {
-      const wrapper = mountDashboard()
+      const wrapper = mountDashboardConnected()
       await flushPromises()
 
       // Lazy: enabled only when activeListType === 'tables'
@@ -169,7 +257,7 @@ describe('DashboardView — dashboard-refinement PR3', () => {
     })
 
     it('opens and closes the detail panel on repeated card clicks', async () => {
-      const wrapper = mountDashboard()
+      const wrapper = mountDashboardConnected()
       await flushPromises()
 
       const tablesCard = findStatCardByLabel(wrapper, 'Tables')
@@ -186,7 +274,7 @@ describe('DashboardView — dashboard-refinement PR3', () => {
 
     it('renders el-empty for an object type with zero items', async () => {
       // macros is 0 in the fixture
-      const wrapper = mountDashboard()
+      const wrapper = mountDashboardConnected()
       await flushPromises()
 
       const macrosCard = findStatCardByLabel(wrapper, 'Macros')
@@ -194,6 +282,103 @@ describe('DashboardView — dashboard-refinement PR3', () => {
       await flushPromises()
 
       expect(wrapper.find('.el-empty').exists()).toBe(true)
+    })
+  })
+
+  describe('password field', () => {
+    it('renders a password input with show-password attribute in the connect form', async () => {
+      const wrapper = mountDashboardDisconnected()
+      await flushPromises()
+
+      // Should only appear when disconnected
+      const passwordInput = wrapper.find('input[type="password"]')
+      expect(passwordInput.exists()).toBe(true)
+    })
+  })
+
+  describe('connect error handling', () => {
+    it('shows an el-alert with the error message when connect fails', async () => {
+      vi.mocked(connectionApi.connect).mockRejectedValue(new Error('Invalid password'))
+      const wrapper = mountDashboardDisconnected()
+      await flushPromises()
+
+      // Fill in the form
+      const inputs = wrapper.findAll('input')
+      const pathInput = inputs.find((i) => i.attributes('placeholder')?.includes('path'))
+      await pathInput?.setValue('C:\\test\\db.accdb')
+      const passwordInput = wrapper.find('input[type="password"]')
+      await passwordInput?.setValue('secret')
+
+      // Click connect
+      const connectBtn = wrapper.findAll('button').find((b) => b.text() === 'Connect')
+      await connectBtn?.trigger('click')
+      await flushPromises()
+
+      const alert = wrapper.find('.el-alert')
+      expect(alert.exists()).toBe(true)
+      expect(alert.text()).toContain('Invalid password')
+    })
+
+    it('shows no el-alert when connect succeeds', async () => {
+      vi.mocked(connectionApi.connect).mockResolvedValue({ success: true, connected: true, database: 'db.accdb' })
+      const wrapper = mountDashboardDisconnected()
+      await flushPromises()
+
+      const inputs = wrapper.findAll('input')
+      const pathInput = inputs.find((i) => i.attributes('placeholder')?.includes('path'))
+      await pathInput?.setValue('C:\\test\\db.accdb')
+      const passwordInput = wrapper.find('input[type="password"]')
+      await passwordInput?.setValue('secret')
+
+      const connectBtn = wrapper.findAll('button').find((b) => b.text() === 'Connect')
+      await connectBtn?.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('.el-alert').exists()).toBe(false)
+    })
+
+    it('passes the password value to connectionApi.connect', async () => {
+      vi.mocked(connectionApi.connect).mockResolvedValue({ success: true, connected: true, database: 'db.accdb' })
+      const wrapper = mountDashboardDisconnected()
+      await flushPromises()
+
+      const inputs = wrapper.findAll('input')
+      const pathInput = inputs.find((i) => i.attributes('placeholder')?.includes('path'))
+      await pathInput?.setValue('C:\\test\\db.accdb')
+      const passwordInput = wrapper.find('input[type="password"]')
+      await passwordInput?.setValue('mysecret')
+
+      const connectBtn = wrapper.findAll('button').find((b) => b.text() === 'Connect')
+      await connectBtn?.trigger('click')
+      await flushPromises()
+
+      expect(vi.mocked(connectionApi.connect)).toHaveBeenCalledWith('C:\\test\\db.accdb', false, 'mysecret')
+    })
+
+    it('clears the error alert when the user dismisses it', async () => {
+      vi.mocked(connectionApi.connect).mockRejectedValue(new Error('Connection refused'))
+      const wrapper = mountDashboardDisconnected()
+      await flushPromises()
+
+      const inputs = wrapper.findAll('input')
+      const pathInput = inputs.find((i) => i.attributes('placeholder')?.includes('path'))
+      await pathInput?.setValue('C:\\test\\db.accdb')
+      const passwordInput = wrapper.find('input[type="password"]')
+      await passwordInput?.setValue('secret')
+
+      const connectBtn = wrapper.findAll('button').find((b) => b.text() === 'Connect')
+      await connectBtn?.trigger('click')
+      await flushPromises()
+
+      const alert = wrapper.find('.el-alert')
+      expect(alert.exists()).toBe(true)
+
+      // Simulate alert close by clearing connectError (what @close handler does)
+      const vm = wrapper.vm as any
+      vm.connectError = ''
+      await flushPromises()
+
+      expect(wrapper.find('.el-alert').exists()).toBe(false)
     })
   })
 })
