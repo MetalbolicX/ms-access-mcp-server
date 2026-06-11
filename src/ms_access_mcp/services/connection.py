@@ -12,6 +12,7 @@ Implements ConnectionPool with:
 - Backward compatible: "default" name maps to old singleton behavior
 - Thread-safe via threading.RLock protecting _pool and _active dicts
 """
+
 from __future__ import annotations
 import subprocess
 import sys
@@ -26,9 +27,11 @@ from ..adapters.base import AccessAdapter
 @dataclass
 class ConnectionState:
     """Holds the state for a single named connection."""
+
     adapter: AccessAdapter
     db_path: str
     adapter_type: Literal["com", "odbc"]
+    password: str = ""  # Database password (optional, for password-protected DBs)
     created_at: datetime = field(default_factory=datetime.now)
     pid: int | None = None  # Process ID of the Access instance for scoped cleanup
 
@@ -69,6 +72,7 @@ class ConnectionPool:
         db_path_or_adapter: Optional[str | AccessAdapter] = None,
         adapter: str | AccessAdapter | None = "odbc",
         adapter_type: Literal["com", "odbc"] | None = None,
+        password: str = "",
     ) -> ConnectionState | bool:
         """Create or replace a named connection, or backward-compatible connect.
 
@@ -88,10 +92,15 @@ class ConnectionPool:
                      AccessAdapter instance for named connections with an existing adapter.
             adapter_type: Override adapter_type in ConnectionState when using a
                           pre-created adapter (3rd arg). Ignored when adapter is a string.
+            password: Optional database password, threaded to adapter.connect().
         """
         # Detect backward-compatible call: 2 positional args, second looks like an adapter
         with self._lock:
-            if db_path_or_adapter is not None and hasattr(db_path_or_adapter, 'connect') and hasattr(db_path_or_adapter, 'disconnect'):
+            if (
+                db_path_or_adapter is not None
+                and hasattr(db_path_or_adapter, "connect")
+                and hasattr(db_path_or_adapter, "disconnect")
+            ):
                 # Backward-compatible: connect(db_path, adapter)
                 db_path = name_or_db_path
                 adapter_instance = cast(AccessAdapter, db_path_or_adapter)
@@ -99,12 +108,13 @@ class ConnectionPool:
                 if "default" in self._pool:
                     self._pool["default"].adapter.disconnect()
                     del self._pool["default"]
-                result = adapter_instance.connect(db_path)
+                result = adapter_instance.connect(db_path, password=password)
                 if result:
                     self._pool["default"] = ConnectionState(
                         adapter=adapter_instance,
                         db_path=db_path,
                         adapter_type="com",
+                        password=password,
                     )
                     self._active = "default"
                     self._update_pool_size_gauge()
@@ -114,20 +124,27 @@ class ConnectionPool:
             db_path = db_path_or_adapter
             assert isinstance(db_path, str), "db_path must be a string for new API"
             if name in self._pool:
-                raise KeyError(f"Connection '{name}' already exists. Use disconnect('{name}') first.")
+                raise KeyError(
+                    f"Connection '{name}' already exists. Use disconnect('{name}') first."
+                )
 
             from ..adapters.wincom import WinComAdapter
             from ..adapters.odbc import OdbcAdapter
 
             # 3rd arg is a pre-created adapter instance → named connection with it
             # The caller is responsible for connecting the adapter before registering it.
-            if adapter is not None and hasattr(adapter, 'connect') and hasattr(adapter, 'disconnect'):
+            if (
+                adapter is not None
+                and hasattr(adapter, "connect")
+                and hasattr(adapter, "disconnect")
+            ):
                 adapter_obj = cast(AccessAdapter, adapter)
                 actual_adapter_type: Literal["com", "odbc"] = adapter_type or "com"
                 state = ConnectionState(
                     adapter=adapter_obj,
                     db_path=db_path,
                     adapter_type=actual_adapter_type,
+                    password=password,
                 )
                 self._pool[name] = state
                 return state
@@ -135,22 +152,29 @@ class ConnectionPool:
             # Standard new API: connect(name, db_path, adapter_type_string)
             if adapter in ("auto", None):
                 # Auto mode: delegate to BackendSelector for environment-aware selection
-                adapter_obj = self._backend_selector.get_adapter(db_path, backend="auto", capabilities=None)
+                adapter_obj = self._backend_selector.get_adapter(
+                    db_path, backend="auto", capabilities=None
+                )
                 # Infer adapter_type from the actual class returned
                 from ..adapters.wincom import WinComAdapter
 
                 actual_adapter_type = "com" if isinstance(adapter_obj, WinComAdapter) else "odbc"
             else:
-                actual_adapter_type = cast(str, adapter) if isinstance(adapter, str) else (adapter_type or "odbc")
+                actual_adapter_type = (
+                    cast(str, adapter) if isinstance(adapter, str) else (adapter_type or "odbc")
+                )
                 adapter_obj = WinComAdapter() if actual_adapter_type == "com" else OdbcAdapter()
-            result = adapter_obj.connect(db_path)
+            result = adapter_obj.connect(db_path, password=password)
             if not result:
-                raise RuntimeError(f"Failed to connect to {db_path} with {actual_adapter_type} adapter")
+                raise RuntimeError(
+                    f"Failed to connect to {db_path} with {actual_adapter_type} adapter"
+                )
 
             state = ConnectionState(
                 adapter=adapter_obj,
                 db_path=db_path,
                 adapter_type=actual_adapter_type,
+                password=password,
             )
             self._pool[name] = state
             self._update_pool_size_gauge()
@@ -319,7 +343,7 @@ class ConnectionPool:
             # Reconnect all managed connections
             for name, state in list(self._pool.items()):
                 try:
-                    state.adapter.connect(state.db_path)
+                    state.adapter.connect(state.db_path, password=state.password)
                     reconnected.append(name)
                 except Exception as e:
                     errors.append(f"Failed to reconnect '{name}': {e}")
@@ -370,13 +394,15 @@ class ConnectionPool:
             if "default" not in self._pool:
                 return False
             adapter = self._pool["default"].adapter
+            old_password = self._pool["default"].password
             self._pool["default"].adapter.disconnect()
-            result = adapter.connect(new_path)
+            result = adapter.connect(new_path, password=old_password)
             if result:
                 self._pool["default"] = ConnectionState(
                     adapter=adapter,
                     db_path=new_path,
                     adapter_type=self._pool["default"].adapter_type,
+                    password=old_password,
                 )
             return result
 
@@ -384,6 +410,7 @@ class ConnectionPool:
         """Update the connection_pool_size Prometheus gauge to current pool size."""
         try:
             from ms_access_mcp.telemetry.metrics import connection_pool_size
+
             connection_pool_size.set(len(self._pool))
         except Exception:
             # Metrics failures should not break connection operations

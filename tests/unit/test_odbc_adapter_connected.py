@@ -702,3 +702,46 @@ class TestOdbcAdapterGetDatabaseStatistics(ConnectedAdapterTestBase):
         sql_arg = self.mock_cursor.execute.call_args[0][0]
         assert "MSysObjects" in sql_arg
         assert "GROUP BY" in sql_arg.upper()
+
+
+class TestOdbcAdapterPasswordForwarding(ConnectedAdapterTestBase):
+    """Test that OdbcAdapter.connect() accepts password and appends PWD= to connection strings."""
+
+    def test_connect_with_password_appends_pwd_to_connection_string(self):
+        """connect(db_path, password='secret') should append ;PWD=secret to connection strings."""
+        with patch("os.path.exists", return_value=True):
+            with patch("pyodbc.connect", return_value=self.mock_conn) as mock_connect:
+                result = self.adapter.connect("test.accdb", password="secret123")
+                assert result is True
+                # At least one connection string should contain PWD=secret123
+                calls = mock_connect.call_args_list
+                pwd_calls = [
+                    str(c) for c in calls
+                    if "PWD=secret123" in str(c)
+                ]
+                assert len(pwd_calls) > 0, \
+                    f"Expected at least one connection string with 'PWD=secret123', got: {[str(c) for c in calls]}"
+
+    def test_connect_with_empty_password_does_not_append_pwd(self):
+        """connect(db_path, password='') should not append PWD= to connection strings."""
+        with patch("os.path.exists", return_value=True):
+            with patch("pyodbc.connect", return_value=self.mock_conn) as mock_connect:
+                result = self.adapter.connect("test.accdb", password="")
+                assert result is True
+                # No connection string should contain PWD=
+                calls = mock_connect.call_args_list
+                pwd_calls = [str(c) for c in calls if "PWD=" in str(c)]
+                assert len(pwd_calls) == 0, \
+                    f"Empty password should not append PWD=, got: {pwd_calls}"
+
+    def test_connect_without_password_is_backward_compatible(self):
+        """connect(db_path) without password should work exactly as before."""
+        with patch("os.path.exists", return_value=True):
+            with patch("pyodbc.connect", return_value=self.mock_conn) as mock_connect:
+                # Should not raise — backward compatible signature
+                result = self.adapter.connect("test.accdb")
+                assert result is True
+                # No PWD= should appear
+                calls = mock_connect.call_args_list
+                pwd_calls = [str(c) for c in calls if "PWD=" in str(c)]
+                assert len(pwd_calls) == 0

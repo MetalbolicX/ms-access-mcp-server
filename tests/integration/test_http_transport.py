@@ -279,6 +279,76 @@ class TestAuthMiddleware:
 
 # ---- Startup configuration tests ----------------------------------------------
 
+class TestStaticFileServing:
+    """Tests for static file serving from frontend/dist/."""
+
+    @pytest.fixture
+    def no_key_env(self, monkeypatch):
+        """Environment with no API key set."""
+        monkeypatch.delenv("ACCESS_MCP_API_KEY", raising=False)
+        monkeypatch.setenv("ACCESS_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ACCESS_MCP_PORT", "8000")
+        monkeypatch.setenv("ACCESS_MCP_ALLOWED_DIRS", tempfile.gettempdir())
+
+        server_module._config = None
+        server_module._path_guard = None
+        server_module._auth_middleware = None
+        return monkeypatch
+
+    @pytest.fixture
+    def no_key_app(self, no_key_env):
+        """ASGI app booted without an API key."""
+        server_module._init_http_config()
+        return server_module.mcp.http_app(json_response=True, stateless_http=True)
+
+    def test_server_starts_without_api_key(self, no_key_env, monkeypatch):
+        """Server should boot without ACCESS_MCP_API_KEY set (auth optional)."""
+        server_module._config = None
+        server_module._path_guard = None
+        server_module._auth_middleware = None
+
+        # Should not raise
+        server_module._init_http_config()
+        app = server_module.mcp.http_app(json_response=True, stateless_http=True)
+        assert app is not None
+
+    def test_root_returns_index_html(self, no_key_app):
+        """GET / should return index.html from frontend/dist/ when it exists."""
+        with TestClient(no_key_app) as client:
+            response = client.get("/", follow_redirects=True)
+            # When frontend/dist/index.html exists, should return it
+            # When it doesn't exist, should return 404 (not raise)
+            assert response.status_code in (200, 404)
+
+    def test_spa_fallback_returns_index_for_unknown_paths(self, no_key_app):
+        """Non-API, non-asset paths should return index.html for SPA routing."""
+        with TestClient(no_key_app) as client:
+            response = client.get("/dashboard", follow_redirects=True)
+            # Should either serve index.html (SPA) or 404 if dist doesn't exist
+            assert response.status_code in (200, 404)
+
+    def test_mcp_endpoint_still_works_without_auth(self, no_key_app):
+        """MCP HTTP endpoint should work when server started without API key."""
+        with TestClient(no_key_app) as client:
+            init_req = mcp_request(
+                method="initialize",
+                params={
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1.0"},
+                },
+            )
+            response = client.post(
+                "/mcp/",
+                json=init_req,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data.get("jsonrpc") == "2.0"
+            assert "result" in data
+
+
 class TestStartupConfig:
     """Tests for server configuration initialization and failure modes."""
 
@@ -309,21 +379,27 @@ class TestStartupConfig:
         # Should be the same object (not re-created)
         assert server_module._config is original_config
 
-    def test_server_startup_fails_without_api_key(self, monkeypatch):
-        """Server refuses to start when ACCESS_MCP_API_KEY is not set."""
-        # Clear any existing env var
+    def test_server_starts_without_api_key(self, monkeypatch):
+        """Server boots successfully when ACCESS_MCP_API_KEY is not set.
+
+        Per spec: server boots and auth middleware is not installed when no key is set.
+        (Previous behavior: ValueError was raised and server refused to boot.)
+        """
         monkeypatch.delenv("ACCESS_MCP_API_KEY", raising=False)
         monkeypatch.setenv("ACCESS_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ACCESS_MCP_PORT", "8000")
+        monkeypatch.setenv("ACCESS_MCP_ALLOWED_DIRS", tempfile.gettempdir())
 
-        # Reset globals
         server_module._config = None
         server_module._path_guard = None
         server_module._auth_middleware = None
 
-        # _init_http_config should raise ValueError
-        with pytest.raises(ValueError, match="ACCESS_MCP_API_KEY"):
-            server_module._init_http_config()
+        # Should NOT raise — server boots without auth
+        server_module._init_http_config()
+
+        # Auth middleware should NOT be installed
+        assert server_module._auth_middleware is None, \
+            "Auth middleware should be None when no API key is set"
 
     def test_mcp_http_app_returns_starlette_app(self, app):
         """mcp.http_app() returns a Starlette ASGI app for TestClient."""

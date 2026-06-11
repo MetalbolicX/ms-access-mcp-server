@@ -124,7 +124,7 @@ class TestPoolConnect:
         adapter = make_mock_adapter()
         with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=adapter):
             pool.connect("prod", "/tmp/prod.accdb", "odbc")
-            adapter.connect.assert_called_once_with("/tmp/prod.accdb")
+            adapter.connect.assert_called_once_with("/tmp/prod.accdb", password="")
 
     def test_connect_with_com_adapter_type(self):
         pool = ConnectionPool()
@@ -739,3 +739,46 @@ class TestConnectionPoolSizeGauge:
                 pool.connect("dev", "/tmp/dev.accdb", "odbc")
                 # Last call should set gauge to 2
                 assert mock_gauge.set.call_args_list[-1] == call(2)
+
+
+# =============================================================================
+# password forwarding — ConnectionPool passes password to adapter.connect()
+# =============================================================================
+
+class TestPoolPasswordForwarding:
+    """Test that password is threaded through ConnectionPool to the adapter."""
+
+    def test_connect_passes_password_to_odbc_adapter(self):
+        """connect(name, db_path, adapter_type, password) should pass password to OdbcAdapter.connect()."""
+        pool = ConnectionPool()
+        adapter = make_mock_adapter()
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=adapter) as mock_cls:
+            pool.connect("prod", "/tmp/prod.accdb", "odbc", password="secret123")
+            # Verify connect was called with db_path AND password
+            call_args = adapter.connect.call_args
+            assert call_args is not None, "adapter.connect() was not called"
+            assert call_args[0][0] == "/tmp/prod.accdb", "First arg should be db_path"
+            assert call_args[1].get("password") == "secret123" or (
+                len(call_args[0]) > 1 and call_args[0][1] == "secret123"
+            ), "password should be passed to adapter.connect()"
+
+    def test_connect_passes_password_to_com_adapter(self):
+        """connect(name, db_path, 'com', password) should pass password to WinComAdapter.connect()."""
+        pool = ConnectionPool()
+        adapter = make_mock_adapter()
+        with patch("ms_access_mcp.adapters.wincom.WinComAdapter", return_value=adapter) as mock_cls:
+            pool.connect("prod", "/tmp/prod.accdb", "com", password="secret456")
+            call_args = adapter.connect.call_args
+            assert call_args is not None, "adapter.connect() was not called"
+            assert call_args[1].get("password") == "secret456" or (
+                len(call_args[0]) > 1 and call_args[0][1] == "secret456"
+            ), "password should be passed to WinComAdapter.connect()"
+
+    def test_connect_with_empty_password_is_backward_compatible(self):
+        """connect without password (empty string) should still work."""
+        pool = ConnectionPool()
+        adapter = make_mock_adapter()
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=adapter):
+            # Should not raise — backward compatible
+            result = pool.connect("prod", "/tmp/prod.accdb", "odbc")
+            assert result is not None

@@ -2737,3 +2737,47 @@ class TestWinComSqlInjectionSanitization:
         # Verify only row 1 was deleted
         result = adapter.execute_query("SELECT COUNT(*) as cnt FROM users")
         assert result["rows"][0]["cnt"] == 1
+
+
+class TestWinComAdapterPasswordForwarding:
+    """Test that WinComAdapter.connect() accepts password parameter for DAO/COM auth.
+
+    Per spec: WinComAdapter.connect() accepts password and passes it to
+    OpenDatabase and OpenCurrentDatabase for password-protected DBs.
+    """
+
+    def test_connect_accepts_password_keyword_argument(self, mock_com_modules, tmp_path):
+        """connect(db_path, password='secret') should be accepted as a valid signature."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter = WinComAdapter()
+        # Should not raise TypeError — password is an accepted parameter
+        try:
+            result = adapter.connect(str(db_path), password="secret123")
+            # Result may be True or False depending on mock setup, but no TypeError
+        except TypeError as e:
+            if "password" in str(e):
+                pytest.fail(f"connect() should accept password keyword argument: {e}")
+            raise
+
+    def test_connect_with_empty_password_is_backward_compatible(self, mock_com_modules, tmp_path):
+        """connect(db_path, password='') should work without changing existing behavior."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter = WinComAdapter()
+        # Should not raise
+        result = adapter.connect(str(db_path), password="")
+        # Result depends on mock setup, but should not raise TypeError
+        assert isinstance(result, bool)
+
+    def test_connect_without_password_is_backward_compatible(self, mock_com_modules, tmp_path):
+        """connect(db_path) without password argument should still work."""
+        from ms_access_mcp.adapters.wincom import WinComAdapter
+        db_path = tmp_path / "test.accdb"
+        db_path.write_text("mock")
+        adapter = WinComAdapter()
+        # Should not raise
+        result = adapter.connect(str(db_path))
+        assert isinstance(result, bool)

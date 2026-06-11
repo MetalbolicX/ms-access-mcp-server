@@ -36,14 +36,21 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
 
         self._conn: pyodbc.Connection | None = None
         self._db_path: str | None = db_path
-        self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
+        self._strategy_selector: ExportStrategySelector = (
+            strategy_selector or ExportStrategySelector()
+        )
         self._driver_name: str = (
             os.environ.get("ACCESS_MCP_ODBC_DRIVER", self.DEFAULT_DRIVER).strip()
             or self.DEFAULT_DRIVER
         )
 
-    def connect(self, db_path: str) -> bool:
-        """Connect to an Access database via ODBC."""
+    def connect(self, db_path: str, password: str = "") -> bool:
+        """Connect to an Access database via ODBC.
+
+        Args:
+            db_path: Path to the .accdb or .mdb file.
+            password: Optional database password. Appended as ;PWD=... when non-empty.
+        """
         if not os.path.exists(db_path):
             return False
 
@@ -62,6 +69,10 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
                 f"Provider={ACE_OLEDB_12};Data Source={db_path};",
                 f"Provider={ACE_OLEDB_16};Data Source={db_path};",
             ]
+
+        # Append password if provided
+        if password:
+            candidates = [cs + f"PWD={password};" for cs in candidates]
 
         last_error: Exception | None = None
         for conn_str in candidates:
@@ -101,7 +112,13 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     def execute_query(self, sql: str, params: list | None = None) -> dict:
         """Execute a SQL query and return results."""
         if not self.is_connected():
-            return {"success": False, "rows": [], "count": 0, "columns": [], "error": "Not connected"}
+            return {
+                "success": False,
+                "rows": [],
+                "count": 0,
+                "columns": [],
+                "error": "Not connected",
+            }
 
         columns: list[str] = []
         results: list[dict] = []
@@ -151,7 +168,9 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def update_data(self, table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+    def update_data(
+        self, table_name: str, set_dict: dict, where_dict: dict | str | None = None
+    ) -> dict:
         """Update rows in a table.
 
         Args:
@@ -177,9 +196,13 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
                     # Sanitize: only allow simple column comparisons and IN clauses
                     # Reject statements that could be SQL injection vectors
                     import re as _re
+
                     # Whitelist: alphanumeric column names, =, <>, <, >, <=, >=, LIKE, IN, AND, OR, NOT, parentheses, spaces, commas, digits, dots
                     if not _re.match(r"^[\w\s\.\,\=\<\>\(\)\'\"\-]+$", where_dict):
-                        return {"success": False, "error": "where_dict string contains disallowed characters"}
+                        return {
+                            "success": False,
+                            "error": "where_dict string contains disallowed characters",
+                        }
                     sql += f" WHERE {where_dict}"
                 else:
                     where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
@@ -215,8 +238,12 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
                 if isinstance(where_dict, str):
                     # Sanitize: only allow simple column comparisons and IN clauses
                     import re as _re
+
                     if not _re.match(r"^[\w\s\.\,\=\<\>\(\)\'\"\-]+$", where_dict):
-                        return {"success": False, "error": "where_dict string contains disallowed characters"}
+                        return {
+                            "success": False,
+                            "error": "where_dict string contains disallowed characters",
+                        }
                     sql += f" WHERE {where_dict}"
                 else:
                     where_clause = " AND ".join(f"[{c}] = ?" for c in where_dict.keys())
@@ -298,7 +325,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             # Enumerate user tables via ODBC SQLTables
             table_names: list[str] = []
             for row in cursor.tables():
-                if row.table_type == 'TABLE' and not row.table_name.startswith('MSys'):
+                if row.table_type == "TABLE" and not row.table_name.startswith("MSys"):
                     table_names.append(row.table_name)
 
             for name in table_names:
@@ -308,13 +335,15 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
                 try:
                     # Get column metadata via ODBC SQLColumns
                     for col in cursor.columns(name):
-                        fields.append({
-                            "name": col.column_name,
-                            "type": self._pyodbc_type_name(col.type_name),
-                            "size": col.column_size or 0,
-                            "required": col.nullable == 0,  # SQL_NO_NULLS
-                            "allow_zero_length": True,
-                        })
+                        fields.append(
+                            {
+                                "name": col.column_name,
+                                "type": self._pyodbc_type_name(col.type_name),
+                                "size": col.column_size or 0,
+                                "required": col.nullable == 0,  # SQL_NO_NULLS
+                                "allow_zero_length": True,
+                            }
+                        )
 
                     # Get record count
                     cursor.execute(f"SELECT COUNT(*) FROM [{name}]")
@@ -324,11 +353,13 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
                 except Exception:
                     pass
 
-                tables.append(TableInfo(
-                    name=name,
-                    fields=fields,
-                    record_count=record_count,
-                ))
+                tables.append(
+                    TableInfo(
+                        name=name,
+                        fields=fields,
+                        record_count=record_count,
+                    )
+                )
 
             cursor.close()
         except Exception:
@@ -423,11 +454,13 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
                 ORDER BY TABLE_NAME
             """)
             for row in cursor.fetchall():
-                queries.append(QueryInfo(
-                    name=row[0],
-                    sql=row[1],
-                    type="select",  # Views are typically select queries
-                ))
+                queries.append(
+                    QueryInfo(
+                        name=row[0],
+                        sql=row[1],
+                        type="select",  # Views are typically select queries
+                    )
+                )
             cursor.close()
         except Exception:
             pass
@@ -469,8 +502,12 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         }
 
     _EMPTY_OBJECT_COUNTS: dict[str, int] = {
-        "tables": 0, "queries": 0, "forms": 0,
-        "reports": 0, "macros": 0, "modules": 0,
+        "tables": 0,
+        "queries": 0,
+        "forms": 0,
+        "reports": 0,
+        "macros": 0,
+        "modules": 0,
     }
 
     def _empty_stat_response(self, *, warning: str | None = None) -> dict:
@@ -525,10 +562,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
 
         cur = self._conn.cursor()
         try:
-            cur.execute(
-                "SELECT Type, Count(*) FROM MSysObjects "
-                "GROUP BY Type"
-            )
+            cur.execute("SELECT Type, Count(*) FROM MSysObjects GROUP BY Type")
             rows = cur.fetchall()
         except Exception:
             return self._empty_stat_response(
@@ -746,7 +780,9 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     # Compact/repair and copy — special implementations (not from mixin)
     # ========================================================================
 
-    def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
+    def compact_repair(
+        self, action: str, source_path: str, dest_path: str, keep_original: bool = True
+    ) -> dict:
         """Compact or repair database — requires COM automation."""
         if action not in ("compact", "repair"):
             raise ValueError(f"Invalid action '{action}'. Must be 'compact' or 'repair'.")
@@ -755,6 +791,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     def copy_database(self, source: str, dest: str) -> bool:
         """Copy database file via file system copy (not COM)."""
         import shutil
+
         try:
             shutil.copy2(source, dest)
             return True
@@ -830,7 +867,13 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         if not self.is_connected():
             return {"success": False, "operations": [], "error": "Not connected"}
 
-        VALID_ACTIONS = {"add_column", "drop_column", "modify_column", "rename_table", "rename_column"}
+        VALID_ACTIONS = {
+            "add_column",
+            "drop_column",
+            "modify_column",
+            "rename_table",
+            "rename_column",
+        }
         results: list[dict] = []
 
         for op in operations:
@@ -838,14 +881,20 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             params = op.get("params", {})
 
             if action not in VALID_ACTIONS:
-                results.append({"action": action, "success": False, "error": f"Unknown action: {action}"})
+                results.append(
+                    {"action": action, "success": False, "error": f"Unknown action: {action}"}
+                )
                 continue
 
             if action == "rename_table":
-                raise NotImplementedError("rename_table is not supported via ODBC. Use WinComAdapter.")
+                raise NotImplementedError(
+                    "rename_table is not supported via ODBC. Use WinComAdapter."
+                )
 
             if action == "rename_column":
-                raise NotImplementedError("rename_column is not supported via ODBC. Use WinComAdapter.")
+                raise NotImplementedError(
+                    "rename_column is not supported via ODBC. Use WinComAdapter."
+                )
 
             try:
                 cursor = self._conn.cursor()

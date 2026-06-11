@@ -83,6 +83,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             None — returns None for invalid strings, does not raise.
         """
         import re
+
         if not re.match(WinComAdapter._WHERE_ALLOWLIST_RE, where_str):
             return None
         for pattern in WinComAdapter._DANGEROUS_WHERE_PATTERNS:
@@ -112,15 +113,23 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         # State mirrors what dispatcher holds for query purposes
         self._ado_conn: Any | None = None
         # Export strategy registry (injectable for testing)
-        self._strategy_selector: ExportStrategySelector = strategy_selector or ExportStrategySelector()
+        self._strategy_selector: ExportStrategySelector = (
+            strategy_selector or ExportStrategySelector()
+        )
 
     def _ensure_windows(self) -> None:
         """Raise RuntimeError if not on Windows. Called before first COM operation."""
-        if sys.platform != 'win32':
+        if sys.platform != "win32":
             raise RuntimeError("WinComAdapter requires Windows (COM automation)")
 
-    def connect(self, db_path: str) -> bool:
-        """Connect to an Access database via COM automation."""
+    def connect(self, db_path: str, password: str = "") -> bool:
+        """Connect to an Access database via COM automation.
+
+        Args:
+            db_path: Path to the .accdb or .mdb file.
+            password: Optional database password. Passed to DAO OpenDatabase
+                      (as connect string ;PWD=) and OpenCurrentDatabase.
+        """
         if not os.path.exists(db_path):
             return False
 
@@ -131,21 +140,25 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
         def _do_connect() -> bool:
             import win32com.client
+
             try:
                 self._dispatcher._access_app = win32com.client.Dispatch("Access.Application")
 
                 self._dispatcher._access_app.Visible = False
+
+                # Build DAO connect string with optional password
+                dao_connect = f";PWD={password}" if password else ""
 
                 # Open via DAO FIRST with readwrite so _current_db is writable.
                 # Using Exclusive=False so external file copy (shutil, etc.) can
                 # still access the database without triggering exclusive lock errors.
                 # OpenCurrentDatabase on its own opens in read-only mode for COM automation.
                 dbe = self._dispatcher._access_app.DBEngine
-                self._dispatcher._current_db = dbe.OpenDatabase(db_path, False, False)
+                self._dispatcher._current_db = dbe.OpenDatabase(db_path, False, False, dao_connect)
 
                 # Now OpenCurrentDatabase — the underlying DAO handle is already writable,
-                # so CurrentDb inherits the writable state.
-                self._dispatcher._access_app.OpenCurrentDatabase(db_path, False)
+                # so CurrentDb inherits the writable state. Pass password for Jet security.
+                self._dispatcher._access_app.OpenCurrentDatabase(db_path, False, password)
 
                 # Suppress Access dialogs after DB is open (VBA module naming, etc.)
                 try:
@@ -161,6 +174,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                 # property access and may trigger the dialog at that point.
                 # Use a brief sleep first so the dialog has time to fully render.
                 import time
+
                 time.sleep(0.5)
                 self._dispatcher._dismiss_access_dialogs()
 
@@ -174,8 +188,10 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
     def disconnect(self) -> None:
         """Disconnect from the Access database."""
+
         def _do_disconnect() -> None:
             self._dispatcher._release_com_safe()
+
         try:
             self._dispatcher.call(_do_disconnect)
         except Exception as e:
@@ -204,7 +220,13 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         """
         _ = params
         if not self.is_connected():
-            return {"success": False, "rows": [], "count": 0, "columns": [], "error": "Not connected"}
+            return {
+                "success": False,
+                "rows": [],
+                "count": 0,
+                "columns": [],
+                "error": "Not connected",
+            }
 
         def _do() -> dict:
             try:
@@ -225,7 +247,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                     row = {}
                     for i, col in enumerate(columns):
                         val = rs.Fields(i).Value
-                        if val is not None and hasattr(val, 'strftime'):
+                        if val is not None and hasattr(val, "strftime"):
                             val = val.isoformat()
                         row[col] = val
                     results.append(row)
@@ -301,7 +323,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def import_macro_from_text(self, macro_name: str, macro_data: str) -> bool:
         return self._versioning.import_macro_from_text(macro_name, macro_data)
 
-    def export_all_versioning(self, output_dir: str, *, dedup: bool = True, module_ext: str = ".bas") -> dict:
+    def export_all_versioning(
+        self, output_dir: str, *, dedup: bool = True, module_ext: str = ".bas"
+    ) -> dict:
         return self._versioning.export_all_versioning(
             output_dir,
             dedup=dedup,
@@ -381,7 +405,13 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def import_form_from_text(self, form_name: str, form_data: str) -> bool:
         return self._ui.import_form_from_text(form_name, form_data)
 
-    def create_form(self, form_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+    def create_form(
+        self,
+        form_name: str,
+        record_source: str = "",
+        template_name: str = "",
+        properties: dict[str, Any] | None = None,
+    ) -> bool:
         return self._ui.create_form(form_name, record_source, template_name, properties)
 
     def rename_form(self, old_name: str, new_name: str) -> bool:
@@ -403,22 +433,35 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_control_properties(self, form_name: str, control_name: str) -> dict:
         return self._ui.get_control_properties(form_name, control_name)
 
-    def set_control_property(self, form_name: str, control_name: str, property_name: str, value: str) -> bool:
+    def set_control_property(
+        self, form_name: str, control_name: str, property_name: str, value: str
+    ) -> bool:
         return self._ui.set_control_property(form_name, control_name, property_name, value)
 
-    def set_control_properties(self, form_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+    def set_control_properties(
+        self, form_name: str, control_name: str, properties: dict[str, Any]
+    ) -> dict[str, bool]:
         return self._ui.set_control_properties(form_name, control_name, properties)
 
     def get_control_event_procedures(self, form_name: str, control_name: str) -> list[dict]:
         return self._ui.get_control_event_procedures(form_name, control_name)
 
-    def add_control(self, form_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
+    def add_control(
+        self,
+        form_name: str,
+        control_type: str,
+        control_name: str,
+        section: int = 0,
+        properties: dict[str, Any] | None = None,
+    ) -> bool:
         return self._ui.add_control(form_name, control_type, control_name, section, properties)
 
     def remove_control(self, form_name: str, control_name: str) -> bool:
         return self._ui.remove_control(form_name, control_name)
 
-    def set_control_event_procedure(self, form_name: str, control_name: str, event_name: str, code: str) -> bool:
+    def set_control_event_procedure(
+        self, form_name: str, control_name: str, event_name: str, code: str
+    ) -> bool:
         return self._ui.set_control_event_procedure(form_name, control_name, event_name, code)
 
     # ========================================================================
@@ -431,10 +474,14 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_form_section_properties(self, form_name: str, section_id: int) -> dict:
         return self._ui.get_form_section_properties(form_name, section_id)
 
-    def set_form_section_property(self, form_name: str, section_id: int, property_name: str, value: str) -> bool:
+    def set_form_section_property(
+        self, form_name: str, section_id: int, property_name: str, value: str
+    ) -> bool:
         return self._ui.set_form_section_property(form_name, section_id, property_name, value)
 
-    def set_form_section_properties(self, form_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+    def set_form_section_properties(
+        self, form_name: str, section_id: int, properties: dict[str, Any]
+    ) -> dict[str, bool]:
         return self._ui.set_form_section_properties(form_name, section_id, properties)
 
     # ========================================================================
@@ -450,7 +497,13 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def delete_report(self, report_name: str) -> bool:
         return self._ui.delete_report(report_name)
 
-    def create_report(self, report_name: str, record_source: str = "", template_name: str = "", properties: dict[str, Any] | None = None) -> bool:
+    def create_report(
+        self,
+        report_name: str,
+        record_source: str = "",
+        template_name: str = "",
+        properties: dict[str, Any] | None = None,
+    ) -> bool:
         return self._ui.create_report(report_name, record_source, template_name, properties)
 
     def rename_report(self, old_name: str, new_name: str) -> bool:
@@ -462,7 +515,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def set_report_property(self, report_name: str, property_name: str, value: str) -> bool:
         return self._ui.set_report_property(report_name, property_name, value)
 
-    def set_report_properties(self, report_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+    def set_report_properties(
+        self, report_name: str, properties: dict[str, Any]
+    ) -> dict[str, bool]:
         return self._ui.set_report_properties(report_name, properties)
 
     def get_report_controls(self, report_name: str) -> list[ControlInfo]:
@@ -471,14 +526,27 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_report_control_properties(self, report_name: str, control_name: str) -> dict:
         return self._ui.get_report_control_properties(report_name, control_name)
 
-    def set_report_control_property(self, report_name: str, control_name: str, property_name: str, value: str) -> bool:
+    def set_report_control_property(
+        self, report_name: str, control_name: str, property_name: str, value: str
+    ) -> bool:
         return self._ui.set_report_control_property(report_name, control_name, property_name, value)
 
-    def set_report_control_properties(self, report_name: str, control_name: str, properties: dict[str, Any]) -> dict[str, bool]:
+    def set_report_control_properties(
+        self, report_name: str, control_name: str, properties: dict[str, Any]
+    ) -> dict[str, bool]:
         return self._ui.set_report_control_properties(report_name, control_name, properties)
 
-    def add_report_control(self, report_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, Any] | None = None) -> bool:
-        return self._ui.add_report_control(report_name, control_type, control_name, section, properties)
+    def add_report_control(
+        self,
+        report_name: str,
+        control_type: str,
+        control_name: str,
+        section: int = 0,
+        properties: dict[str, Any] | None = None,
+    ) -> bool:
+        return self._ui.add_report_control(
+            report_name, control_type, control_name, section, properties
+        )
 
     def remove_report_control(self, report_name: str, control_name: str) -> bool:
         return self._ui.remove_report_control(report_name, control_name)
@@ -490,10 +558,14 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def get_report_section_properties(self, report_name: str, section_id: int) -> dict:
         return self._ui.get_report_section_properties(report_name, section_id)
 
-    def set_report_section_property(self, report_name: str, section_id: int, property_name: str, value: str) -> bool:
+    def set_report_section_property(
+        self, report_name: str, section_id: int, property_name: str, value: str
+    ) -> bool:
         return self._ui.set_report_section_property(report_name, section_id, property_name, value)
 
-    def set_report_section_properties(self, report_name: str, section_id: int, properties: dict[str, Any]) -> dict[str, bool]:
+    def set_report_section_properties(
+        self, report_name: str, section_id: int, properties: dict[str, Any]
+    ) -> dict[str, bool]:
         return self._ui.set_report_section_properties(report_name, section_id, properties)
 
     def export_report_to_text(self, report_name: str) -> str:
@@ -606,7 +678,11 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     ) -> dict:
         """Create a foreign key relationship via DAO."""
         return self._schema.create_relationship(
-            table_name, relationship_name, columns, foreign_table, foreign_columns,
+            table_name,
+            relationship_name,
+            columns,
+            foreign_table,
+            foreign_columns,
         )
 
     def delete_relationship(self, table_name: str, relationship_name: str) -> dict:
@@ -629,8 +705,12 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             return {
                 "success": True,
                 "objects": {
-                    "tables": 0, "queries": 0, "forms": 0,
-                    "reports": 0, "macros": 0, "modules": 0,
+                    "tables": 0,
+                    "queries": 0,
+                    "forms": 0,
+                    "reports": 0,
+                    "macros": 0,
+                    "modules": 0,
                 },
                 "file": {"name": "", "size_bytes": 0, "modified": ""},
                 "system": {"access_version": None, "com_available": False},
@@ -753,13 +833,15 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                             table_type = "Excel"
                         else:
                             table_type = "ODBC"
-                        linked_tables.append({
-                            "name": tdef.Name,
-                            "source_table": tdef.SourceTableName,
-                            "connect_string": connect_str,
-                            "type": table_type,
-                            "attributes": tdef.Attributes,
-                        })
+                        linked_tables.append(
+                            {
+                                "name": tdef.Name,
+                                "source_table": tdef.SourceTableName,
+                                "connect_string": connect_str,
+                                "type": table_type,
+                                "attributes": tdef.Attributes,
+                            }
+                        )
             except Exception as e:
                 return {"success": False, "error": str(e)}
             return {"success": True, "linked_tables": linked_tables}
@@ -910,7 +992,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     # COMPACT/REPAIR (DAO DBEngine)
     # ========================================================================
 
-    def compact_repair(self, action: str, source_path: str, dest_path: str, keep_original: bool = True) -> dict:
+    def compact_repair(
+        self, action: str, source_path: str, dest_path: str, keep_original: bool = True
+    ) -> dict:
         """Compact or repair an Access database file.
 
         Args:
@@ -924,7 +1008,10 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             or success=False and error message
         """
         if action not in ("compact", "repair"):
-            return {"success": False, "error": f"Invalid action '{action}'. Must be 'compact' or 'repair'."}
+            return {
+                "success": False,
+                "error": f"Invalid action '{action}'. Must be 'compact' or 'repair'.",
+            }
 
         if not os.path.exists(source_path):
             return {"success": False, "error": f"Source file not found: {source_path}"}
@@ -1057,12 +1144,13 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
     def _strip_sql_comments(sql: str) -> str:
         """Remove SQL comments (-- and /* */) from a script."""
         import re
+
         # Remove single-line comments (-- until end of line)
-        sql = re.sub(r'(?m)^\s*--.*$', '', sql)
+        sql = re.sub(r"(?m)^\s*--.*$", "", sql)
         # Remove block comments /* ... */
-        sql = re.sub(r'/\*.*?\*/', '', sql, flags=re.DOTALL)
+        sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.DOTALL)
         # Collapse multiple blank lines into one
-        sql = re.sub(r'\n\s*\n', '\n', sql)
+        sql = re.sub(r"\n\s*\n", "\n", sql)
         return sql
 
     # ========================================================================
@@ -1200,7 +1288,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             semi_idx = remaining.find(";")
             if semi_idx >= 0:
                 raw_chunk = remaining[:semi_idx]
-                remaining = remaining[semi_idx + 1:]
+                remaining = remaining[semi_idx + 1 :]
             else:
                 raw_chunk = remaining
                 remaining = ""
@@ -1229,7 +1317,6 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
         return {"statements": statements}
 
-
     # ========================================================================
     #  COM Error Extractor (static helper)
     # ========================================================================
@@ -1252,7 +1339,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             info = excepinfo[2]
             if isinstance(info, tuple) and len(info) >= 6:
                 description = info[2]  # Clean DAO error message
-                scode = info[5]       # DAO error code (negative)
+                scode = info[5]  # DAO error code (negative)
                 if description:
                     error_str = description
                     message = description
@@ -1272,6 +1359,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         Delegates to ConnectPolicy.sanitize() for canonical single-source stripping.
         """
         from ..orchestrators.connect_policy import ConnectPolicy
+
         return ConnectPolicy().sanitize(connect_string)
 
     # ========================================================================
@@ -1301,6 +1389,7 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         """
         try:
             import shutil
+
             shutil.copy2(source, dest)
             return True
         except Exception:
@@ -1350,7 +1439,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
 
         return self._dispatcher.call(_do)
 
-    def update_data(self, table_name: str, set_dict: dict, where_dict: dict | str | None = None) -> dict:
+    def update_data(
+        self, table_name: str, set_dict: dict, where_dict: dict | str | None = None
+    ) -> dict:
         """Update rows in a table via DAO SQL.
 
         Args:
@@ -1377,13 +1468,17 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         def _do() -> dict:
             try:
                 db = self._dispatcher.current_db
-                set_clause = ", ".join(f"[{c}] = {self._format_dao_value(v)}" for c, v in set_dict.items())
+                set_clause = ", ".join(
+                    f"[{c}] = {self._format_dao_value(v)}" for c, v in set_dict.items()
+                )
                 sql = f"UPDATE [{table_name}] SET {set_clause}"
                 if where_dict is not None:
                     if isinstance(where_dict, str):
                         sql += f" WHERE {where_dict}"
                     else:
-                        where_clause = " AND ".join(f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items())
+                        where_clause = " AND ".join(
+                            f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items()
+                        )
                         sql += f" WHERE {where_clause}"
                 db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
                 return {"success": True, "affected": db.RecordsAffected}
@@ -1423,7 +1518,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                     if isinstance(where_dict, str):
                         sql += f" WHERE {where_dict}"
                     else:
-                        where_clause = " AND ".join(f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items())
+                        where_clause = " AND ".join(
+                            f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items()
+                        )
                         sql += f" WHERE {where_clause}"
                 db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
                 return {"success": True, "affected": db.RecordsAffected}
@@ -1603,7 +1700,13 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
             return {"success": False, "operations": [], "error": "Not connected"}
 
         def _do() -> dict:
-            VALID_ACTIONS = {"add_column", "drop_column", "modify_column", "rename_table", "rename_column"}
+            VALID_ACTIONS = {
+                "add_column",
+                "drop_column",
+                "modify_column",
+                "rename_table",
+                "rename_column",
+            }
             results: list[dict] = []
 
             for op in operations:
@@ -1611,7 +1714,9 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
                 params = op.get("params", {})
 
                 if action not in VALID_ACTIONS:
-                    results.append({"action": action, "success": False, "error": f"Unknown action: {action}"})
+                    results.append(
+                        {"action": action, "success": False, "error": f"Unknown action: {action}"}
+                    )
                     continue
 
                 try:

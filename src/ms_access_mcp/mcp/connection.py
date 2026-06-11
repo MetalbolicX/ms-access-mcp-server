@@ -8,6 +8,8 @@ Tools:
 - get_active_connection() → returns active connection name (NEW)
 - is_connected() → checks connection status
 """
+
+from typing import Literal
 from .server import mcp, _get_path_guard
 
 from ..adapters.wincom import WinComAdapter
@@ -17,11 +19,14 @@ from ..adapters.odbc import OdbcAdapter
 def _pool():
     """Lazy accessor for connection pool (avoids circular import at module level)."""
     from .container import get_container
+
     return get_container().connection_pool
 
 
 @mcp.tool()
-def connect_access(database_path: str, use_com: bool = False, name: str = "default") -> dict:
+def connect_access(
+    database_path: str, use_com: bool = False, name: str = "default", password: str = ""
+) -> dict:
     """
     Connect to an Access database.
 
@@ -29,6 +34,7 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
         database_path: Path to .accdb or .mdb file
         use_com: Use COM automation (True) or ODBC only (False)
         name: Named connection identifier (defaults to "default")
+        password: Optional database password for password-protected DBs
     """
     # Validate path against allowed directories when HTTP config is active
     path_guard = _get_path_guard()
@@ -41,13 +47,21 @@ def connect_access(database_path: str, use_com: bool = False, name: str = "defau
     adapter = WinComAdapter() if use_com else OdbcAdapter()
 
     try:
-        # Use backward-compatible 2-arg API for the actual connection
-        result = _pool().connect(database_path, adapter)
-        if result:
-            return {"success": result, "connected": result, "database": database_path, "name": name}
+        # Use the new named connection API with password support
+        adapter_type: Literal["com", "odbc"] = "com" if use_com else "odbc"
+        state = _pool().connect(name, database_path, adapter_type, password=password)
+        if state:
+            return {"success": True, "connected": True, "database": database_path, "name": name}
         else:
-            return {"success": False, "connected": False, "database": database_path, "name": name,
-                    "error": "COM connect failed — check server stderr for details" if use_com else "ODBC connect failed"}
+            return {
+                "success": False,
+                "connected": False,
+                "database": database_path,
+                "name": name,
+                "error": "COM connect failed — check server stderr for details"
+                if use_com
+                else "ODBC connect failed",
+            }
     except KeyError as e:
         return {"success": False, "error": str(e)}
     except RuntimeError as e:

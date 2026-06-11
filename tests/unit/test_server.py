@@ -91,6 +91,47 @@ class TestReExports:
         assert callable(create_dev_copy)
 
 
+class TestHttpConfigInitNoKey:
+    """Tests for HTTP config initialization when no API key is set."""
+
+    def test_init_http_config_without_key_does_not_raise(self, monkeypatch):
+        """_init_http_config() should NOT raise when ACCESS_MCP_API_KEY is unset.
+
+        Scenario: No key configured — server boots and auth middleware is not installed.
+        """
+        # Ensure no API key is set
+        monkeypatch.delenv("ACCESS_MCP_API_KEY", raising=False)
+        monkeypatch.setenv("ACCESS_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ACCESS_MCP_PORT", "8000")
+
+        # Reset globals
+        server._config = None
+        server._path_guard = None
+        server._auth_middleware = None
+
+        # Should NOT raise ValueError — auth should be skipped
+        server._init_http_config()
+
+        # Auth middleware should NOT be installed
+        assert server._auth_middleware is None, \
+            "Auth middleware should be None when no API key is set"
+
+    def test_init_http_config_without_key_skips_auth_middleware(self, monkeypatch):
+        """_init_http_config() should skip adding ApiKeyMiddleware when no key exists."""
+        monkeypatch.delenv("ACCESS_MCP_API_KEY", raising=False)
+        monkeypatch.setenv("ACCESS_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ACCESS_MCP_PORT", "8000")
+
+        server._config = None
+        server._path_guard = None
+        server._auth_middleware = None
+
+        with patch("ms_access_mcp.mcp.server.ApiKeyMiddleware") as mock_auth:
+            server._init_http_config()
+            # ApiKeyMiddleware should NOT have been instantiated or added
+            mock_auth.assert_not_called()
+
+
 class TestHttpConfigInit:
     """Tests for HTTP config initialization."""
 

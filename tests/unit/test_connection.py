@@ -108,6 +108,54 @@ class TestConnectAccessWithName:
             assert "name" in result
 
 
+class TestConnectAccessWithPassword:
+    """Tests for connect_access tool with password parameter."""
+
+    def test_connect_access_passes_password_to_pool(self):
+        """connect_access(database_path, password='...') should pass password to pool.connect()."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        mock_conn.connect.return_value = MagicMock()  # New API returns ConnectionState
+        with (
+            patch.object(conn_module, '_pool', return_value=mock_conn),
+            patch.object(conn_module, '_get_path_guard', return_value=None),
+        ):
+            result = conn_module.connect_access("test.accdb", password="dbsecret")
+            call_args = mock_conn.connect.call_args
+            assert call_args is not None, "pool.connect() was not called"
+            _, kwargs = call_args
+            assert kwargs.get("password") == "dbsecret", \
+                f"password should be 'dbsecret', got {kwargs}"
+
+    def test_connect_access_with_password_and_use_com(self):
+        """connect_access with password and use_com=True should pass both to pool."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        mock_conn.connect.return_value = MagicMock()
+        with (
+            patch.object(conn_module, '_pool', return_value=mock_conn),
+            patch.object(conn_module, '_get_path_guard', return_value=None),
+        ):
+            result = conn_module.connect_access("test.accdb", use_com=True, password="comsecret")
+            assert result["success"] is True
+            call_args = mock_conn.connect.call_args
+            assert call_args is not None
+            _, kwargs = call_args
+            assert kwargs.get("password") == "comsecret"
+
+    def test_connect_access_without_password_is_backward_compatible(self):
+        """connect_access without password should still work (backward compatible)."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        mock_conn.connect.return_value = MagicMock()
+        with (
+            patch.object(conn_module, '_pool', return_value=mock_conn),
+            patch.object(conn_module, '_get_path_guard', return_value=None),
+        ):
+            result = conn_module.connect_access("test.accdb")
+            assert result["success"] is True
+
+
 class TestDisconnectAccessWithName:
     """Tests for disconnect_access tool with name parameter."""
 
