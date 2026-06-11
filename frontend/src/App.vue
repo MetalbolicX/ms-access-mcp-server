@@ -1,5 +1,29 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { onMounted, onUnmounted } from 'vue'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { clearApiKey, getApiKey } from './api/client'
+
+const router = useRouter()
+
+function handleAuthRequired() {
+  clearApiKey()
+  if (router.currentRoute.value.path !== '/login') {
+    router.push('/login')
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('auth:required', handleAuthRequired)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('auth:required', handleAuthRequired)
+})
+
+function handleLogout() {
+  clearApiKey()
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -7,6 +31,7 @@ import { RouterLink, RouterView } from 'vue-router'
     <header class="app-header">
       <div class="header-title">MS Access MCP</div>
       <div class="header-actions">
+        <el-button v-if="getApiKey()" text @click="handleLogout">Logout</el-button>
         <el-button text>Settings</el-button>
       </div>
     </header>

@@ -1,28 +1,10 @@
 import { createApp } from 'vue'
-import { createRouter, createWebHistory } from 'vue-router'
 import { VueQueryPlugin, QueryClient } from '@tanstack/vue-query'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import './styles/variables.css'
 import App from './App.vue'
-
-// Import views
-import DashboardView from './views/DashboardView.vue'
-import SchemaExplorerView from './views/SchemaExplorerView.vue'
-import JobMonitorView from './views/JobMonitorView.vue'
-import ErDiagramView from './views/ErDiagramView.vue'
-
-// Router configuration
-const router = createRouter({
-  history: createWebHistory(),
-  routes: [
-    { path: '/', redirect: '/dashboard' },
-    { path: '/dashboard', component: DashboardView, name: 'dashboard' },
-    { path: '/schema', component: SchemaExplorerView, name: 'schema' },
-    { path: '/er-diagram', component: ErDiagramView, name: 'er-diagram' },
-    { path: '/jobs', component: JobMonitorView, name: 'jobs' },
-  ],
-})
+import router from './router'
 
 // TanStack Query client
 const queryClient = new QueryClient({

@@ -1,7 +1,24 @@
 // Native fetch API client — no axios, web standard only
 import type { DatabaseStatistics, ObjectListResponse } from './types'
 
-const API_BASE = 'http://localhost:8000'
+const API_BASE = ''
+
+// --- API Key State ---
+let apiKey: string = localStorage.getItem('mcp_api_key') ?? ''
+
+export function getApiKey(): string {
+  return apiKey
+}
+
+export function setApiKey(key: string): void {
+  apiKey = key
+  localStorage.setItem('mcp_api_key', key)
+}
+
+export function clearApiKey(): void {
+  apiKey = ''
+  localStorage.removeItem('mcp_api_key')
+}
 
 interface RequestOptions {
   method?: string
@@ -12,14 +29,26 @@ interface RequestOptions {
 async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, signal } = options
 
+  const headers: Record<string, string> = {}
+  if (body) {
+    headers['Content-Type'] = 'application/json'
+  }
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
+
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
     signal,
   })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      window.dispatchEvent(new CustomEvent('auth:required'))
+      throw new Error('Authentication required')
+    }
     const error = await response.json().catch(() => ({ error: response.statusText }))
     throw new Error(error.error || `HTTP ${response.status}`)
   }
@@ -29,12 +58,12 @@ async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Pr
 
 // Connection API
 export const connectionApi = {
-  connect: (databasePath: string, useCom = false) =>
+  connect: (databasePath: string, useCom = false, password = '') =>
     apiRequest<{ success: boolean; connected: boolean; database: string }>('/mcp/tools/call', {
       method: 'POST',
       body: {
         name: 'connect_access',
-        arguments: { database_path: databasePath, use_com: useCom },
+        arguments: { database_path: databasePath, use_com: useCom, password },
       },
     }),
 
