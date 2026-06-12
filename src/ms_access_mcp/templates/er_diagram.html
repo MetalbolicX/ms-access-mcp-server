@@ -4,23 +4,23 @@
 <link rel="stylesheet" href="/dist/assets/styles.css">
 <link rel="stylesheet" href="/dist/assets/er-diagram.css">
 <style>
-    body { background: var(--color-bg-primary, #f5f5f5); }
+    body { background: var(--color-background); }
     .er-diagram-page { padding: 1rem; height: calc(100vh - 80px); display: flex; flex-direction: column; }
     .er-diagram-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-    .er-diagram-header h1 { color: var(--color-text-primary, #2c3e50); margin: 0; }
+    .er-diagram-header h1 { color: var(--color-secondary); margin: 0; }
     .diagram-stats { display: flex; gap: 0.5rem; }
     #vue-app { flex: 1; min-height: 0; }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="er-diagram-page">
-    <div class="er-diagram-header">
+<section class="er-diagram-page" aria-label="ER Diagram">
+    <header class="er-diagram-header">
         <h1>ER Diagram</h1>
         <div class="diagram-stats" id="vue-stats"></div>
-    </div>
+    </header>
     <div id="vue-app"></div>
-</div>
+</section>
 {% endblock %}
 
 {% block scripts %}
