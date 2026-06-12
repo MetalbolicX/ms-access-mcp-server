@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/dist/assets/styles.css">
+<style>
+    .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+    .card h2 { color: #2c3e50; margin-bottom: 1rem; }
+    .job-item { padding: 1rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .job-item:last-child { border-bottom: none; }
+    .job-status { padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.875rem; color: white; }
+    .job-status.pending { background: #f39c12; }
+    .job-status.running { background: #3498db; }
+    .job-status.completed { background: #27ae60; }
+    .job-status.failed { background: #e74c3c; }
+    .job-info { display: flex; flex-direction: column; gap: 0.25rem; }
+    .job-type { font-weight: 600; color: #2c3e50; }
+    .job-date { color: #999; font-size: 0.75rem; }
+    .error-section { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; color: #e74c3c; font-size: 0.875rem; }
+    .progress-section { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
+    .progress-bar { flex: 1; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #3498db; border-radius: 3px; transition: width 300ms; }
+    .progress-text { font-size: 0.875rem; color: #777; min-width: 40px; }
+    .empty-state { text-align: center; padding: 2rem; color: #999; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card" x-data="jobsPage()">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h1 style="margin: 0;">Job Monitor</h1>
+        <span style="color: #777; font-size: 0.875rem;" x-text="jobs.length + ' jobs'"></span>
+    </div>
+
+    <div x-show="jobs.length === 0" class="empty-state">No jobs to display.</div>
+
+    <template x-for="job in jobs" :key="job.id">
+        <div class="card job-item">
+            <div class="job-info">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span class="job-type" x-text="job.type"></span>
+                    <span :class="['job-status', job.status]" x-text="job.status"></span>
+                </div>
+                <span class="job-date" x-text="formatDate(job.created_at)"></span>
+            </div>
+
+            <!-- Progress bar for running jobs -->
+            <div x-show="job.status === 'running'" class="progress-section">
+                <div class="progress-bar">
+                    <div class="progress-fill" :style="{ width: job.progress + '%' }"></div>
+                </div>
+                <span class="progress-text" x-text="job.progress + '%'"></span>
+            </div>
+
+            <!-- Error for failed jobs -->
+            <div x-show="job.error" class="error-section">
+                <span>⚠</span>
+                <span x-text="job.error"></span>
+            </div>
+
+            <!-- Completed timestamp -->
+            <div x-show="job.completed_at" style="font-size: 0.75rem; color: #777; margin-top: 0.25rem;">
+                Completed at <span x-text="formatDate(job.completed_at)"></span>
+            </div>
+        </div>
+    </template>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/dist/assets/jobs.js"></script>
+<script>
+    function jobsPage() {
+        return {
+            jobs: [],
+
+            init() {
+                // Per spec: "will continue using mock data"
+                this.jobs = getMockJobs()
+            },
+
+            formatDate(dateString) {
+                return formatDate(dateString)
+            }
+        }
+    }
+</script>
+{% endblock %}

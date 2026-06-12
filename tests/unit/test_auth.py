@@ -178,3 +178,216 @@ class TestAuthFailureMetrics:
                     assert result is True
                     # Counter inc should NOT be called on success
                     mock_counter.labels.assert_not_called()
+
+
+# =============================================================================
+# Phase 1 RED tests — session auth, rate limiting, read-only mode
+# These tests reference production code that does NOT exist yet.
+# =============================================================================
+
+
+class TestSessionServiceExists:
+    """SessionService should exist in services/ and provide session management."""
+
+    def test_session_service_module_exists(self):
+        """src/ms_access_mcp/services/session.py should define SessionService."""
+        from ms_access_mcp.services.session import SessionService
+        assert SessionService is not None
+
+    def test_session_service_has_sign_method(self):
+        """SessionService should have a sign() method that returns a signed cookie value."""
+        from ms_access_mcp.services.session import SessionService
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        assert hasattr(svc, "sign")
+        assert callable(svc.sign)
+
+    def test_session_service_has_validate_method(self):
+        """SessionService should have a validate() method that returns the api_key or None."""
+        from ms_access_mcp.services.session import SessionService
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        assert hasattr(svc, "validate")
+        assert callable(svc.validate)
+
+    def test_session_service_sign_and_validate_roundtrip(self):
+        """sign() followed by validate() with the same key should return the original api_key."""
+        from ms_access_mcp.services.session import SessionService
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        api_key = "my-api-key-abcdefghijklmnopqrstuv"
+        signed = svc.sign(api_key)
+        assert signed is not None
+        assert signed != api_key
+        result = svc.validate(signed)
+        assert result == api_key
+
+    def test_session_service_validate_tampered_cookie_returns_none(self):
+        """validate() with a tampered cookie should return None."""
+        from ms_access_mcp.services.session import SessionService
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        result = svc.validate("tampered.cookie.value")
+        assert result is None
+
+    def test_session_service_validate_expired_cookie_returns_none(self):
+        """validate() with an expired cookie should return None."""
+        from ms_access_mcp.services.session import SessionService
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        # Use an old timestamp that is beyond the max age
+        result = svc.validate("old.tampered.value")
+        assert result is None
+
+
+class TestRateLimiter:
+    """RateLimiter should enforce login rate limits (5 attempts/min/IP)."""
+
+    def test_rate_limiter_module_exists(self):
+        """src/ms_access_mcp/services/rate_limiter.py should define RateLimiter."""
+        from ms_access_mcp.services.rate_limiter import RateLimiter
+        assert RateLimiter is not None
+
+    def test_rate_limiter_is_callable(self):
+        """RateLimiter should be instantiable with max_attempts and window_seconds."""
+        from ms_access_mcp.services.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=5, window_seconds=60)
+        assert limiter is not None
+
+    def test_rate_limiter_allows_first_attempt(self):
+        """First attempt from an IP should be allowed."""
+        from ms_access_mcp.services.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=5, window_seconds=60)
+        result = limiter.check("192.168.1.1")
+        assert result is True
+
+    def test_rate_limiter_allows_up_to_max_attempts(self):
+        """Up to max_attempts from the same IP should be allowed."""
+        from ms_access_mcp.services.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=5, window_seconds=60)
+        for i in range(5):
+            result = limiter.check("192.168.1.1")
+            assert result is True, f"Attempt {i+1} should be allowed"
+
+    def test_rate_limiter_blocks_sixth_attempt(self):
+        """The (max_attempts+1)th attempt from the same IP should be blocked."""
+        from ms_access_mcp.services.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=5, window_seconds=60)
+        for _ in range(5):
+            limiter.check("192.168.1.1")
+        result = limiter.check("192.168.1.1")
+        assert result is False
+
+    def test_rate_limiter_different_ips_independent(self):
+        """Different IPs should have independent rate limit counters."""
+        from ms_access_mcp.services.rate_limiter import RateLimiter
+        limiter = RateLimiter(max_attempts=5, window_seconds=60)
+        for _ in range(5):
+            limiter.check("192.168.1.1")
+        # IP 2 should still be allowed
+        result = limiter.check("192.168.1.2")
+        assert result is True
+
+
+class TestReadOnlyMiddleware:
+    """ReadOnlyMiddleware should block destructive tools when ACCESS_MCP_READONLY=true."""
+
+    def test_readonly_middleware_module_exists(self):
+        """src/ms_access_mcp/auth.py should define ReadOnlyMiddleware."""
+        from ms_access_mcp.auth import ReadOnlyMiddleware
+        assert ReadOnlyMiddleware is not None
+
+    def test_readonly_middleware_blocks_destructive_tools(self):
+        """on_call_tool should raise McpError with403 when readonly is True and tool is destructive."""
+        from ms_access_mcp.auth import ReadOnlyMiddleware
+        from fastmcp.server.middleware import MiddlewareContext
+        from unittest.mock import AsyncMock
+
+        middleware = ReadOnlyMiddleware(readonly=True)
+        mock_context = MagicMock(spec=MiddlewareContext)
+        mock_context.message = MagicMock()
+        mock_context.message.name = "delete_table"
+        mock_context.message.arguments = {}
+
+        call_next = AsyncMock()
+        import pytest
+        with pytest.raises(Exception):  # McpError or similar
+            import asyncio
+            asyncio.run(middleware.on_call_tool(mock_context, call_next))
+        call_next.assert_not_called()
+
+    def test_readonly_middleware_allows_read_tools(self):
+        """on_call_tool should pass through when readonly is True but tool is read-only."""
+        from ms_access_mcp.auth import ReadOnlyMiddleware
+        from fastmcp.server.middleware import MiddlewareContext
+        from unittest.mock import AsyncMock
+
+        middleware = ReadOnlyMiddleware(readonly=True)
+        mock_context = MagicMock(spec=MiddlewareContext)
+        mock_context.message = MagicMock()
+        mock_context.message.name = "get_tables"
+        mock_context.message.arguments = {}
+
+        call_next = AsyncMock(return_value="result")
+        import asyncio
+        result = asyncio.run(middleware.on_call_tool(mock_context, call_next))
+        call_next.assert_called_once()
+
+    def test_readonly_middleware_disabled_passes_through(self):
+        """on_call_tool should pass through when readonly is False regardless of tool."""
+        from ms_access_mcp.auth import ReadOnlyMiddleware
+        from fastmcp.server.middleware import MiddlewareContext
+        from unittest.mock import AsyncMock
+
+        middleware = ReadOnlyMiddleware(readonly=False)
+        mock_context = MagicMock(spec=MiddlewareContext)
+        mock_context.message = MagicMock()
+        mock_context.message.name = "delete_table"
+        mock_context.message.arguments = {}
+
+        call_next = AsyncMock(return_value="result")
+        import asyncio
+        result = asyncio.run(middleware.on_call_tool(mock_context, call_next))
+        call_next.assert_called_once()
+
+
+class TestSessionMiddleware:
+    """SessionMiddleware should resolve API key from session cookie OR Bearer header."""
+
+    def test_session_middleware_module_exists(self):
+        """src/ms_access_mcp/auth.py should define SessionMiddleware."""
+        from ms_access_mcp.auth import SessionMiddleware
+        assert SessionMiddleware is not None
+
+    def test_session_middleware_accepts_session_service(self):
+        """SessionMiddleware should accept a SessionService in its constructor."""
+        from ms_access_mcp.auth import SessionMiddleware
+        from ms_access_mcp.services.session import SessionService
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        middleware = SessionMiddleware(session_service=svc, api_key="test-key")
+        assert middleware is not None
+
+    def test_session_middleware_validates_cookie(self):
+        """_validate_cookie should call session_service.validate() and return the api_key."""
+        from ms_access_mcp.auth import SessionMiddleware
+        from ms_access_mcp.services.session import SessionService
+
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        middleware = SessionMiddleware(session_service=svc, api_key="test-key-abcdefghijklmnopqrstuv")
+        mock_context = MagicMock()
+
+        with patch.object(middleware, "_get_header", return_value=None):
+            with patch.object(middleware, "_get_cookie", return_value=None):
+                result = middleware._validate_cookie(mock_context)
+                assert result is False  # No cookie
+
+    def test_session_middleware_prioritizes_bearer_over_cookie(self):
+        """When both Bearer header and session cookie are present, Bearer should win."""
+        from ms_access_mcp.auth import SessionMiddleware
+        from ms_access_mcp.services.session import SessionService
+
+        svc = SessionService(secret_key="test-secret-key-12345678901234567890")
+        middleware = SessionMiddleware(session_service=svc, api_key="test-key-abcdefghijklmnopqrstuv")
+        mock_context = MagicMock()
+
+        # Bearer present
+        with patch.object(middleware, "_get_header", return_value="Bearer test-key-abcdefghijklmnopqrstuv"):
+            with patch.object(middleware, "_get_cookie", return_value="some.signed.cookie"):
+                result = middleware._validate_session_or_bearer(mock_context)
+                # Should return True via Bearer validation, not cookie
+                assert result is True

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="/dist/assets/styles.css">
+<style>
+    .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+    .card h2 { color: #2c3e50; margin-bottom: 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
+    th { color: #555; font-weight: 600; }
+    .explorer-layout { display: grid; grid-template-columns: 280px 1fr; gap: 1rem; }
+    .tables-panel { border: 1px solid #eee; border-radius: 8px; padding: 1rem; }
+    .tables-list { max-height: 400px; overflow-y: auto; margin-top: 0.5rem; }
+    .table-item { display: flex; justify-content: space-between; padding: 0.5rem; border-radius: 4px; cursor: pointer; }
+    .table-item:hover { background: #f0f0f0; }
+    .table-item.active { background: #e3f2fd; }
+    .table-name { color: #2c3e50; font-size: 14px; }
+    .table-name.active { color: #3498db; font-weight: 600; }
+    .table-count { color: #999; font-size: 12px; }
+    .search-input { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 1rem; }
+    .empty-state { display: flex; align-items: center; justify-content: center; height: 200px; color: #999; }
+    .error-message { color: #e74c3c; margin-bottom: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card" x-data="schemaPage()">
+    <h1>Schema Explorer</h1>
+    <input type="text" class="search-input" x-model="searchQuery" placeholder="Search tables..." @input="updateFilteredTables()">
+
+    <div class="explorer-layout">
+        <!-- Tables List -->
+        <div class="tables-panel">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Tables (<span x-text="tables?.count ?? 0"></span>)</div>
+            <div class="tables-list">
+                <template x-for="table in filteredTables" :key="table.name">
+                    <div :class="['table-item', { active: selectedTable === table.name }]"
+                         @click="selectTable(table.name)">
+                        <span :class="['table-name', { active: selectedTable === table.name }]"
+                              x-text="table.name"></span>
+                        <span class="table-count" x-text="table.record_count"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Table Details -->
+        <div>
+            <div x-show="!selectedTable" class="empty-state card">
+                <span>Select a table to view its schema</span>
+            </div>
+
+            <div x-show="selectedTable && tableSchema" class="card">
+                <h2 x-text="tableSchema?.table?.name"></h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Column</th>
+                            <th>Type</th>
+                            <th>Size</th>
+                            <th>Required</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="field in (tableSchema?.table?.fields ?? [])" :key="field.name">
+                            <tr>
+                                <td x-text="field.name"></td>
+                                <td x-text="field.type"></td>
+                                <td x-text="field.size"></td>
+                                <td>
+                                    <span :style="{ color: field.required ? '#e74c3c' : '#999' }"
+                                          x-text="field.required ? 'Required' : 'Optional'"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <div x-show="tableSchema?.error" class="error-message" x-text="tableSchema.error"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/dist/assets/schema.js"></script>
+<script src="/dist/assets/apiClient.js"></script>
+<script>
+    function schemaPage() {
+        return {
+            tables: null,
+            selectedTable: null,
+            tableSchema: null,
+            searchQuery: '',
+            filteredTables: [],
+
+            async init() {
+                try {
+                    this.tables = await loadTables()
+                    this.updateFilteredTables()
+                } catch (e) {
+                    // 401 redirects to /login
+                }
+            },
+
+            async selectTable(name) {
+                this.selectedTable = name
+                try {
+                    this.tableSchema = await loadTableSchema(name)
+                } catch (e) {
+                    this.tableSchema = { error: e.message }
+                }
+            },
+
+            updateFilteredTables() {
+                this.filteredTables = filterTables(this.tables?.tables ?? [], this.searchQuery)
+            }
+        }
+    }
+</script>
+{% endblock %}

@@ -194,12 +194,8 @@ class ConnectionPool:
                 raise KeyError(f"Connection '{target}' not found")
             state = self._pool[target]
             state.adapter.disconnect()
-            if target == "default":
-                state.db_path = ""
-                self._update_pool_size_gauge()
-            else:
-                del self._pool[target]
-                self._update_pool_size_gauge()
+            del self._pool[target]
+            self._update_pool_size_gauge()
 
     def get(self, name: Optional[str] = None) -> ConnectionState:
         """Get connection state by name.

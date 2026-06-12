@@ -556,6 +556,9 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         Returns zero counts and a warning when the user lacks read permission
         on MSysObjects (the Access ODBC driver does not reliably expose
         forms/reports/macros/modules via MSysObjects, so those are best-effort).
+
+        When MSysObjects is denied, falls back to get_tables() for at least the
+        table count so the dashboard doesn't show 0 for everything.
         """
         if not self.is_connected():
             return self._empty_stat_response()
@@ -565,9 +568,8 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             cur.execute("SELECT Type, Count(*) FROM MSysObjects GROUP BY Type")
             rows = cur.fetchall()
         except Exception:
-            return self._empty_stat_response(
-                warning="MSysObjects access denied — counts unavailable"
-            )
+            # MSysObjects blocked — fall back to cursor.tables() for table count
+            return self._stat_response_fallback_msys_denied()
         finally:
             try:
                 cur.close()
@@ -588,6 +590,32 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             "file": self._file_info(),
             "system": {"access_version": None, "com_available": False},
         }
+
+    def _stat_response_fallback_msys_denied(self) -> dict:
+        """Build statistics when MSysObjects is denied — fall back to
+        cursor.tables() for the table count, leave other counts at 0."""
+        db_path = self._db_path or ""
+        table_count = 0
+        try:
+            tables = self.get_tables()
+            table_count = len(tables)
+        except Exception:
+            pass
+        response = {
+            "success": True,
+            "objects": {
+                "tables": table_count,
+                "queries": 0,
+                "forms": 0,
+                "reports": 0,
+                "macros": 0,
+                "modules": 0,
+            },
+            "file": self._file_info(),
+            "system": {"access_version": None, "com_available": False},
+            "warning": "MSysObjects access denied — table count from cursor.tables(), other counts unavailable",
+        }
+        return response
 
     def create_query(self, name: str, sql: str) -> dict:
         """Create a new stored query (Access querydef implemented as SQL view)."""

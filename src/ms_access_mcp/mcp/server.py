@@ -3,6 +3,7 @@ import time
 import signal
 import atexit
 import logging
+from pathlib import Path
 
 # Load .env file before any config initialization (optional dependency)
 try:
@@ -26,6 +27,7 @@ from ..path_guard import PathGuard
 from ..telemetry.metrics import tool_calls_total, tool_latency_seconds
 from ..telemetry.audit import audit_log
 import uvicorn
+from fastapi import Request
 
 _logger = logging.getLogger(__name__)
 
@@ -299,9 +301,30 @@ from .dev_copy import (  # noqa: E402
 from .analysis import analyze_query  # noqa: E402
 from .db_properties import get_database_properties, set_database_property  # noqa: E402
 
+# Tool registry for SSR browser-based tool proxy
+_TOOL_REGISTRY: dict[str, Any] = {
+    "connect_access": connect_access,
+    "disconnect_access": disconnect_access,
+    "is_connected": is_connected,
+    "get_tables": get_tables,
+    "get_table_schema": get_table_schema,
+    "get_relationships": get_relationships,
+    "get_queries": get_queries,
+    "get_database_statistics": get_database_statistics,
+    "get_forms": get_forms,
+    "get_reports": get_reports,
+    "get_macros": get_macros,
+    "get_modules": get_modules,
+    "get_er_diagram": get_er_diagram,
+    "get_migration_status": get_migration_status,
+}
+
 
 def get_asgi_app(transport: str = "http"):
     """Initialize HTTP config and return the FastMCP ASGI application.
+
+    Integrates SSR page routes, API endpoints, and static asset serving
+    alongside the MCP protocol at /mcp/.
 
     Args:
         transport: HTTP transport type ("http", "streamable-http", "sse")
@@ -311,18 +334,435 @@ def get_asgi_app(transport: str = "http"):
     """
     _init_http_config()
     app = mcp.http_app(transport=transport, json_response=True, stateless_http=True)
-    # Mount SPA static files at root — serves index.html for all non-API paths.
-    # html=True enables SPA fallback: unknown paths return index.html for client-side routing.
-    # Directory "frontend/dist" is created by the frontend build step.
-    try:
-        from starlette.staticfiles import StaticFiles
 
-        app.mount("/", StaticFiles(directory="frontend/dist", html=True))
-    except Exception:
-        # frontend/dist may not exist during development or in minimal installs.
-        # Server continues without static serving — MCP endpoints remain functional.
-        pass
+    # Routes must be registered BEFORE the root static mount /
+    # so SSR pages take priority over the static file fallback.
+    _add_ssr_routes(app)
+    _mount_ssr_static(app)
     return app
+
+
+def _mount_ssr_static(app: Any) -> None:
+    """Mount static assets for SSR pages (build output + root files)."""
+    from pathlib import Path
+
+    # server.py is at src/ms_access_mcp/mcp/server.py — 4 levels to project root
+    project_root = Path(__file__).parent.parent.parent.parent
+    frontend_dist = project_root / "frontend" / "dist"
+    if not frontend_dist.exists():
+        return
+
+    from starlette.staticfiles import StaticFiles
+
+    # Mount build JS/CSS at /dist/assets/
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/dist/assets", StaticFiles(directory=str(assets_dir)), name="ssr_assets")
+
+    # Serve favicon and icons via route (avoids mounting at / which
+    # would interfere with MCP paths like /mcp/)
+    _add_static_routes(app, frontend_dist)
+
+
+def _add_static_routes(app: Any, frontend_dist: Path) -> None:
+    """Register routes for individual root-level static files."""
+    from starlette.responses import FileResponse, Response
+    from starlette.requests import Request
+
+    for filename in ("favicon.svg", "icons.svg"):
+        file_path = frontend_dist / filename
+        if not file_path.exists():
+            continue
+
+        async def serve_file(request: Request, _file_path: Path = file_path) -> Response:
+            return FileResponse(str(_file_path))
+
+        app.add_route(f"/{filename}", serve_file, methods=["GET"])
+
+
+def _add_ssr_routes(app: Any) -> None:
+    """Register SSR page routes and API endpoints on the app."""
+    from starlette.responses import RedirectResponse, JSONResponse
+    from starlette.requests import Request
+    import hmac
+    from .container import get_container
+    from ..config import ServerConfig
+    from .pages import login_page, dashboard_page, schema_page, er_diagram_page, jobs_page
+
+    def _require_session(request: Request) -> tuple[str | None, Any]:
+        """Return (api_key, None) or (None, redirect)."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return None, RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return None, RedirectResponse(url="/login", status_code=302)
+        return api_key, None
+
+    # ── SSR Page Routes ──────────────────────────────────────────
+
+    async def ssr_root(request: Request):
+        """Root path redirects to /dashboard if authenticated, else /login."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if api_key:
+            return RedirectResponse(url="/dashboard", status_code=302)
+        return RedirectResponse(url="/login", status_code=302)
+
+    app.add_route("/", ssr_root, methods=["GET"])
+
+    async def ssr_login(request: Request):
+        """Login page (always accessible)."""
+        return await login_page(request)
+
+    app.add_route("/login", ssr_login, methods=["GET"])
+
+    async def ssr_dashboard(request: Request):
+        """Dashboard page (requires session)."""
+        api_key, error = _require_session(request)
+        if error:
+            return error
+        return await dashboard_page(request, api_key)
+
+    app.add_route("/dashboard", ssr_dashboard, methods=["GET"])
+
+    async def ssr_schema(request: Request):
+        """Schema explorer page (requires session)."""
+        api_key, error = _require_session(request)
+        if error:
+            return error
+        return await schema_page(request, api_key)
+
+    app.add_route("/schema", ssr_schema, methods=["GET"])
+
+    async def ssr_er_diagram(request: Request):
+        """ER diagram page (requires session)."""
+        api_key, error = _require_session(request)
+        if error:
+            return error
+        return await er_diagram_page(request, api_key)
+
+    app.add_route("/er-diagram", ssr_er_diagram, methods=["GET"])
+
+    async def ssr_jobs(request: Request):
+        """Job monitor page (requires session)."""
+        api_key, error = _require_session(request)
+        if error:
+            return error
+        return await jobs_page(request, api_key)
+
+    app.add_route("/jobs", ssr_jobs, methods=["GET"])
+
+    # ── API Endpoints ────────────────────────────────────────────
+
+    async def api_login(request: Request):
+        """Login endpoint — validates API key and sets session cookie."""
+        from ..services.rate_limiter import RateLimiter
+
+        client_ip = request.client.host if request.client else "unknown"
+        container = get_container()
+        rate_limiter = container.rate_limiter
+
+        if rate_limiter and not rate_limiter.check(client_ip):
+            retry_after = rate_limiter.get_retry_after(client_ip) if rate_limiter else 60
+            return JSONResponse(
+                {"error": "Too many login attempts. Please try again later."},
+                status_code=429,
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        try:
+            body = await request.json()
+            api_key_input = body.get("api_key", "")
+        except Exception:
+            return JSONResponse({"error": "Invalid request body"}, status_code=400)
+
+        try:
+            config = ServerConfig()
+        except ValueError:
+            return JSONResponse({"error": "Server configuration error"}, status_code=500)
+
+        if not hmac.compare_digest(api_key_input, config.api_key):
+            return JSONResponse({"error": "Invalid API key"}, status_code=401)
+
+        session_svc = container.session_service
+        if session_svc is None:
+            return JSONResponse({"error": "Session service not configured"}, status_code=500)
+
+        signed = session_svc.sign(config.api_key)
+        response = JSONResponse({"success": True})
+        response.set_cookie(
+            key=session_svc.cookie_name,
+            value=signed,
+            max_age=session_svc.max_age,
+            httponly=True,
+            samesite="Lax",
+            secure=False,
+        )
+        return response
+
+    app.add_route("/api/login", api_login, methods=["POST"])
+
+    async def api_logout(request: Request):
+        """Logout endpoint — clears session cookie."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return JSONResponse({"success": True})
+
+        response = JSONResponse({"success": True})
+        params = session_svc.clear_cookie_params()
+        response.delete_cookie(key=params["name"])
+        return response
+
+    app.add_route("/api/logout", api_logout, methods=["POST"])
+
+    async def api_tools_call(request: Request):
+        """Tool proxy for browser-based tool execution via session auth."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return JSONResponse({"error": "Session service not configured"}, status_code=500)
+
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+            tool_name = body.get("name")
+            arguments = body.get("arguments", {})
+        except Exception:
+            return JSONResponse({"error": "Invalid request body"}, status_code=400)
+
+        tool_fn = _TOOL_REGISTRY.get(tool_name)
+        if tool_fn is None:
+            return JSONResponse({"error": f"Unknown tool: {tool_name}"}, status_code=400)
+
+        try:
+            import inspect
+            import asyncio
+
+            if inspect.iscoroutinefunction(tool_fn):
+                result = await tool_fn(**arguments)
+            else:
+                result = tool_fn(**arguments)
+            return JSONResponse(
+                {"success": True, **result} if isinstance(result, dict) else {"success": True, "result": result}
+            )
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    app.add_route("/api/tools/call", api_tools_call, methods=["POST"])
+
+
+def get_ssr_app():
+    """Create a FastAPI app that wraps SSR pages alongside the MCP server.
+
+    Returns:
+        A FastAPI ASGI app with SSR routes at /, /login, /dashboard, /schema,
+        /er-diagram, /jobs, plus /api/login, /api/logout, /api/tools/call.
+ """
+    from fastapi import FastAPI, Request
+    from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
+    from .pages import (
+        login_page,
+        dashboard_page,
+        schema_page,
+        er_diagram_page,
+        jobs_page,
+    )
+
+    app = FastAPI(title="MS Access MCP SSR")
+
+    # Mount build assets at /dist/assets/ for SSR pages
+    from pathlib import Path
+    # get_ssr_app is at src/ms_access_mcp/mcp/server.py — 4 levels to project root
+    dist_assets = Path(__file__).parent.parent.parent.parent / "frontend" / "dist" / "assets"
+    if dist_assets.exists():
+        from starlette.staticfiles import StaticFiles
+        app.mount("/dist/assets", StaticFiles(directory=str(dist_assets)), name="assets")
+
+    # Import services lazily to avoid circular imports
+    from .container import get_container
+
+    @app.get("/")
+    async def root(request: Request):
+        """Root path redirects to /dashboard if authenticated, else /login."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if api_key:
+            return RedirectResponse(url="/dashboard", status_code=302)
+        return RedirectResponse(url="/login", status_code=302)
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login(request: Request):
+        """Login page (always accessible, even when authenticated)."""
+        return await login_page(request)
+
+    @app.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard(request: Request):
+        """Dashboard page (requires session)."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return RedirectResponse(url="/login", status_code=302)
+        return await dashboard_page(request, api_key)
+
+    @app.get("/schema", response_class=HTMLResponse)
+    async def schema_explorer(request: Request):
+        """Schema explorer page (requires session)."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return RedirectResponse(url="/login", status_code=302)
+        return await schema_page(request, api_key)
+
+    @app.get("/er-diagram", response_class=HTMLResponse)
+    async def er_diagram(request: Request):
+        """ER diagram page (requires session)."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return RedirectResponse(url="/login", status_code=302)
+        return await er_diagram_page(request, api_key)
+
+    @app.get("/jobs", response_class=HTMLResponse)
+    async def jobs(request: Request):
+        """Job monitor page (requires session)."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return RedirectResponse(url="/login", status_code=302)
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return RedirectResponse(url="/login", status_code=302)
+        return await jobs_page(request, api_key)
+
+    @app.post("/api/login")
+    async def api_login(request: Request):
+        """Login endpoint — validates API key and sets session cookie."""
+        from ..services.rate_limiter import RateLimiter
+        from ..config import ServerConfig
+
+        client_ip = request.client.host if request.client else "unknown"
+        container = get_container()
+        rate_limiter = container.rate_limiter
+
+        if rate_limiter and not rate_limiter.check(client_ip):
+            retry_after = rate_limiter.get_retry_after(client_ip) if rate_limiter else 60
+            return JSONResponse(
+                {"error": "Too many login attempts. Please try again later."},
+                status_code=429,
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        try:
+            body = await request.json()
+            api_key_input = body.get("api_key", "")
+        except Exception:
+            return JSONResponse({"error": "Invalid request body"}, status_code=400)
+
+        try:
+            config = ServerConfig()
+        except ValueError:
+            return JSONResponse({"error": "Server configuration error"}, status_code=500)
+
+        import hmac
+        if not hmac.compare_digest(api_key_input, config.api_key):
+            return JSONResponse({"error": "Invalid API key"}, status_code=401)
+
+        # Sign and return session cookie
+        session_svc = container.session_service
+        if session_svc is None:
+            return JSONResponse({"error": "Session service not configured"}, status_code=500)
+
+        signed = session_svc.sign(config.api_key)
+        response = JSONResponse({"success": True})
+        response.set_cookie(
+            key=session_svc.cookie_name,
+            value=signed,
+            max_age=session_svc.max_age,
+            httponly=True,
+            samesite="Lax",
+            secure=False,  # TODO: True in production with HTTPS
+        )
+        return response
+
+    @app.post("/api/logout")
+    async def api_logout(request: Request):
+        """Logout endpoint — clears session cookie."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return JSONResponse({"success": True})
+
+        response = JSONResponse({"success": True})
+        params = session_svc.clear_cookie_params()
+        response.delete_cookie(key=params["name"])
+        return response
+
+    @app.post("/api/tools/call")
+    async def api_tools_call(request: Request):
+        """Tool proxy for browser-based tool execution via session auth."""
+        container = get_container()
+        session_svc = container.session_service
+        if session_svc is None:
+            return JSONResponse({"error": "Session service not configured"}, status_code=500)
+
+        api_key = _get_session_api_key(request, session_svc)
+        if not api_key:
+            return JSONResponse({"error": "Unauthorized"}, status_code=401)
+
+        try:
+            body = await request.json()
+            tool_name = body.get("name")
+            arguments = body.get("arguments", {})
+        except Exception:
+            return JSONResponse({"error": "Invalid request body"}, status_code=400)
+
+        # Look up the tool function from the server module's exports
+        tool_fn = _TOOL_REGISTRY.get(tool_name)
+        if tool_fn is None:
+            return JSONResponse({"error": f"Unknown tool: {tool_name}"}, status_code=400)
+
+        try:
+            import inspect
+
+            if inspect.iscoroutinefunction(tool_fn):
+                result = await tool_fn(**arguments)
+            else:
+                result = tool_fn(**arguments)
+            return JSONResponse({"success": True, **result} if isinstance(result, dict) else {"success": True, "result": result})
+        except Exception as e:
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    return app
+
+
+def _get_session_api_key(request: Request, session_service) -> str | None:
+    """Extract API key from session cookie."""
+    cookie_name = getattr(session_service, "cookie_name", "mcp_session")
+    cookie_value = request.cookies.get(cookie_name)
+    if not cookie_value:
+        return None
+    return session_service.validate(cookie_value)
 
 
 def run_http(

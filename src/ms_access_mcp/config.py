@@ -111,6 +111,18 @@ class ServerConfig:
             "ACCESS_MCP_PRESERVE_TRUSTED_LOCATIONS", "false"
         ).lower() in ("true", "1", "yes")
 
+        # Session management
+        self.session_secret = os.environ.get("ACCESS_MCP_SESSION_SECRET", "")
+        self.session_cookie_name = os.environ.get("ACCESS_MCP_SESSION_COOKIE_NAME", "mcp_session")
+        self.session_max_age = int(os.environ.get("ACCESS_MCP_SESSION_MAX_AGE", "3600"))
+
+        # Read-only mode
+        self.readonly = os.environ.get("ACCESS_MCP_READONLY", "false").lower() in ("true", "1", "yes")
+
+        # Rate limiting
+        self.rate_limit_max_attempts = int(os.environ.get("ACCESS_MCP_RATE_LIMIT_MAX_ATTEMPTS", "5"))
+        self.rate_limit_window_seconds = int(os.environ.get("ACCESS_MCP_RATE_LIMIT_WINDOW_SECONDS", "60"))
+
     def is_path_allowed(self, path: str) -> bool:
         """Check if a database path is within an allowed directory.
 

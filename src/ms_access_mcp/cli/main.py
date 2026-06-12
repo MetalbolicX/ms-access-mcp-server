@@ -1,5 +1,6 @@
 """CLI for MS Access MCP Server versioning operations."""
 import os
+import secrets
 import typer
 from pathlib import Path
 from typing import Literal, Optional
@@ -36,6 +37,20 @@ def serve(
         os.environ["ACCESS_MCP_API_KEY"] = api_key
     if allowed_dirs:
         os.environ["ACCESS_MCP_ALLOWED_DIRS"] = allowed_dirs
+
+    # Auto-generate API key if none provided — so users don't need to run Python commands
+    if not os.environ.get("ACCESS_MCP_API_KEY"):
+        generated = secrets.token_urlsafe(32)
+        os.environ["ACCESS_MCP_API_KEY"] = generated
+        host_display = host or "127.0.0.1"
+        port_display = port or 8000
+        typer.echo(f"")
+        typer.echo("=" * 60)
+        typer.echo("  MS Access MCP Server — No API key provided, generated one:")
+        typer.echo(f"  API Key: {generated}")
+        typer.echo(f"  Login at http://{host_display}:{port_display}/login")
+        typer.echo("=" * 60)
+        typer.echo(f"")
 
     # Warn on 0.0.0.0 bind unless ACCESS_MCP_ALLOW_REMOTE is set
     if host == "0.0.0.0" and not os.environ.get("ACCESS_MCP_ALLOW_REMOTE"):
