@@ -12,7 +12,7 @@ from ..models.database import (
 )
 from ..models.migration import ColumnSchema, TableSchema, UnknownMetadata
 from .com_only_mixin import ComOnlyAdapterMixin
-from .interfaces import IDataAdapter, ISchemaAdapter
+from .interfaces import IDataAdapter, IDatabasePropertiesAdapter, ISchemaAdapter
 
 # Connection string templates for Access databases
 ACCESS_DRIVER = "{Microsoft Access Driver (*.mdb, *.accdb)}"
@@ -35,12 +35,14 @@ ODBC_TYPE_MAP = {
 }
 
 
-class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
+class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePropertiesAdapter):
     """Data-only adapter using pyodbc for fast read-only access.
 
     Inherits ComOnlyAdapterMixin first so its NotImplementedError stubs
     take precedence over AccessAdapter protocol stubs for COM-only methods.
-    Implements IDataAdapter + ISchemaAdapter (via interfaces).
+    Implements IDataAdapter + ISchemaAdapter + IDatabasePropertiesAdapter
+    (via interfaces). IDatabasePropertiesAdapter methods raise
+    NotImplementedError — ODBC cannot read DAO CurrentDb.Properties.
     """
 
     # Default driver string — used when ACCESS_MCP_ODBC_DRIVER is not set
@@ -827,6 +829,62 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             return True
         except Exception:
             return False
+
+    # ========================================================================
+    # IDatabasePropertiesAdapter stubs — ODBC cannot read DAO CurrentDb.Properties.
+    # OdbcAdapter declares this protocol (per PR2) so services can type-hint
+    # uniformly against IDatabasePropertiesAdapter.
+    # ========================================================================
+
+    def get_database_properties(self, names: list[str] | None = None) -> dict:
+        """Get database properties — requires COM automation (DAO CurrentDb.Properties)."""
+        raise NotImplementedError(
+            "get_database_properties requires COM automation (WinComAdapter)"
+        )
+
+    def set_database_property(
+        self, name: str, value: str, type: str | None = None
+    ) -> bool:
+        """Set a database property — requires COM automation (DAO CurrentDb.Properties)."""
+        raise NotImplementedError(
+            "set_database_property requires COM automation (WinComAdapter)"
+        )
+
+    # ========================================================================
+    # IVersioningAdapter stubs — ODBC cannot export/import versioned objects.
+    # Kept here (not in ComOnlyAdapterMixin) for OdbcAdapter's AccessAdapter
+    # backward compatibility.
+    # ========================================================================
+
+    def export_all_versioning(self, output_dir: str) -> dict:
+        """Export all versioned objects — requires COM automation."""
+        raise NotImplementedError(
+            "export_all_versioning requires COM automation (WinComAdapter)"
+        )
+
+    def import_all_versioning(self, input_dir: str) -> dict:
+        """Import all versioned objects — requires COM automation."""
+        raise NotImplementedError(
+            "import_all_versioning requires COM automation (WinComAdapter)"
+        )
+
+    def compare_versioning(self, export_dir: str) -> dict:
+        """Compare versioned objects — requires COM automation."""
+        raise NotImplementedError(
+            "compare_versioning requires COM automation (WinComAdapter)"
+        )
+
+    def export_query_to_text(self, query_name: str) -> str:
+        """Export a query definition to text — requires COM automation."""
+        raise NotImplementedError(
+            "export_query_to_text requires COM automation (WinComAdapter)"
+        )
+
+    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
+        """Import a query definition from text — requires COM automation."""
+        raise NotImplementedError(
+            "import_query_from_text requires COM automation (WinComAdapter)"
+        )
 
     # ========================================================================
     # Internal helpers

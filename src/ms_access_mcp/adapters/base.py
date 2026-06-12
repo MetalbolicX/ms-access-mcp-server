@@ -1,20 +1,42 @@
 """Abstract adapter interfaces for MS Access operations.
 
-The old God Protocol (AccessAdapter) has been split into focused interfaces:
+The old God Protocol (AccessAdapter) has been split into focused interfaces
+(PR2 ISP split):
 - IConnectionManager: minimal lifecycle (connect/disconnect/is_connected)
 - IDataAdapter: data CRUD and query execution
 - ISchemaAdapter: schema introspection and DDL
-- IUiAdapter: COM automation (Access UI operations — WinComAdapter only)
+- IFormAdapter: form/report lifecycle, properties, sections
+- IVbaAdapter: VBA module read/write/compile
+- IMacroAdapter: macro lifecycle
+- IControlAdapter: form/report control manipulation
+- IDatabasePropertiesAdapter: DAO CurrentDb.Properties
+- IVersioningAdapter: database export/import/backup/restore
 
-WinComAdapter implements all four interfaces.
-OdbcAdapter implements IDataAdapter + ISchemaAdapter only.
+`IUiAdapter` is a TypeAlias combining the 6 focused UI protocols — kept for
+backward compatibility with code that previously imported the monolithic
+protocol.
+
+WinComAdapter implements all interfaces.
+OdbcAdapter implements IDataAdapter + ISchemaAdapter + IDatabasePropertiesAdapter
+(form/VBA/macro/control/versioning methods raise NotImplementedError).
 
 Backward compatibility: AccessAdapter remains a Protocol that defines
 the full surface area of WinComAdapter (the original god interface).
 """
 
-from typing import Protocol, runtime_checkable, Any
-from .interfaces import IDataAdapter, ISchemaAdapter, IUiAdapter
+from typing import Any, Protocol, runtime_checkable
+
+from .interfaces import (
+    IControlAdapter,
+    IDataAdapter,
+    IDatabasePropertiesAdapter,
+    IFormAdapter,
+    IMacroAdapter,
+    ISchemaAdapter,
+    IUiAdapter,
+    IVbaAdapter,
+    IVersioningAdapter,
+)
 
 
 @runtime_checkable
@@ -22,10 +44,13 @@ class AccessAdapter(Protocol):
     """Abstract interface for MS Access operations — full surface area.
 
     .. deprecated::
-        AccessAdapter is deprecated. Use IDataAdapter, ISchemaAdapter,
-        or IUiAdapter from adapters.interfaces instead. These segregated
-        interfaces provide better separation of concerns and LSP compliance.
-        AccessAdapter is retained for backward compatibility only.
+        AccessAdapter is deprecated. Use the segregated protocols from
+        `adapters.interfaces` instead — IDataAdapter, ISchemaAdapter,
+        IFormAdapter, IVbaAdapter, IMacroAdapter, IControlAdapter,
+        IDatabasePropertiesAdapter, IVersioningAdapter. The composite
+        `IUiAdapter` TypeAlias still works for code that previously
+        imported the monolithic UI protocol. AccessAdapter is retained
+        for backward compatibility only.
     """
 
     def connect(self, db_path: str, password: str = "") -> bool: ...
@@ -254,5 +279,11 @@ __all__ = [
     "AccessAdapter",
     "IDataAdapter",
     "ISchemaAdapter",
+    "IFormAdapter",
+    "IVbaAdapter",
+    "IMacroAdapter",
+    "IControlAdapter",
+    "IDatabasePropertiesAdapter",
+    "IVersioningAdapter",
     "IUiAdapter",
 ]
