@@ -1,7 +1,7 @@
 """COM Automation and form/report discovery tools for MS Access — Phase 1 SDD."""
-from .server import mcp
+from ._helpers import _com, destructive_guard, require_connected
 from .container import get_container
-from ._helpers import guard_destructive, _com
+from .server import mcp
 
 
 def _pool():
@@ -52,6 +52,7 @@ def close_access() -> dict:
     return {"success": result, "access_running": _com().is_access_running()}
 
 
+@require_connected()
 @mcp.tool()
 def get_forms(connection_name: str = "default") -> dict:
     """
@@ -67,6 +68,7 @@ def get_forms(connection_name: str = "default") -> dict:
     return {"success": True, "forms": [f.model_dump() for f in forms], "count": len(forms)}
 
 
+@require_connected()
 @mcp.tool()
 def get_modules(connection_name: str = "default") -> dict:
     """
@@ -82,6 +84,7 @@ def get_modules(connection_name: str = "default") -> dict:
     return {"success": True, "modules": [m.model_dump() for m in modules], "count": len(modules)}
 
 
+@require_connected()
 @mcp.tool()
 def open_form(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -97,6 +100,7 @@ def open_form(form_name: str, connection_name: str = "default") -> dict:
     return {"success": result, "form": form_name, "message": "Form opened" if result else "Failed to open form"}
 
 
+@require_connected()
 @mcp.tool()
 def close_form(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -117,6 +121,7 @@ def close_form(form_name: str, connection_name: str = "default") -> dict:
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def form_exists(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -133,6 +138,7 @@ def form_exists(form_name: str, connection_name: str = "default") -> dict:
     return {"success": True, "exists": exists, "form": form_name}
 
 
+@require_connected()
 @mcp.tool()
 def get_form_controls(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -149,6 +155,7 @@ def get_form_controls(form_name: str, connection_name: str = "default") -> dict:
     return {"success": True, "controls": [c.model_dump() for c in controls], "count": len(controls)}
 
 
+@require_connected()
 @mcp.tool()
 def get_control_properties(form_name: str, control_name: str, connection_name: str = "default") -> dict:
     """
@@ -171,6 +178,7 @@ def get_control_properties(form_name: str, control_name: str, connection_name: s
     return {"success": True, "form": form_name, "control": control_name, "properties": props}
 
 
+@destructive_guard(action="set_control_property")
 @mcp.tool()
 def set_control_property(form_name: str, control_name: str, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -192,13 +200,11 @@ def set_control_property(form_name: str, control_name: str, property_name: str, 
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_control_property", form=form_name, control=control_name, property_name=property_name, value=value)
-    if guard is not None:
-        return guard
     result = _com().set_control_property(form_name, control_name, property_name, value)
     return {"success": result, "form": form_name, "control": control_name, "property": property_name, "value": value}
 
 
+@destructive_guard(action="set_control_properties")
 @mcp.tool()
 def set_control_properties(form_name: str, control_name: str, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -220,15 +226,13 @@ def set_control_properties(form_name: str, control_name: str, properties: dict[s
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_control_properties", form=form_name, control=control_name)
-    if guard is not None:
-        return guard
     result = _com().set_control_properties(form_name, control_name, properties)
     if not result:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
     return {"success": True, "form": form_name, "control": control_name, "properties": result}
 
 
+@require_connected()
 @mcp.tool()
 def get_control_event_procedures(form_name: str, control_name: str = "", connection_name: str = "default") -> dict:
     """
@@ -258,6 +262,7 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
     }
 
 
+@destructive_guard(action="set_control_event_procedure")
 @mcp.tool()
 def set_control_event_procedure(
     form_name: str,
@@ -286,9 +291,6 @@ def set_control_event_procedure(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_control_event_procedure", form=form_name, control=control_name, event_name=event_name)
-    if guard is not None:
-        return guard
     result = _com().set_control_event_procedure(form_name, control_name, event_name, code)
     return {"success": result, "form": form_name, "control": control_name, "event_name": event_name}
 
@@ -298,6 +300,7 @@ def set_control_event_procedure(
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def create_form(form_name: str, record_source: str = "", template_name: str = "", properties: dict[str, str] | None = None, connection_name: str = "default") -> dict:
     """
@@ -317,6 +320,7 @@ def create_form(form_name: str, record_source: str = "", template_name: str = ""
     return {"success": result, "form": form_name}
 
 
+@destructive_guard(action="rename_form")
 @mcp.tool()
 def rename_form(old_name: str, new_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -334,9 +338,6 @@ def rename_form(old_name: str, new_name: str, connection_name: str = "default", 
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "rename_form", old_name=old_name, new_name=new_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -344,6 +345,7 @@ def rename_form(old_name: str, new_name: str, connection_name: str = "default", 
     return {"success": result, "old_name": old_name, "new_name": new_name}
 
 
+@require_connected()
 @mcp.tool()
 def get_form_properties(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -364,6 +366,7 @@ def get_form_properties(form_name: str, connection_name: str = "default") -> dic
     return {"success": True, "form": form_name, "properties": props}
 
 
+@destructive_guard(action="set_form_property")
 @mcp.tool()
 def set_form_property(form_name: str, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -382,9 +385,6 @@ def set_form_property(form_name: str, property_name: str, value: str, connection
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_form_property", form=form_name, property_name=property_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -392,6 +392,7 @@ def set_form_property(form_name: str, property_name: str, value: str, connection
     return {"success": result, "form": form_name, "property": property_name, "value": value}
 
 
+@destructive_guard(action="set_form_properties")
 @mcp.tool()
 def set_form_properties(form_name: str, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -409,9 +410,6 @@ def set_form_properties(form_name: str, properties: dict[str, str], connection_n
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_form_properties", form=form_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -426,6 +424,7 @@ def set_form_properties(form_name: str, properties: dict[str, str], connection_n
 # ============================================================================
 
 
+@destructive_guard(action="add_control")
 @mcp.tool()
 def add_control(
     form_name: str,
@@ -456,9 +455,6 @@ def add_control(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "add_control", form=form_name, control_type=control_type, control=control_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -466,6 +462,7 @@ def add_control(
     return {"success": result, "form": form_name, "control": control_name, "control_type": control_type}
 
 
+@destructive_guard(action="remove_control")
 @mcp.tool()
 def remove_control(
     form_name: str,
@@ -489,9 +486,6 @@ def remove_control(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "remove_control", form=form_name, control=control_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -504,6 +498,7 @@ def remove_control(
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def get_form_sections(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -526,6 +521,7 @@ def get_form_sections(form_name: str, connection_name: str = "default") -> dict:
     return {"success": True, "form": form_name, "sections": sections}
 
 
+@require_connected()
 @mcp.tool()
 def get_form_section_properties(form_name: str, section_id: int, connection_name: str = "default") -> dict:
     """
@@ -547,6 +543,7 @@ def get_form_section_properties(form_name: str, section_id: int, connection_name
     return {"success": True, "form": form_name, "section_id": section_id, "properties": props}
 
 
+@destructive_guard(action="set_form_section_property")
 @mcp.tool()
 def set_form_section_property(
     form_name: str,
@@ -574,9 +571,6 @@ def set_form_section_property(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_form_section_property", form=form_name, section_id=section_id, property_name=property_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -584,6 +578,7 @@ def set_form_section_property(
     return {"success": result, "form": form_name, "section_id": section_id, "property_name": property_name, "value": value}
 
 
+@destructive_guard(action="set_form_section_properties")
 @mcp.tool()
 def set_form_section_properties(
     form_name: str,
@@ -609,9 +604,6 @@ def set_form_section_properties(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_form_section_properties", form=form_name, section_id=section_id)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}

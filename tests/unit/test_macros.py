@@ -145,7 +145,7 @@ class TestCreateMacro:
             result = server.create_macro("NewMacro", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "create_macro"
-            assert result["macro"] == "NewMacro"
+            assert result["macro_name"] == "NewMacro"
 
     def test_create_macro_success_with_confirmation(self):
         """create_macro with confirm=True should delegate to COM service."""
@@ -237,7 +237,7 @@ class TestDeleteMacro:
             result = server.delete_macro("OldMacro", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "delete_macro"
-            assert result["macro"] == "OldMacro"
+            assert result["macro_name"] == "OldMacro"
 
     def test_delete_macro_success_with_confirmation(self):
         """delete_macro with confirm=True should delegate to COM service."""
@@ -282,7 +282,7 @@ class TestRunMacro:
             result = server.run_macro("TaskMacro", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "run_macro"
-            assert result["macro"] == "TaskMacro"
+            assert result["macro_name"] == "TaskMacro"
 
     def test_run_macro_success_with_confirmation(self):
         """run_macro with confirm=True should delegate to COM service."""

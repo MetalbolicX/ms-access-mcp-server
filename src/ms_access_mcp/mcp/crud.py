@@ -1,11 +1,11 @@
 """CRUD tools for queries, tables, and data in MS Access database — Phase 1 SDD."""
+from ._helpers import destructive_guard, require_connected
+from .container import get_container
 from .server import mcp
-from ._helpers import guard_destructive
 
 
 def _pool():
     """Lazy accessor for connection pool (avoids circular import at module level)."""
-    from .container import get_container
     return get_container().connection_pool
 
 
@@ -34,12 +34,11 @@ def _ensure_connected(connection_name: str = "default"):
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def get_queries(connection_name: str = "default") -> dict:
     """Get all saved queries from the database."""
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     try:
         queries = adapter.get_queries()
         return {"success": True, "queries": [q.model_dump() for q in queries], "count": len(queries)}
@@ -47,6 +46,7 @@ def get_queries(connection_name: str = "default") -> dict:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def create_query(name: str, sql: str, connection_name: str = "default") -> dict:
     """
@@ -58,8 +58,6 @@ def create_query(name: str, sql: str, connection_name: str = "default") -> dict:
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.create_query(name, sql)
         return result
@@ -67,6 +65,7 @@ def create_query(name: str, sql: str, connection_name: str = "default") -> dict:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def set_query_sql(name: str, sql: str, connection_name: str = "default") -> dict:
     """
@@ -78,8 +77,6 @@ def set_query_sql(name: str, sql: str, connection_name: str = "default") -> dict
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.set_query_sql(name, sql)
         return result
@@ -87,6 +84,7 @@ def set_query_sql(name: str, sql: str, connection_name: str = "default") -> dict
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="delete_query")
 @mcp.tool()
 def delete_query(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -98,15 +96,6 @@ def delete_query(name: str, connection_name: str = "default", confirm: bool = Fa
         confirm: Must be True to execute the deletion
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    if dry_run:
-        return {"dry_run": True, "action": "delete_query", "name": name}
-
-    if not confirm:
-        return {"success": False, "error": "confirm=True required for destructive operation (delete_query)"}
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -122,6 +111,7 @@ def delete_query(name: str, connection_name: str = "default", confirm: bool = Fa
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def create_table(table_name: str, columns: list[dict], connection_name: str = "default") -> dict:
     """
@@ -138,8 +128,6 @@ def create_table(table_name: str, columns: list[dict], connection_name: str = "d
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.create_table(table_name, columns)
         return result
@@ -147,6 +135,7 @@ def create_table(table_name: str, columns: list[dict], connection_name: str = "d
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="delete_table")
 @mcp.tool()
 def delete_table(table_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -158,15 +147,6 @@ def delete_table(table_name: str, connection_name: str = "default", confirm: boo
         confirm: Must be True to execute the deletion
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    if dry_run:
-        return {"dry_run": True, "action": "delete_table", "table_name": table_name}
-
-    if not confirm:
-        return {"success": False, "error": "confirm=True required for destructive operation (delete_table)"}
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -182,6 +162,7 @@ def delete_table(table_name: str, connection_name: str = "default", confirm: boo
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def create_index(
     table_name: str,
@@ -203,8 +184,6 @@ def create_index(
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.create_index(table_name, index_name, columns, unique, ignore_null)
         return result
@@ -212,6 +191,7 @@ def create_index(
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="drop_index")
 @mcp.tool()
 def drop_index(table_name: str, index_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -224,15 +204,6 @@ def drop_index(table_name: str, index_name: str, connection_name: str = "default
         confirm: Must be True to execute the deletion
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    if dry_run:
-        return {"dry_run": True, "action": "drop_index", "table_name": table_name, "index_name": index_name}
-
-    if not confirm:
-        return {"success": False, "error": "confirm=True required for destructive operation (drop_index)"}
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -248,6 +219,7 @@ def drop_index(table_name: str, index_name: str, connection_name: str = "default
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def query_data(sql: str, params: list | None = None, connection_name: str = "default") -> dict:
     """
@@ -258,9 +230,6 @@ def query_data(sql: str, params: list | None = None, connection_name: str = "def
         params: Optional list of parameters for parameterized queries
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -272,6 +241,7 @@ def query_data(sql: str, params: list | None = None, connection_name: str = "def
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def insert_data(table_name: str, data: dict | list[dict], connection_name: str = "default") -> dict:
     """
@@ -282,9 +252,6 @@ def insert_data(table_name: str, data: dict | list[dict], connection_name: str =
         data: A single dict for one row, or a list of dicts for multiple rows
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -296,6 +263,7 @@ def insert_data(table_name: str, data: dict | list[dict], connection_name: str =
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -309,11 +277,9 @@ def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None =
         confirm: Must be True when where_dict is None (mass update)
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
     # Mass update (where_dict is None) requires confirm; targeted update proceeds
     if where_dict is None:
+        from ._helpers import guard_destructive
         guard = guard_destructive(confirm, dry_run, "update_data", table_name=table_name, set_dict=set_dict, where_dict=where_dict)
         if guard is not None:
             return guard
@@ -329,6 +295,7 @@ def update_data(table_name: str, set_dict: dict, where_dict: dict | str | None =
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="delete_data")
 @mcp.tool()
 def delete_data(table_name: str, where_dict: dict | str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -341,15 +308,6 @@ def delete_data(table_name: str, where_dict: dict | str | None = None, connectio
         confirm: Must be True to execute the deletion
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    if dry_run:
-        return {"dry_run": True, "action": "delete_data", "table_name": table_name, "where_dict": where_dict}
-
-    if not confirm:
-        return {"success": False, "error": "confirm=True required for destructive operation (delete_data)"}
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -366,6 +324,7 @@ def delete_data(table_name: str, where_dict: dict | str | None = None, connectio
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def alter_table(table_name: str, operations: list[dict], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -385,9 +344,6 @@ def alter_table(table_name: str, operations: list[dict], connection_name: str = 
         confirm: Must be True for drop_column action
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
     if dry_run:
         return {"dry_run": True, "table_name": table_name, "operations": operations}
 

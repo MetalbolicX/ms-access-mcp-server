@@ -216,8 +216,8 @@ class TestSetControlPropertyDestructive:
             result = server.set_control_property("TestForm", "txtName", "BackColor", "16777215", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "set_control_property"
-            assert result["form"] == "TestForm"
-            assert result["control"] == "txtName"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtName"
             assert result["property_name"] == "BackColor"
             assert result["value"] == "16777215"
 
@@ -254,8 +254,8 @@ class TestSetControlPropertiesDestructive:
             result = server.set_control_properties("TestForm", "txtName", {"BackColor": "16777215"}, dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "set_control_properties"
-            assert result["form"] == "TestForm"
-            assert result["control"] == "txtName"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtName"
 
     def test_set_control_properties_success_with_confirmation(self):
         """set_control_properties with confirm=True should delegate to COM service."""
@@ -458,7 +458,7 @@ class TestSetFormProperty:
             result = server.set_form_property("TestForm", "Caption", "New Caption", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "set_form_property"
-            assert result["form"] == "TestForm"
+            assert result["form_name"] == "TestForm"
 
     def test_set_form_property_success_with_confirmation(self):
         """set_form_property with confirm=True should delegate to COM service."""
@@ -528,8 +528,8 @@ class TestAddControl:
             result = server.add_control("TestForm", "TextBox", "txtNew", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "add_control"
-            assert result["form"] == "TestForm"
-            assert result["control"] == "txtNew"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtNew"
             assert result["control_type"] == "TextBox"
 
     def test_add_control_success_with_confirmation(self):
@@ -581,8 +581,8 @@ class TestRemoveControl:
             result = server.remove_control("TestForm", "txtOld", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "remove_control"
-            assert result["form"] == "TestForm"
-            assert result["control"] == "txtOld"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "txtOld"
 
     def test_remove_control_success_with_confirmation(self):
         """remove_control with confirm=True should delegate to COM service and return success."""
@@ -696,7 +696,7 @@ class TestSetFormSectionProperty:
             result = server.set_form_section_property("TestForm", 0, "Height", "1000", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "set_form_section_property"
-            assert result["form"] == "TestForm"
+            assert result["form_name"] == "TestForm"
             assert result["section_id"] == 0
             assert result["property_name"] == "Height"
 
@@ -750,7 +750,7 @@ class TestSetFormSectionProperties:
             result = server.set_form_section_properties("TestForm", 0, {"Height": "1000"}, dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "set_form_section_properties"
-            assert result["form"] == "TestForm"
+            assert result["form_name"] == "TestForm"
             assert result["section_id"] == 0
 
     def test_set_form_section_properties_success_with_confirmation(self):
@@ -801,8 +801,8 @@ class TestSetControlEventProcedure:
             result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub", dry_run=True)
             assert result["dry_run"] is True
             assert result["action"] == "set_control_event_procedure"
-            assert result["form"] == "TestForm"
-            assert result["control"] == "btnSave"
+            assert result["form_name"] == "TestForm"
+            assert result["control_name"] == "btnSave"
             assert result["event_name"] == "Click"
 
     def test_set_control_event_procedure_success_with_confirmation(self):

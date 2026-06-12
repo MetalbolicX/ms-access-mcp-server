@@ -7,7 +7,7 @@ Provides 8 MCP tools covering the full macro lifecycle:
 The `import_macro_from_text` companion lives in persistence.py per the
 proposal's "Open Questions" decision.
 """
-from ._helpers import _com, guard_destructive
+from ._helpers import _com, destructive_guard, require_connected
 from .container import get_container
 from .server import mcp
 
@@ -41,6 +41,7 @@ def _ensure_connected(connection_name: str = "default"):
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def macro_exists(macro_name: str, connection_name: str = "default") -> dict:
     """
@@ -51,12 +52,11 @@ def macro_exists(macro_name: str, connection_name: str = "default") -> dict:
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     exists = adapter.macro_exists(macro_name)
     return {"success": True, "exists": exists, "macro": macro_name}
 
 
+@require_connected()
 @mcp.tool()
 def get_macros(connection_name: str = "default") -> dict:
     """
@@ -66,12 +66,11 @@ def get_macros(connection_name: str = "default") -> dict:
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     macros = adapter.get_macros()
     return {"success": True, "macros": [m.model_dump() for m in macros], "count": len(macros)}
 
 
+@require_connected()
 @mcp.tool()
 def get_macro_properties(macro_name: str, connection_name: str = "default") -> dict:
     """
@@ -81,9 +80,6 @@ def get_macro_properties(macro_name: str, connection_name: str = "default") -> d
         macro_name: Name of the macro
         connection_name: Connection identifier (defaults to "default")
     """
-    adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     props = _com().get_macro_properties(macro_name)
     if not props:
         return {"success": False, "error": f"Macro '{macro_name}' not found"}
@@ -95,6 +91,7 @@ def get_macro_properties(macro_name: str, connection_name: str = "default") -> d
 # ============================================================================
 
 
+@destructive_guard(action="create_macro")
 @mcp.tool()
 def create_macro(
     macro_name: str,
@@ -114,15 +111,11 @@ def create_macro(
         confirm: Must be True to execute the create
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "create_macro", macro=macro_name)
-    if guard is not None:
-        return guard
     result = _com().create_macro(macro_name)
     return {"success": result, "macro": macro_name}
 
 
+@destructive_guard(action="rename_macro")
 @mcp.tool()
 def rename_macro(
     old_name: str,
@@ -144,15 +137,11 @@ def rename_macro(
         confirm: Must be True to execute the rename
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "rename_macro", old_name=old_name, new_name=new_name)
-    if guard is not None:
-        return guard
     result = _com().rename_macro(old_name, new_name)
     return {"success": result, "old_name": old_name, "new_name": new_name}
 
 
+@destructive_guard(action="delete_macro")
 @mcp.tool()
 def delete_macro(
     macro_name: str,
@@ -172,15 +161,11 @@ def delete_macro(
         confirm: Must be True to execute the deletion
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "delete_macro", macro=macro_name)
-    if guard is not None:
-        return guard
     result = _com().delete_macro(macro_name)
     return {"success": result, "macro": macro_name}
 
 
+@destructive_guard(action="run_macro")
 @mcp.tool()
 def run_macro(
     macro_name: str,
@@ -201,10 +186,5 @@ def run_macro(
         confirm: Must be True to execute the run
         dry_run: If True, returns a preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "run_macro", macro=macro_name)
-    if guard is not None:
-        return guard
     result = _com().run_macro(macro_name)
     return {"success": result, "macro": macro_name}

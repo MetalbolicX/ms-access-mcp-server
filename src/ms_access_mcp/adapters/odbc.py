@@ -19,6 +19,21 @@ ACCESS_DRIVER = "{Microsoft Access Driver (*.mdb, *.accdb)}"
 ACE_OLEDB_12 = "Microsoft.ACE.OLEDB.12.0"
 ACE_OLEDB_16 = "Microsoft.ACE.OLEDB.16.0"
 
+# Canonical Access → ODBC type map (single source of truth).
+# Importable by other modules; see schema_inspector.py and wincom.py.
+ODBC_TYPE_MAP = {
+    "Text": "VARCHAR",
+    "Long Integer": "INT",
+    "Integer": "SMALLINT",
+    "Boolean": "BIT",
+    "Date/Time": "DATETIME",
+    "Currency": "MONEY",
+    "Memo": "TEXT",
+    "Double": "FLOAT",
+    "Single": "REAL",
+    "Binary": "VARBINARY",
+}
+
 
 class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     """Data-only adapter using pyodbc for fast read-only access.
@@ -677,19 +692,6 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
 
-        ODBC_TYPE_MAP = {
-            "Text": "VARCHAR",
-            "Long Integer": "INT",
-            "Integer": "SMALLINT",
-            "Boolean": "BIT",
-            "Date/Time": "DATETIME",
-            "Currency": "MONEY",
-            "Memo": "TEXT",
-            "Double": "FLOAT",
-            "Single": "REAL",
-            "Binary": "VARBINARY",
-        }
-
         col_defs = []
         for col in columns:
             name = col["name"]
@@ -865,19 +867,6 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     # ========================================================================
     # Table Alterations (ISchemaAdapter)
     # ========================================================================
-
-    ODBC_TYPE_MAP = {
-        "Text": "VARCHAR",
-        "Long Integer": "INT",
-        "Integer": "SMALLINT",
-        "Boolean": "BIT",
-        "Date/Time": "DATETIME",
-        "Currency": "MONEY",
-        "Memo": "TEXT",
-        "Double": "FLOAT",
-        "Single": "REAL",
-        "Binary": "VARBINARY",
-    }
 
     def alter_table(self, table_name: str, operations: list[dict]) -> dict:
         """Apply schema modifications to a table.
@@ -1102,7 +1091,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         size = params.get("size", 255) if col_type == "Text" else 0
         nullable = params.get("nullable", True)
 
-        odbc_type = self.ODBC_TYPE_MAP.get(col_type, "VARCHAR")
+        odbc_type = ODBC_TYPE_MAP.get(col_type, "VARCHAR")
         if size > 0 and col_type == "Text":
             col_def = f"[{name}] {odbc_type}({size})"
         elif odbc_type == "VARCHAR":
@@ -1129,7 +1118,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         size = params.get("size", 255) if col_type == "Text" else 0
         nullable = params.get("nullable", True)
 
-        odbc_type = self.ODBC_TYPE_MAP.get(col_type, "VARCHAR")
+        odbc_type = ODBC_TYPE_MAP.get(col_type, "VARCHAR")
         if size > 0 and col_type == "Text":
             col_def = f"[{name}] {odbc_type}({size})"
         elif odbc_type == "VARCHAR":

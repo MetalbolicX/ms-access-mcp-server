@@ -1,6 +1,6 @@
 """Persistence/versioning tools — export/import Access objects as text files."""
-from .server import mcp, _get_path_guard
-from ._helpers import guard_destructive, _validate_path
+from ._helpers import _validate_path, destructive_guard, require_connected
+from .server import mcp
 
 
 def _pool():
@@ -34,6 +34,7 @@ def _ensure_connected(connection_name: str = "default"):
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def export_form_to_text(form_name: str, connection_name: str = "default") -> dict:
     """
@@ -52,6 +53,7 @@ def export_form_to_text(form_name: str, connection_name: str = "default") -> dic
     return {"success": True, "form": form_name, "data": result}
 
 
+@require_connected()
 @mcp.tool()
 def import_form_from_text(form_name: str, form_data: str, connection_name: str = "default") -> dict:
     """
@@ -69,6 +71,7 @@ def import_form_from_text(form_name: str, form_data: str, connection_name: str =
     return {"success": result, "form": form_name, "message": "Form imported" if result else "Import failed"}
 
 
+@destructive_guard(action="delete_form")
 @mcp.tool()
 def delete_form(form_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -82,9 +85,6 @@ def delete_form(form_name: str, connection_name: str = "default", confirm: bool 
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "delete_form", form_name=form_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -97,6 +97,7 @@ def delete_form(form_name: str, connection_name: str = "default", confirm: bool 
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def export_report_to_text(report_name: str, connection_name: str = "default") -> dict:
     """
@@ -115,6 +116,7 @@ def export_report_to_text(report_name: str, connection_name: str = "default") ->
     return {"success": True, "report": report_name, "data": result}
 
 
+@require_connected()
 @mcp.tool()
 def import_report_from_text(report_name: str, report_data: str, connection_name: str = "default") -> dict:
     """
@@ -132,6 +134,7 @@ def import_report_from_text(report_name: str, report_data: str, connection_name:
     return {"success": result, "report": report_name, "message": "Report imported" if result else "Import failed"}
 
 
+@destructive_guard(action="delete_report")
 @mcp.tool()
 def delete_report(report_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -145,9 +148,6 @@ def delete_report(report_name: str, connection_name: str = "default", confirm: b
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "delete_report", report_name=report_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -160,6 +160,7 @@ def delete_report(report_name: str, connection_name: str = "default", confirm: b
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def export_module_to_text(module_name: str, connection_name: str = "default") -> dict:
     """
@@ -178,6 +179,7 @@ def export_module_to_text(module_name: str, connection_name: str = "default") ->
     return {"success": True, "module": module_name, "data": result}
 
 
+@require_connected()
 @mcp.tool()
 def export_macro_to_text(macro_name: str, connection_name: str = "default") -> dict:
     """
@@ -198,6 +200,7 @@ def export_macro_to_text(macro_name: str, connection_name: str = "default") -> d
     return {"success": True, "macro": macro_name, "data": result}
 
 
+@destructive_guard(action="import_macro_from_text")
 @mcp.tool()
 def import_macro_from_text(
     macro_name: str,
@@ -222,9 +225,6 @@ def import_macro_from_text(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "import_macro_from_text", macro=macro_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -232,6 +232,7 @@ def import_macro_from_text(
     return {"success": result, "macro": macro_name}
 
 
+@require_connected()
 @mcp.tool()
 def export_query_to_text(query_name: str, connection_name: str = "default") -> dict:
     """
@@ -250,6 +251,7 @@ def export_query_to_text(query_name: str, connection_name: str = "default") -> d
     return {"success": True, "query": query_name, "data": result}
 
 
+@require_connected()
 @mcp.tool()
 def import_query_from_text(query_name: str, query_data: str, connection_name: str = "default") -> dict:
     """
@@ -272,6 +274,7 @@ def import_query_from_text(query_name: str, query_data: str, connection_name: st
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def export_all_versioning(output_dir: str, connection_name: str = "default") -> dict:
     """
@@ -296,6 +299,7 @@ def export_all_versioning(output_dir: str, connection_name: str = "default") -> 
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def import_all_versioning(input_dir: str, connection_name: str = "default") -> dict:
     """
@@ -317,6 +321,7 @@ def import_all_versioning(input_dir: str, connection_name: str = "default") -> d
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def compare_versioning(export_dir: str, connection_name: str = "default") -> dict:
     """
@@ -340,6 +345,7 @@ def compare_versioning(export_dir: str, connection_name: str = "default") -> dic
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict:
     """
@@ -364,6 +370,7 @@ def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def execute_sql_script(script_path: str, connection_name: str = "default") -> dict:
     """

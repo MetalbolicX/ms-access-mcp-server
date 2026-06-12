@@ -266,30 +266,6 @@ class WinComAdapter(IDataAdapter, ISchemaAdapter, IUiAdapter):
         return self._schema.get_tables()
 
     @staticmethod
-    def _access_type_name(access_type: int) -> str:
-        """Map Access data type integer to string name."""
-        type_map = {
-            1: "Boolean",
-            2: "Byte",
-            3: "Integer",
-            4: "Long Integer",
-            5: "Currency",
-            6: "Single",
-            7: "Double",
-            8: "Date/Time",
-            10: "Text",
-            11: "Binary",
-            12: "Memo",
-            15: "GUID",
-            16: "Big Integer",
-            17: "Unsigned Byte",
-            18: "Unsigned Integer",
-            19: "Unsigned Long Integer",
-            20: "Decimal",
-        }
-        return type_map.get(access_type, f"Unknown({access_type})")
-
-    @staticmethod
     def _format_dao_value(val: object) -> str:
         """Format a Python value for inline use in DAO SQL.
 
