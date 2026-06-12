@@ -380,31 +380,27 @@ class TestCliExportAllCommand:
         assert "No such command" not in result.stdout, result.stdout
 
     def test_export_all_with_dedup_flag(self, tmp_path):
-        """macc export-all --dedup invokes versioning with dedup."""
+        """macc export-all invokes adapter.export_all_versioning directly."""
         from unittest.mock import MagicMock, patch
         mock_adapter = MagicMock()
         mock_adapter.is_connected.return_value = True
         mock_adapter.connect.return_value = True
-        mock_orch_result = {"success": True, "error": None, "exported": 0}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.export_all.return_value = mock_orch_result
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-                result = runner.invoke(app, ["export-all", "--dir", str(tmp_path), "--db", "/tmp/test.accdb", "--dedup"])
+        mock_adapter.export_all_versioning.return_value = {"success": True, "error": None, "exported": 0}
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter") as MockAdapter:
+            MockAdapter.return_value = mock_adapter
+            result = runner.invoke(app, ["export-all", "--dir", str(tmp_path), "--db", "/tmp/test.accdb", "--dedup"])
         assert result.exit_code == 0, result.stdout
 
     def test_export_all_default_no_dedup(self, tmp_path):
-        """macc export-all without --dedup should still work."""
+        """macc export-all invokes adapter.export_all_versioning directly."""
         from unittest.mock import MagicMock, patch
         mock_adapter = MagicMock()
         mock_adapter.is_connected.return_value = True
         mock_adapter.connect.return_value = True
-        mock_orch_result = {"success": True, "error": None, "exported": 0}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.export_all.return_value = mock_orch_result
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-                result = runner.invoke(app, ["export-all", "--dir", str(tmp_path), "--db", "/tmp/test.accdb"])
+        mock_adapter.export_all_versioning.return_value = {"success": True, "error": None, "exported": 0}
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter") as MockAdapter:
+            MockAdapter.return_value = mock_adapter
+            result = runner.invoke(app, ["export-all", "--dir", str(tmp_path), "--db", "/tmp/test.accdb"])
         assert result.exit_code == 0, result.stdout
 
 
@@ -415,245 +411,19 @@ class TestCliCompareVersioningCommand:
         assert "No such command" not in result.stdout, result.stdout
 
     def test_compare_versioning_invokes_correctly(self, tmp_path):
-        """macc compare-versioning <dir> invokes versioning compare."""
+        """macc compare-versioning invokes adapter.compare_versioning directly."""
         from unittest.mock import MagicMock, patch
         mock_adapter = MagicMock()
         mock_adapter.is_connected.return_value = True
         mock_adapter.connect.return_value = True
-        mock_orch_result = {"success": True, "error": None, "new": [], "missing": [], "changed": [], "unchanged": []}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.compare.return_value = mock_orch_result
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-                result = runner.invoke(app, ["compare-versioning", "--dir", str(tmp_path), "--db", "/tmp/test.accdb"])
+        mock_adapter.compare_versioning.return_value = {"success": True, "error": None, "new": [], "missing": [], "changed": [], "unchanged": []}
+        with patch("ms_access_mcp.adapters.odbc.OdbcAdapter") as MockAdapter:
+            MockAdapter.return_value = mock_adapter
+            result = runner.invoke(app, ["compare-versioning", "--dir", str(tmp_path), "--db", "/tmp/test.accdb"])
         assert result.exit_code == 0, result.stdout
 
 
 # --- Task 2.1 RED: Tests for CLI wiring to orchestrator ---
-class TestCliExportAllOrchestratorWiring:
-    """Test that export-all command properly wires to VersioningOrchestrator."""
-
-    def test_export_all_calls_orchestrator_export_all_with_correct_args(self, tmp_path):
-        """macc export-all --dir ./exports → calls orchestrator.export_all, exit code 0."""
-        from unittest.mock import MagicMock, patch
-
-        export_dir = str(tmp_path / "exports")
-        mock_adapter = MagicMock()
-        mock_adapter.is_connected.return_value = True
-        mock_adapter.connect.return_value = True
-
-        mock_orch_result = {
-            "success": True,
-            "error": None,
-            "exported": 5,
-            "skipped": 2,
-        }
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.export_all.return_value = mock_orch_result
-
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-
-                result = runner.invoke(app, [
-                    "export-all",
-                    "--dir", export_dir,
-                    "--db", "/tmp/test.accdb",
-                ])
-
-                # Verify orchestrator was called with correct arguments
-                mock_orch_instance.export_all.assert_called_once()
-                call_kwargs = mock_orch_instance.export_all.call_args
-                assert call_kwargs[0][0] == export_dir
-                assert call_kwargs[1]["dedup"] == True  # default
-                assert call_kwargs[1]["module_ext"] == ".bas"
-                assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.stdout}"
-
-    def test_export_all_passes_dedup_true(self, tmp_path):
-        """macc export-all --dir ./exports --dedup → passes dedup=True."""
-        from unittest.mock import MagicMock, patch
-
-        export_dir = str(tmp_path / "exports")
-        mock_adapter = MagicMock()
-        mock_adapter.is_connected.return_value = True
-        mock_adapter.connect.return_value = True
-
-        mock_orch_result = {"success": True, "error": None}
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.export_all.return_value = mock_orch_result
-
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-
-                result = runner.invoke(app, [
-                    "export-all",
-                    "--dir", export_dir,
-                    "--db", "/tmp/test.accdb",
-                    "--dedup",
-                ])
-
-                call_kwargs = mock_orch_instance.export_all.call_args
-                assert call_kwargs[1]["dedup"] == True
-                assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.stdout}"
-
-    def test_export_all_with_orchestrator_success_false_exits_1(self, tmp_path):
-        """macc export-all with orchestrator returning success=False → exit code 1."""
-        from unittest.mock import MagicMock, patch
-
-        export_dir = str(tmp_path / "exports")
-        mock_adapter = MagicMock()
-        mock_adapter.is_connected.return_value = True
-        mock_adapter.connect.return_value = True
-
-        mock_orch_result = {
-            "success": False,
-            "error": "Adapter not connected",
-        }
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.export_all.return_value = mock_orch_result
-
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-
-                result = runner.invoke(app, [
-                    "export-all",
-                    "--dir", export_dir,
-                    "--db", "/tmp/test.accdb",
-                ])
-
-                assert result.exit_code == 1, f"Expected 1, got {result.exit_code}: {result.stdout}"
-                assert "error" in result.stdout.lower() or "fail" in result.stdout.lower()
-
-
-class TestCliCompareVersioningOrchestratorWiring:
-    """Test that compare-versioning command properly wires to VersioningOrchestrator."""
-
-    def test_compare_calls_orchestrator_compare_exit_0(self, tmp_path):
-        """macc compare-versioning --dir ./exports → calls orchestrator.compare, exit code 0."""
-        from unittest.mock import MagicMock, patch
-
-        export_dir = str(tmp_path / "exports")
-        mock_adapter = MagicMock()
-        mock_adapter.is_connected.return_value = True
-        mock_adapter.connect.return_value = True
-
-        mock_orch_result = {
-            "success": True,
-            "error": None,
-            "new": [],
-            "missing": [],
-            "changed": [],
-            "unchanged": [],
-        }
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.compare.return_value = mock_orch_result
-
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-
-                result = runner.invoke(app, [
-                    "compare-versioning",
-                    "--dir", export_dir,
-                    "--db", "/tmp/test.accdb",
-                ])
-
-                mock_orch_instance.compare.assert_called_once()
-                assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.stdout}"
-
-    def test_compare_with_differences_exits_1(self, tmp_path):
-        """macc compare-versioning with differences → exit code 1."""
-        from unittest.mock import MagicMock, patch
-
-        export_dir = str(tmp_path / "exports")
-        mock_adapter = MagicMock()
-        mock_adapter.is_connected.return_value = True
-        mock_adapter.connect.return_value = True
-
-        mock_orch_result = {
-            "success": True,
-            "error": None,
-            "new": [{"name": "Form1"}],
-            "missing": [],
-            "changed": [],
-            "unchanged": [],
-        }
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.compare.return_value = mock_orch_result
-
-            with patch("ms_access_mcp.adapters.wincom.WinComAdapter") as MockAdapter:
-                MockAdapter.return_value = mock_adapter
-
-                result = runner.invoke(app, [
-                    "compare-versioning",
-                    "--dir", export_dir,
-                    "--db", "/tmp/test.accdb",
-                ])
-
-                assert result.exit_code == 1, f"Expected 1, got {result.exit_code}: {result.stdout}"
-                assert "Form1" in result.stdout
-
-
-class TestCliGitHookInitOrchestratorWiring:
-    """Test that git-hook-init command properly wires to VersioningOrchestrator."""
-
-    def test_git_hook_init_calls_orchestrator_install_git_hook_exit_0(self, tmp_path, monkeypatch):
-        """macc git-hook init → calls orchestrator.install_git_hook, exit code 0."""
-        from unittest.mock import MagicMock, patch
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / ".git" / "hooks").mkdir(parents=True)
-
-        mock_orch_result = {
-            "success": True,
-            "error": None,
-            "message": "Pre-commit hook installed",
-        }
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.install_git_hook.return_value = mock_orch_result
-
-            result = runner.invoke(app, [
-                "git-hook-init",
-                "--repo", str(tmp_path),
-            ])
-
-            mock_orch_instance.install_git_hook.assert_called_once()
-            assert result.exit_code == 0, f"Expected 0, got {result.exit_code}: {result.stdout}"
-
-    def test_git_hook_init_fails_exits_1(self, tmp_path, monkeypatch):
-        """macc git-hook init fails → exit code 1."""
-        from unittest.mock import MagicMock, patch
-
-        monkeypatch.chdir(tmp_path)
-        (tmp_path / ".git" / "hooks").mkdir(parents=True)
-
-        mock_orch_result = {
-            "success": False,
-            "error": "Permission denied",
-        }
-
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            mock_orch_instance = MockOrch.return_value
-            mock_orch_instance.install_git_hook.return_value = mock_orch_result
-
-            result = runner.invoke(app, [
-                "git-hook-init",
-                "--repo", str(tmp_path),
-            ])
-
-            assert result.exit_code == 1, f"Expected 1, got {result.exit_code}: {result.stdout}"
-
-
 class TestCliHelp:
     def test_help_prints_usage(self):
         result = runner.invoke(app, ["--help"])

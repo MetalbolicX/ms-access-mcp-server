@@ -93,24 +93,24 @@ class TestGetMacroProperties:
         """get_macro_properties should return success with properties dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_macro_properties.return_value = {"Name": "TestMacro", "Type": "Macro"}
-        with patch.object(macros_module, '_pool', return_value=mock_conn), \
-             patch.object(macros_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_macro_properties.return_value = {"Name": "TestMacro", "Type": "Macro"}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(macros_module, '_pool', return_value=mock_conn):
             result = server.get_macro_properties("TestMacro")
             assert result["success"] is True
             assert result["macro"] == "TestMacro"
             assert result["properties"]["Name"] == "TestMacro"
-            mock_com.get_macro_properties.assert_called_once_with("TestMacro")
+            mock_adapter.get_macro_properties.assert_called_once_with("TestMacro")
 
     def test_get_macro_properties_empty_returns_error(self):
         """get_macro_properties with empty dict should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_macro_properties.return_value = {}
-        with patch.object(macros_module, '_pool', return_value=mock_conn), \
-             patch.object(macros_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_macro_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(macros_module, '_pool', return_value=mock_conn):
             result = server.get_macro_properties("NonExistent")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -151,14 +151,14 @@ class TestCreateMacro:
         """create_macro with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.create_macro.return_value = True
-        with patch.object(macros_module, '_pool', return_value=mock_conn), \
-             patch.object(macros_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.create_macro.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(macros_module, '_pool', return_value=mock_conn):
             result = server.create_macro("NewMacro", confirm=True)
             assert result["success"] is True
             assert result["macro"] == "NewMacro"
-            mock_com.create_macro.assert_called_once_with("NewMacro")
+            mock_adapter.create_macro.assert_called_once_with("NewMacro")
 
     def test_create_macro_returns_error_when_not_connected(self):
         """create_macro should return error when not connected."""
@@ -197,15 +197,15 @@ class TestRenameMacro:
         """rename_macro with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.rename_macro.return_value = True
-        with patch.object(macros_module, '_pool', return_value=mock_conn), \
-             patch.object(macros_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.rename_macro.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(macros_module, '_pool', return_value=mock_conn):
             result = server.rename_macro("OldName", "NewName", confirm=True)
             assert result["success"] is True
             assert result["old_name"] == "OldName"
             assert result["new_name"] == "NewName"
-            mock_com.rename_macro.assert_called_once_with("OldName", "NewName")
+            mock_adapter.rename_macro.assert_called_once_with("OldName", "NewName")
 
     def test_rename_macro_returns_error_when_not_connected(self):
         """rename_macro should return error when not connected."""
@@ -243,14 +243,14 @@ class TestDeleteMacro:
         """delete_macro with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.delete_macro.return_value = True
-        with patch.object(macros_module, '_pool', return_value=mock_conn), \
-             patch.object(macros_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.delete_macro.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(macros_module, '_pool', return_value=mock_conn):
             result = server.delete_macro("OldMacro", confirm=True)
             assert result["success"] is True
             assert result["macro"] == "OldMacro"
-            mock_com.delete_macro.assert_called_once_with("OldMacro")
+            mock_adapter.delete_macro.assert_called_once_with("OldMacro")
 
     def test_delete_macro_returns_error_when_not_connected(self):
         """delete_macro should return error when not connected."""
@@ -288,14 +288,14 @@ class TestRunMacro:
         """run_macro with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.run_macro.return_value = True
-        with patch.object(macros_module, '_pool', return_value=mock_conn), \
-             patch.object(macros_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.run_macro.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(macros_module, '_pool', return_value=mock_conn):
             result = server.run_macro("TaskMacro", confirm=True)
             assert result["success"] is True
             assert result["macro"] == "TaskMacro"
-            mock_com.run_macro.assert_called_once_with("TaskMacro")
+            mock_adapter.run_macro.assert_called_once_with("TaskMacro")
 
     def test_run_macro_returns_error_when_not_connected(self):
         """run_macro should return error when not connected."""

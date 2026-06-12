@@ -1,7 +1,13 @@
 """COM Automation and form/report discovery tools for MS Access — Phase 1 SDD."""
-from ._helpers import _com, destructive_guard, require_connected
+from ._helpers import destructive_guard, require_connected
 from .container import get_container
 from .server import mcp
+
+
+# Module-level state for launch_access / close_access (formerly in
+# COMAutomationService). Tracks whether the Access app is currently
+# running on the server desktop.
+_access_running = False
 
 
 def _pool():
@@ -41,15 +47,25 @@ def launch_access(visible: bool = False) -> dict:
     Args:
         visible: Whether to show Access window (default False)
     """
-    result = _com().launch_access(visible)
-    return {"success": result, "access_running": _com().is_access_running()}
+    global _access_running
+    adapter = _get_adapter()
+    if adapter is None:
+        return {"success": False, "access_running": _access_running, "error": "No adapter available"}
+    result = adapter.launch_access(visible)
+    _access_running = bool(result)
+    return {"success": result, "access_running": _access_running}
 
 
 @mcp.tool()
 def close_access() -> dict:
     """Close Microsoft Access application."""
-    result = _com().close_access()
-    return {"success": result, "access_running": _com().is_access_running()}
+    global _access_running
+    adapter = _get_adapter()
+    if adapter is None:
+        return {"success": False, "access_running": _access_running, "error": "No adapter available"}
+    result = adapter.close_access()
+    _access_running = not bool(result)
+    return {"success": result, "access_running": _access_running}
 
 
 @require_connected()
@@ -96,7 +112,10 @@ def open_form(form_name: str, connection_name: str = "default") -> dict:
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    result = _com().open_form(form_name)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.open_form(form_name)
     return {"success": result, "form": form_name, "message": "Form opened" if result else "Failed to open form"}
 
 
@@ -112,7 +131,10 @@ def close_form(form_name: str, connection_name: str = "default") -> dict:
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    result = _com().close_form(form_name)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.close_form(form_name)
     return {"success": result, "form": form_name, "message": "Form closed" if result else "Failed to close form"}
 
 
@@ -172,7 +194,7 @@ def get_control_properties(form_name: str, control_name: str, connection_name: s
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_control_properties(form_name, control_name)
+    props = adapter.get_control_properties(form_name, control_name)
     if not props:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
     return {"success": True, "form": form_name, "control": control_name, "properties": props}
@@ -200,7 +222,7 @@ def set_control_property(form_name: str, control_name: str, property_name: str, 
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    result = _com().set_control_property(form_name, control_name, property_name, value)
+    result = adapter.set_control_property(form_name, control_name, property_name, value)
     return {"success": result, "form": form_name, "control": control_name, "property": property_name, "value": value}
 
 
@@ -226,7 +248,7 @@ def set_control_properties(form_name: str, control_name: str, properties: dict[s
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    result = _com().set_control_properties(form_name, control_name, properties)
+    result = adapter.set_control_properties(form_name, control_name, properties)
     if not result:
         return {"success": False, "error": f"Control '{control_name}' not found in form '{form_name}'"}
     return {"success": True, "form": form_name, "control": control_name, "properties": result}
@@ -252,7 +274,7 @@ def get_control_event_procedures(form_name: str, control_name: str = "", connect
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    procedures = _com().get_control_event_procedures(form_name, control_name)
+    procedures = adapter.get_control_event_procedures(form_name, control_name)
     return {
         "success": True,
         "form": form_name,
@@ -291,7 +313,10 @@ def set_control_event_procedure(
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    result = _com().set_control_event_procedure(form_name, control_name, event_name, code)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.set_control_event_procedure(form_name, control_name, event_name, code)
     return {"success": result, "form": form_name, "control": control_name, "event_name": event_name}
 
 
@@ -360,7 +385,7 @@ def get_form_properties(form_name: str, connection_name: str = "default") -> dic
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_form_properties(form_name)
+    props = adapter.get_form_properties(form_name)
     if not props:
         return {"success": False, "error": f"No properties found for form '{form_name}'", "form": form_name}
     return {"success": True, "form": form_name, "properties": props}
@@ -388,7 +413,7 @@ def set_form_property(form_name: str, property_name: str, value: str, connection
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_form_property(form_name, property_name, value)
+    result = adapter.set_form_property(form_name, property_name, value)
     return {"success": result, "form": form_name, "property": property_name, "value": value}
 
 
@@ -413,7 +438,7 @@ def set_form_properties(form_name: str, properties: dict[str, str], connection_n
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_form_properties(form_name, properties)
+    result = adapter.set_form_properties(form_name, properties)
     if not result:
         return {"success": False, "error": f"No properties found for form '{form_name}'"}
     return {"success": True, "form": form_name, "properties": result}
@@ -458,7 +483,7 @@ def add_control(
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().add_control(form_name, control_type, control_name, section, properties)
+    result = adapter.add_control(form_name, control_type, control_name, section, properties)
     return {"success": result, "form": form_name, "control": control_name, "control_type": control_type}
 
 
@@ -489,7 +514,7 @@ def remove_control(
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().remove_control(form_name, control_name)
+    result = adapter.remove_control(form_name, control_name)
     return {"success": result, "form": form_name, "control": control_name}
 
 
@@ -537,7 +562,7 @@ def get_form_section_properties(form_name: str, section_id: int, connection_name
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_form_section_properties(form_name, section_id)
+    props = adapter.get_form_section_properties(form_name, section_id)
     if not props:
         return {"success": False, "error": f"No properties found for section {section_id} of form '{form_name}'", "form": form_name, "section_id": section_id}
     return {"success": True, "form": form_name, "section_id": section_id, "properties": props}
@@ -574,7 +599,7 @@ def set_form_section_property(
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_form_section_property(form_name, section_id, property_name, value)
+    result = adapter.set_form_section_property(form_name, section_id, property_name, value)
     return {"success": result, "form": form_name, "section_id": section_id, "property_name": property_name, "value": value}
 
 
@@ -607,7 +632,7 @@ def set_form_section_properties(
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_form_section_properties(form_name, section_id, properties)
+    result = adapter.set_form_section_properties(form_name, section_id, properties)
     if not result:
         return {"success": False, "error": f"No properties set for section {section_id} of form '{form_name}'"}
     return {"success": True, "form": form_name, "section_id": section_id, "properties": result}

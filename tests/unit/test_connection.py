@@ -31,20 +31,6 @@ class TestConnectAccess:
             assert result["success"] is False
             assert result["connected"] is False
 
-    def test_connect_access_does_not_call_set_adapter(self):
-        """connect_access should NOT call set_adapter on com_automation_service."""
-        mock_conn = MagicMock()
-        mock_conn.is_connected.return_value = False
-        mock_conn.connect.return_value = True
-        mock_com = MagicMock()
-        with (
-            patch.object(conn_module, '_pool', return_value=mock_conn),
-            patch.object(conn_module, '_com', return_value=mock_com),
-        ):
-            result = conn_module.connect_access("test.accdb", use_com=True)
-            assert result["success"] is True
-            mock_com.set_adapter.assert_not_called()
-
 
 class TestDisconnectAccess:
     """Tests for disconnect_access tool."""

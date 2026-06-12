@@ -7,7 +7,7 @@ Provides 8 MCP tools covering the full macro lifecycle:
 The `import_macro_from_text` companion lives in persistence.py per the
 proposal's "Open Questions" decision.
 """
-from ._helpers import _com, destructive_guard, require_connected
+from ._helpers import destructive_guard, require_connected
 from .container import get_container
 from .server import mcp
 
@@ -80,7 +80,10 @@ def get_macro_properties(macro_name: str, connection_name: str = "default") -> d
         macro_name: Name of the macro
         connection_name: Connection identifier (defaults to "default")
     """
-    props = _com().get_macro_properties(macro_name)
+    adapter = _ensure_connected(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "Not connected to database"}
+    props = adapter.get_macro_properties(macro_name)
     if not props:
         return {"success": False, "error": f"Macro '{macro_name}' not found"}
     return {"success": True, "macro": macro_name, "properties": props}
@@ -111,7 +114,10 @@ def create_macro(
         confirm: Must be True to execute the create
         dry_run: If True, returns a preview without executing
     """
-    result = _com().create_macro(macro_name)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.create_macro(macro_name)
     return {"success": result, "macro": macro_name}
 
 
@@ -137,7 +143,10 @@ def rename_macro(
         confirm: Must be True to execute the rename
         dry_run: If True, returns a preview without executing
     """
-    result = _com().rename_macro(old_name, new_name)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.rename_macro(old_name, new_name)
     return {"success": result, "old_name": old_name, "new_name": new_name}
 
 
@@ -161,7 +170,10 @@ def delete_macro(
         confirm: Must be True to execute the deletion
         dry_run: If True, returns a preview without executing
     """
-    result = _com().delete_macro(macro_name)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.delete_macro(macro_name)
     return {"success": result, "macro": macro_name}
 
 
@@ -186,5 +198,8 @@ def run_macro(
         confirm: Must be True to execute the run
         dry_run: If True, returns a preview without executing
     """
-    result = _com().run_macro(macro_name)
+    adapter = _get_adapter(connection_name)
+    if adapter is None:
+        return {"success": False, "error": "No adapter available"}
+    result = adapter.run_macro(macro_name)
     return {"success": result, "macro": macro_name}

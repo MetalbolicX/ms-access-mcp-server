@@ -12,7 +12,6 @@ from typing import Optional
 
 from ..services.connection import ConnectionPool
 from ..services.backend_selector import BackendSelector
-from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
 from ..services.dev_copy_service import DevCopyService
 from ..services.session import SessionService
@@ -29,7 +28,6 @@ class ServiceContainer:
     """Composition root holding all MCP server service instances."""
 
     connection_pool: ConnectionPool
-    com_automation: COMAutomationService
     migration: MigrationService
     dev_copy: DevCopyService
     connector_registry: ConnectorRegistry
@@ -89,7 +87,6 @@ def get_container() -> ServiceContainer:
 
         _container = ServiceContainer(
             connection_pool=connection_pool,
-            com_automation=COMAutomationService(connection_pool=connection_pool),
             migration=MigrationService(connector_registry=_default_registry, credential_vault=credential_vault),
             dev_copy=DevCopyService(),
             connector_registry=_default_registry,

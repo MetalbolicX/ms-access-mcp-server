@@ -42,30 +42,35 @@ class TestComToolsConnectionGuards:
 class TestLaunchAccess:
     """Tests for launch_access tool."""
 
-    def test_launch_access_delegates_to_com_service(self):
-        """launch_access should delegate to com_automation_service.launch_access."""
-        mock_com = MagicMock()
-        mock_com.launch_access.return_value = True
-        mock_com.is_access_running.return_value = True
-        with patch.object(com_module, '_com', return_value=mock_com):
+    def test_launch_access_delegates_to_adapter(self):
+        """launch_access should delegate to adapter.launch_access."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_adapter.launch_access.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.launch_access(visible=True)
             assert result["success"] is True
             assert result["access_running"] is True
-            mock_com.launch_access.assert_called_once()
+            mock_adapter.launch_access.assert_called_once_with(True)
 
 
 class TestCloseAccess:
     """Tests for close_access tool."""
 
-    def test_close_access_delegates_to_com_service(self):
-        """close_access should delegate to com_automation_service.close_access."""
-        mock_com = MagicMock()
-        mock_com.close_access.return_value = True
-        mock_com.is_access_running.return_value = False
-        with patch.object(com_module, '_com', return_value=mock_com):
+    def test_close_access_delegates_to_adapter(self):
+        """close_access should delegate to adapter.close_access."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = True
+        mock_adapter = MagicMock()
+        mock_adapter.close_access.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.close_access()
             assert result["success"] is True
             assert result["access_running"] is False
+            mock_adapter.close_access.assert_called_once()
 
 
 class TestFormDiscoveryTools:
@@ -108,10 +113,10 @@ class TestControlTools:
         """open_form should return result with form name and message."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.open_form.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.open_form.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.open_form("TestForm")
             assert result["success"] is True
             assert result["form"] == "TestForm"
@@ -121,10 +126,10 @@ class TestControlTools:
         """get_control_properties should return error when control not found."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_control_properties.return_value = {}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_control_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_control_properties("TestForm", "NonExistent")
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -133,10 +138,10 @@ class TestControlTools:
         """get_control_properties should return properties when control found."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_control_properties.return_value = {"Name":"txtName","BackColor":16777215}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_control_properties.return_value = {"Name":"txtName","BackColor":16777215}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_control_properties("TestForm", "txtName")
             assert result["success"] is True
             assert result["control"] == "txtName"
@@ -146,10 +151,10 @@ class TestControlTools:
         """set_control_property should return success/failure based on result."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_property.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_property("TestForm", "txtName", "BackColor", "16777215", confirm=True)
             assert result["success"] is True
             assert result["property"] == "BackColor"
@@ -174,10 +179,10 @@ class TestSetControlProperties:
         """set_control_properties should return per-property success dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_properties.return_value = {"Visible": True, "Width": False}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_properties.return_value = {"Visible": True, "Width": False}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_properties("TestForm", "txtName", {"Visible": "True", "Width": "200"}, confirm=True)
             assert result["success"] is True
             assert "properties" in result
@@ -187,10 +192,10 @@ class TestSetControlProperties:
         """set_control_properties should return error when control not found."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_properties.return_value = {}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_properties("TestForm", "NonExistent", {"Width": "200"}, confirm=True)
             assert result["success"] is False
             assert "not found" in result["error"].lower()
@@ -225,13 +230,13 @@ class TestSetControlPropertyDestructive:
         """set_control_property with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_property.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_property("TestForm", "txtName", "BackColor", "16777215", confirm=True)
             assert result["success"] is True
-            mock_com.set_control_property.assert_called_once_with("TestForm", "txtName", "BackColor", "16777215")
+            mock_adapter.set_control_property.assert_called_once_with("TestForm", "txtName", "BackColor", "16777215")
 
 
 class TestSetControlPropertiesDestructive:
@@ -261,10 +266,10 @@ class TestSetControlPropertiesDestructive:
         """set_control_properties with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_properties.return_value = {"BackColor": True}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_properties.return_value = {"BackColor": True}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_properties("TestForm", "txtName", {"BackColor": "16777215"}, confirm=True)
             assert result["success"] is True
             assert result["properties"]["BackColor"] is True
@@ -277,13 +282,13 @@ class TestGetControlEventProcedures:
         """get_control_event_procedures should return all events when control_name is empty."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_control_event_procedures.return_value = [
+        mock_adapter = MagicMock()
+        mock_adapter.get_control_event_procedures.return_value = [
             {"procedure_name": "cmdSave_Click", "event_name": "Click", "code": "Sub cmdSave_Click()\nEnd Sub", "start_line": 1},
             {"procedure_name": "cmdSave_Enter", "event_name": "Enter", "code": "Sub cmdSave_Enter()\nEnd Sub", "start_line": 7},
         ]
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_control_event_procedures("TestForm", "")
             assert result["success"] is True
             assert result["count"] == 2
@@ -293,12 +298,12 @@ class TestGetControlEventProcedures:
         """get_control_event_procedures should filter by control_name."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_control_event_procedures.return_value = [
+        mock_adapter = MagicMock()
+        mock_adapter.get_control_event_procedures.return_value = [
             {"procedure_name": "cmdSave_Click", "event_name": "Click", "code": "Sub cmdSave_Click()\nEnd Sub", "start_line": 1},
         ]
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_control_event_procedures("TestForm", "cmdSave")
             assert result["success"] is True
             assert result["control"] == "cmdSave"
@@ -308,10 +313,10 @@ class TestGetControlEventProcedures:
         """get_control_event_procedures should return empty list when form module not found."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_control_event_procedures.return_value = []  # Empty list = not found (never None)
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_control_event_procedures.return_value = []  # Empty list = not found (never None)
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_control_event_procedures("NonExistentForm", "")
             assert result["success"] is True  # Returns success with empty list
             assert result["count"] == 0
@@ -415,10 +420,10 @@ class TestGetFormProperties:
         """get_form_properties should return success with properties dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_form_properties.return_value = {"Caption": "Test Form", "RecordSource": "Customers"}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_form_properties.return_value = {"Caption": "Test Form", "RecordSource": "Customers"}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_form_properties("TestForm")
             assert result["success"] is True
             assert result["form"] == "TestForm"
@@ -429,10 +434,10 @@ class TestGetFormProperties:
         """get_form_properties with empty dict should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_form_properties.return_value = {}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_form_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_form_properties("NonExistentForm")
             assert result["success"] is False
             assert "error" in result
@@ -464,13 +469,13 @@ class TestSetFormProperty:
         """set_form_property with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_form_property.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_form_property("TestForm", "Caption", "New Caption", confirm=True)
             assert result["success"] is True
-            mock_com.set_form_property.assert_called_once()
+            mock_adapter.set_form_property.assert_called_once()
 
 
 class TestSetFormProperties:
@@ -498,10 +503,10 @@ class TestSetFormProperties:
         """set_form_properties with confirm=True should return success with per-property results."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_form_properties.return_value = {"Caption": True, "Width": False}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_properties.return_value = {"Caption": True, "Width": False}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_form_properties("TestForm", {"Caption": "New", "Width": "1000"}, confirm=True)
             assert result["success"] is True
             assert "properties" in result
@@ -536,25 +541,25 @@ class TestAddControl:
         """add_control with confirm=True should delegate to COM service and return success."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.add_control.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.add_control.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.add_control("TestForm", "TextBox", "txtNew", section=0, properties={"Width": "200"}, confirm=True)
             assert result["success"] is True
             assert result["form"] == "TestForm"
             assert result["control"] == "txtNew"
             assert result["control_type"] == "TextBox"
-            mock_com.add_control.assert_called_once_with("TestForm", "TextBox", "txtNew", 0, {"Width": "200"})
+            mock_adapter.add_control.assert_called_once_with("TestForm", "TextBox", "txtNew", 0, {"Width": "200"})
 
     def test_add_control_adapter_returns_false(self):
         """add_control with confirm=True but adapter returns False should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.add_control.return_value = False
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.add_control.return_value = False
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.add_control("TestForm", "Label", "lblNew", confirm=True)
             assert result["success"] is False
             assert result["form"] == "TestForm"
@@ -588,24 +593,24 @@ class TestRemoveControl:
         """remove_control with confirm=True should delegate to COM service and return success."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.remove_control.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.remove_control.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.remove_control("TestForm", "txtOld", confirm=True)
             assert result["success"] is True
             assert result["form"] == "TestForm"
             assert result["control"] == "txtOld"
-            mock_com.remove_control.assert_called_once_with("TestForm", "txtOld")
+            mock_adapter.remove_control.assert_called_once_with("TestForm", "txtOld")
 
     def test_remove_control_adapter_returns_false(self):
         """remove_control with confirm=True but adapter returns False should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.remove_control.return_value = False
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.remove_control.return_value = False
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.remove_control("TestForm", "txtOld", confirm=True)
             assert result["success"] is False
             assert result["form"] == "TestForm"
@@ -652,10 +657,10 @@ class TestGetFormSectionProperties:
         """get_form_section_properties should return success with properties dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_form_section_properties.return_value = {"Height": 1000, "Visible": True}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_form_section_properties.return_value = {"Height": 1000, "Visible": True}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_form_section_properties("TestForm", 0)
             assert result["success"] is True
             assert result["form"] == "TestForm"
@@ -667,10 +672,10 @@ class TestGetFormSectionProperties:
         """get_form_section_properties with empty dict should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_form_section_properties.return_value = {}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_form_section_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.get_form_section_properties("TestForm", 1)
             assert result["success"] is False
             assert "error" in result
@@ -704,26 +709,26 @@ class TestSetFormSectionProperty:
         """set_form_section_property with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_form_section_property.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_section_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_form_section_property("TestForm", 0, "Height", "1000", confirm=True)
             assert result["success"] is True
             assert result["form"] == "TestForm"
             assert result["section_id"] == 0
             assert result["property_name"] == "Height"
             assert result["value"] == "1000"
-            mock_com.set_form_section_property.assert_called_once_with("TestForm", 0, "Height", "1000")
+            mock_adapter.set_form_section_property.assert_called_once_with("TestForm", 0, "Height", "1000")
 
     def test_set_form_section_property_adapter_returns_false(self):
         """set_form_section_property with confirm=True but adapter returns False should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_form_section_property.return_value = False
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_section_property.return_value = False
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_form_section_property("TestForm", 0, "Height", "1000", confirm=True)
             assert result["success"] is False
             assert result["form"] == "TestForm"
@@ -757,10 +762,10 @@ class TestSetFormSectionProperties:
         """set_form_section_properties with confirm=True should return success with per-property results."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_form_section_properties.return_value = {"Height": True, "Visible": True}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_section_properties.return_value = {"Height": True, "Visible": True}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_form_section_properties("TestForm", 0, {"Height": "1000", "Visible": "True"}, confirm=True)
             assert result["success"] is True
             assert result["form"] == "TestForm"
@@ -772,10 +777,10 @@ class TestSetFormSectionProperties:
         """set_form_section_properties with empty result should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_form_section_properties.return_value = {}
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_form_section_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_form_section_properties("TestForm", 0, {"Height": "1000"}, confirm=True)
             assert result["success"] is False
             assert "error" in result
@@ -809,25 +814,25 @@ class TestSetControlEventProcedure:
         """set_control_event_procedure with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_event_procedure.return_value = True
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_event_procedure.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub", confirm=True)
             assert result["success"] is True
             assert result["form"] == "TestForm"
             assert result["control"] == "btnSave"
             assert result["event_name"] == "Click"
-            mock_com.set_control_event_procedure.assert_called_once_with("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub")
+            mock_adapter.set_control_event_procedure.assert_called_once_with("TestForm", "btnSave", "Click", "Sub btnSave_Click()\nEnd Sub")
 
     def test_set_control_event_procedure_adapter_returns_false(self):
         """set_control_event_procedure with confirm=True but adapter returns False should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_control_event_procedure.return_value = False
-        with patch.object(com_module, '_pool', return_value=mock_conn), \
-             patch.object(com_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_control_event_procedure.return_value = False
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(com_module, '_pool', return_value=mock_conn):
             result = server.set_control_event_procedure("TestForm", "btnSave", "Click", "code", confirm=True)
             assert result["success"] is False
             assert result["form"] == "TestForm"

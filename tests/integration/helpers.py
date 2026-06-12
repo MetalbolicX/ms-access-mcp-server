@@ -91,7 +91,6 @@ def call_mcp_tool(tool_name: str, *args, connection_service=None, **kwargs):
     if connection_service is not None:
         mock_container = ServiceContainer(
             connection_pool=connection_service,
-            com_automation=None,
             migration=None,
             dev_copy=None,
             connector_registry=None,

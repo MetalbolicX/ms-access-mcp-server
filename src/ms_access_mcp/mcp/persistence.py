@@ -292,9 +292,8 @@ def export_all_versioning(output_dir: str, connection_name: str = "default") -> 
         return {"success": False, "error": "Not connected to database"}
     try:
         output_dir = _validate_path(output_dir)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.export_all(output_dir, adapter, dedup=True, module_ext=".bas")
+        result = adapter.export_all_versioning(output_dir, dedup=True, module_ext=".bas")
+        return {"success": True, "error": None, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -314,9 +313,8 @@ def import_all_versioning(input_dir: str, connection_name: str = "default") -> d
         return {"success": False, "error": "Not connected to database"}
     try:
         input_dir = _validate_path(input_dir)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.import_all(input_dir, adapter)
+        result = adapter.import_all_versioning(input_dir)
+        return {"success": True, "error": None, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -338,9 +336,8 @@ def compare_versioning(export_dir: str, connection_name: str = "default") -> dic
         return {"success": False, "error": "Not connected to database"}
     try:
         export_dir = _validate_path(export_dir)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.compare(export_dir, adapter)
+        result = adapter.compare_versioning(export_dir)
+        return {"success": True, "error": None, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -363,9 +360,8 @@ def export_schema_ddl(output_dir: str, connection_name: str = "default") -> dict
         return {"success": False, "error": "Not connected to database"}
     try:
         output_dir = _validate_path(output_dir)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.export_schema_ddl(output_dir, adapter)
+        result = adapter.export_schema_ddl(output_dir)
+        return {"success": True, "error": None, **result}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

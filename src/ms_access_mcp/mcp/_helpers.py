@@ -42,12 +42,6 @@ def _ensure_connected(connection_name: str = "default"):
     return _get_adapter(connection_name)
 
 
-def _com():
-    """Lazy accessor for COM automation service (avoids circular import at module level)."""
-    from .container import get_container
-    return get_container().com_automation
-
-
 def _validate_path(path: str) -> str:
     """Validate a path through PathGuard, returning the absolute path or raising."""
     from .server import _get_path_guard

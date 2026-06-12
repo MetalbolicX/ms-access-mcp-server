@@ -175,10 +175,10 @@ class TestGetReportProperties:
         """get_report_properties should return success with properties dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_report_properties.return_value = {"Caption": "Test Report", "RecordSource": "Customers"}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_properties.return_value = {"Caption": "Test Report", "RecordSource": "Customers"}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.get_report_properties("TestReport")
             assert result["success"] is True
             assert result["report"] == "TestReport"
@@ -189,10 +189,10 @@ class TestGetReportProperties:
         """get_report_properties with empty dict should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_report_properties.return_value = {}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.get_report_properties("NonExistentReport")
             assert result["success"] is False
             assert "error" in result
@@ -233,13 +233,13 @@ class TestSetReportProperty:
         """set_report_property with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_property.return_value = True
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_property("TestReport", "Caption", "New Caption", confirm=True)
             assert result["success"] is True
-            mock_com.set_report_property.assert_called_once()
+            mock_adapter.set_report_property.assert_called_once()
 
     def test_set_report_property_returns_error_when_not_connected(self):
         """set_report_property should return error when not connected."""
@@ -276,10 +276,10 @@ class TestSetReportProperties:
         """set_report_properties with confirm=True should return success with per-property results."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_properties.return_value = {"Caption": True, "Width": False}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_properties.return_value = {"Caption": True, "Width": False}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_properties("TestReport", {"Caption": "New", "Width": "1000"}, confirm=True)
             assert result["success"] is True
             assert "properties" in result
@@ -289,10 +289,10 @@ class TestSetReportProperties:
         """set_report_properties with empty result should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_properties.return_value = {}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_properties("TestReport", {"Caption": "New"}, confirm=True)
             assert result["success"] is False
             assert "error" in result
@@ -360,10 +360,10 @@ class TestGetReportControlProperties:
         """get_report_control_properties should return success with properties dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_report_control_properties.return_value = {"Visible": "True", "Width": "1000"}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_control_properties.return_value = {"Visible": "True", "Width": "1000"}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.get_report_control_properties("TestReport", "txtName")
             assert result["success"] is True
             assert result["control"] == "txtName"
@@ -373,10 +373,10 @@ class TestGetReportControlProperties:
         """get_report_control_properties with empty dict should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_report_control_properties.return_value = {}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_control_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.get_report_control_properties("TestReport", "NonExistent")
             assert result["success"] is False
             assert "error" in result
@@ -417,13 +417,13 @@ class TestSetReportControlProperty:
         """set_report_control_property with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_control_property.return_value = True
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_control_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_control_property("TestReport", "txtName", "Visible", "False", confirm=True)
             assert result["success"] is True
-            mock_com.set_report_control_property.assert_called_once()
+            mock_adapter.set_report_control_property.assert_called_once()
 
     def test_set_report_control_property_returns_error_when_not_connected(self):
         """set_report_control_property should return error when not connected."""
@@ -460,10 +460,10 @@ class TestSetReportControlProperties:
         """set_report_control_properties with confirm=True should return success."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_control_properties.return_value = {"Visible": True, "Width": False}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_control_properties.return_value = {"Visible": True, "Width": False}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_control_properties("TestReport", "txtName", {"Visible": "False", "Width": "1000"}, confirm=True)
             assert result["success"] is True
             assert result["properties"]["Visible"] is True
@@ -472,10 +472,10 @@ class TestSetReportControlProperties:
         """set_report_control_properties with empty result should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_control_properties.return_value = {}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_control_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_control_properties("TestReport", "txtName", {"Visible": "False"}, confirm=True)
             assert result["success"] is False
             assert "error" in result
@@ -515,13 +515,13 @@ class TestAddReportControl:
         """add_report_control with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.add_report_control.return_value = True
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.add_report_control.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.add_report_control("TestReport", "TextBox", "txtNew", confirm=True)
             assert result["success"] is True
-            mock_com.add_report_control.assert_called_once()
+            mock_adapter.add_report_control.assert_called_once()
 
     def test_add_report_control_returns_error_when_not_connected(self):
         """add_report_control should return error when not connected."""
@@ -558,13 +558,13 @@ class TestRemoveReportControl:
         """remove_report_control with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.remove_report_control.return_value = True
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.remove_report_control.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.remove_report_control("TestReport", "txtName", confirm=True)
             assert result["success"] is True
-            mock_com.remove_report_control.assert_called_once()
+            mock_adapter.remove_report_control.assert_called_once()
 
     def test_remove_report_control_returns_error_when_not_connected(self):
         """remove_report_control should return error when not connected."""
@@ -631,10 +631,10 @@ class TestGetReportSectionProperties:
         """get_report_section_properties should return success with properties dict."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_report_section_properties.return_value = {"Visible": "True", "Height": "100"}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_section_properties.return_value = {"Visible": "True", "Height": "100"}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.get_report_section_properties("TestReport", 0)
             assert result["success"] is True
             assert result["section_id"] == 0
@@ -644,10 +644,10 @@ class TestGetReportSectionProperties:
         """get_report_section_properties with empty dict should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.get_report_section_properties.return_value = {}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.get_report_section_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.get_report_section_properties("TestReport", 0)
             assert result["success"] is False
             assert "error" in result
@@ -688,13 +688,13 @@ class TestSetReportSectionProperty:
         """set_report_section_property with confirm=True should delegate to COM service."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_section_property.return_value = True
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_section_property.return_value = True
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_section_property("TestReport", 0, "Height", "200", confirm=True)
             assert result["success"] is True
-            mock_com.set_report_section_property.assert_called_once()
+            mock_adapter.set_report_section_property.assert_called_once()
 
     def test_set_report_section_property_returns_error_when_not_connected(self):
         """set_report_section_property should return error when not connected."""
@@ -731,10 +731,10 @@ class TestSetReportSectionProperties:
         """set_report_section_properties with confirm=True should return success."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_section_properties.return_value = {"Height": True, "Visible": False}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_section_properties.return_value = {"Height": True, "Visible": False}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_section_properties("TestReport", 0, {"Height": "200", "Visible": "False"}, confirm=True)
             assert result["success"] is True
             assert result["properties"]["Height"] is True
@@ -743,10 +743,10 @@ class TestSetReportSectionProperties:
         """set_report_section_properties with empty result should return success=False."""
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
-        mock_com = MagicMock()
-        mock_com.set_report_section_properties.return_value = {}
-        with patch.object(reports_module, '_pool', return_value=mock_conn), \
-             patch.object(reports_module, '_com', return_value=mock_com):
+        mock_adapter = MagicMock()
+        mock_adapter.set_report_section_properties.return_value = {}
+        mock_conn.get_adapter.return_value = mock_adapter
+        with patch.object(reports_module, '_pool', return_value=mock_conn):
             result = server.set_report_section_properties("TestReport", 0, {"Height": "200"}, confirm=True)
             assert result["success"] is False
             assert "error" in result

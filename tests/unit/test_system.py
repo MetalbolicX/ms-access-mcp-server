@@ -342,73 +342,53 @@ class TestSystemToolSuccessPaths:
             assert result["success"] is False
             assert result["macro"] == "TestMacro"
 
-    def test_export_all_versioning_delegates_to_versioning_orchestrator(self):
-        """export_all_versioning should delegate to VersioningOrchestrator.export_all."""
+    def test_export_all_versioning_delegates_to_versioning_orchestrator(self, tmp_path):
+        """export_all_versioning should call adapter.export_all_versioning directly."""
         mock_adapter = MagicMock()
+        mock_adapter.export_all_versioning.return_value = {"success": True, "exported": 10}
         mock_pool = MagicMock()
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.export_all.return_value = {"success": True, "exported": 10}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with _patch_pool(persistence_module, mock_adapter):
-                result = server.export_all_versioning("/tmp/export")
-                mock_orch.export_all.assert_called_once()
-                args = mock_orch.export_all.call_args
-                assert args[0][0] == "/tmp/export"
-                assert args[0][1] == mock_adapter
-                assert result["success"] is True
+        with patch.object(persistence_module, "_pool", return_value=mock_pool):
+            result = server.export_all_versioning(str(tmp_path / "export"))
+            mock_adapter.export_all_versioning.assert_called_once()
+            assert result["success"] is True
 
-    def test_import_all_versioning_delegates_to_versioning_orchestrator(self):
-        """import_all_versioning should delegate to VersioningOrchestrator.import_all."""
+    def test_import_all_versioning_delegates_to_versioning_orchestrator(self, tmp_path):
+        """import_all_versioning should call adapter.import_all_versioning directly."""
         mock_adapter = MagicMock()
+        mock_adapter.import_all_versioning.return_value = {"success": True, "exported": 10}
         mock_pool = MagicMock()
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.import_all.return_value = {"success": True, "imported": 5}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with _patch_pool(persistence_module, mock_adapter):
-                result = server.import_all_versioning("/tmp/import")
-                mock_orch.import_all.assert_called_once()
-                args = mock_orch.import_all.call_args
-                assert args[0][0] == "/tmp/import"
-                assert args[0][1] == mock_adapter
-                assert result["success"] is True
+        with patch.object(persistence_module, "_pool", return_value=mock_pool):
+            result = server.import_all_versioning(str(tmp_path / "import"))
+            mock_adapter.import_all_versioning.assert_called_once()
+            assert result["success"] is True
 
-    def test_compare_versioning_delegates_to_versioning_orchestrator(self):
-        """compare_versioning should delegate to VersioningOrchestrator.compare."""
+    def test_compare_versioning_delegates_to_versioning_orchestrator(self, tmp_path):
+        """compare_versioning should call adapter.compare_versioning directly."""
         mock_adapter = MagicMock()
+        mock_adapter.compare_versioning.return_value = {"success": True, "exported": 10}
         mock_pool = MagicMock()
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.compare.return_value = {"success": True, "new": [], "missing": [], "changed": []}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with _patch_pool(persistence_module, mock_adapter):
-                result = server.compare_versioning("/tmp/compare")
-                mock_orch.compare.assert_called_once()
-                args = mock_orch.compare.call_args
-                assert args[0][0] == "/tmp/compare"
-                assert args[0][1] == mock_adapter
-                assert result["success"] is True
+        with patch.object(persistence_module, "_pool", return_value=mock_pool):
+            result = server.compare_versioning(str(tmp_path / "compare"))
+            mock_adapter.compare_versioning.assert_called_once()
+            assert result["success"] is True
 
-    def test_export_schema_ddl_delegates_to_versioning_orchestrator(self):
-        """export_schema_ddl should delegate to VersioningOrchestrator.export_schema_ddl."""
+    def test_export_schema_ddl_delegates_to_versioning_orchestrator(self, tmp_path):
+        """export_schema_ddl should call adapter.export_schema_ddl directly."""
         mock_adapter = MagicMock()
+        mock_adapter.export_schema_ddl.return_value = {"success": True, "exported": 10}
         mock_pool = MagicMock()
         mock_pool.is_connected.return_value = True
         mock_pool.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.export_schema_ddl.return_value = {"success": True, "ddl_tables": "schema/ddl_tables.sql"}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with _patch_pool(persistence_module, mock_adapter):
-                result = server.export_schema_ddl("/tmp/ddl")
-                mock_orch.export_schema_ddl.assert_called_once()
-                args = mock_orch.export_schema_ddl.call_args
-                assert args[0][0] == "/tmp/ddl"
-                assert args[0][1] == mock_adapter
-                assert result["success"] is True
+        with patch.object(persistence_module, "_pool", return_value=mock_pool):
+            result = server.export_schema_ddl(str(tmp_path / "ddl"))
+            mock_adapter.export_schema_ddl.assert_called_once()
+            assert result["success"] is True
 
     def test_export_query_to_text_delegates_to_adapter(self):
         """export_query_to_text should delegate to adapter.export_query_to_text."""
@@ -466,13 +446,13 @@ class TestSystemToolSuccessPaths:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
-    def test_execute_sql_script_delegates_to_adapter(self):
+    def test_execute_sql_script_delegates_to_adapter(self, tmp_path):
         """execute_sql_script should delegate to adapter.execute_sql_script."""
         mock_adapter = MagicMock()
         mock_adapter.execute_sql_script.return_value = {"success": True, "statements": 5}
         with _patch_pool(persistence_module, mock_adapter):
-            result = server.execute_sql_script("/tmp/script.sql")
-            mock_adapter.execute_sql_script.assert_called_once_with("/tmp/script.sql")
+            result = server.execute_sql_script(str(tmp_path / "script.sql"))
+            mock_adapter.execute_sql_script.assert_called_once_with(str(tmp_path / "script.sql"))
             assert result["success"] is True
 
 
@@ -483,21 +463,18 @@ class TestReportBackupTools:
     """
 
     def test_export_report_backup_delegates_to_versioning_orchestrator(self):
-        """export_report_backup should delegate to VersioningOrchestrator."""
+        """export_report_backup should call _dev_copy().export_report_backup directly."""
         mock_adapter = MagicMock()
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
+        with patch.object(dev_copy_module, "_pool", return_value=mock_conn):
+            with patch.object(dev_copy_module, "_dev_copy", return_value=mock_dev_copy):
                 result = server.export_report_backup("rptTest", None)
                 assert result["success"] is True
-                mock_orch.export_report_backup.assert_called_once()
-                args = mock_orch.export_report_backup.call_args
-                assert args[0][0] == "rptTest"
-                assert args[0][1] == mock_adapter
+                mock_dev_copy.export_report_backup.assert_called_once()
 
     def test_export_report_backup_returns_error_when_not_connected(self):
         """export_report_backup should return error when not connected."""
@@ -508,23 +485,19 @@ class TestReportBackupTools:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
-    def test_import_report_from_file_delegates_to_versioning_orchestrator(self):
-        """import_report_from_file should delegate to VersioningOrchestrator."""
+    def test_import_report_from_file_delegates_to_versioning_orchestrator(self, tmp_path):
+        """import_report_from_file should call _dev_copy().import_report_from_file directly."""
         mock_adapter = MagicMock()
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.import_report_from_file.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
-                result = server.import_report_from_file("rptTest", "/tmp/rptTest.txt")
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.import_report_from_file.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
+        with patch.object(dev_copy_module, "_pool", return_value=mock_conn):
+            with patch.object(dev_copy_module, "_dev_copy", return_value=mock_dev_copy):
+                result = server.import_report_from_file("rptTest", str(tmp_path / "rptTest.txt"))
                 assert result["success"] is True
-                mock_orch.import_report_from_file.assert_called_once()
-                args = mock_orch.import_report_from_file.call_args
-                assert args[0][0] == "rptTest"
-                assert args[0][1] == "/tmp/rptTest.txt"
-                assert args[0][2] == mock_adapter
+                mock_dev_copy.import_report_from_file.assert_called_once()
 
     def test_import_report_from_file_returns_error_when_not_connected(self):
         """import_report_from_file should return error when not connected."""
@@ -535,23 +508,19 @@ class TestReportBackupTools:
             assert result["success"] is False
             assert "Not connected" in result["error"]
 
-    def test_restore_report_backup_delegates_to_versioning_orchestrator(self):
-        """restore_report_backup should delegate to VersioningOrchestrator."""
+    def test_restore_report_backup_delegates_to_versioning_orchestrator(self, tmp_path):
+        """restore_report_backup should call _dev_copy().restore_report_backup directly."""
         mock_adapter = MagicMock()
         mock_conn = MagicMock()
         mock_conn.is_connected.return_value = True
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.restore_report_backup.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
-            with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
-                result = server.restore_report_backup("rptTest", "/tmp/rptTest.txt")
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.restore_report_backup.return_value = {"success": True, "backup_path": "/tmp/rptTest.txt"}
+        with patch.object(dev_copy_module, "_pool", return_value=mock_conn):
+            with patch.object(dev_copy_module, "_dev_copy", return_value=mock_dev_copy):
+                result = server.restore_report_backup("rptTest", str(tmp_path / "rptTest.txt"))
                 assert result["success"] is True
-                mock_orch.restore_report_backup.assert_called_once()
-                args = mock_orch.restore_report_backup.call_args
-                assert args[0][0] == "rptTest"
-                assert args[0][1] == "/tmp/rptTest.txt"
-                assert args[0][2] == mock_adapter
+                mock_dev_copy.restore_report_backup.assert_called_once()
 
     def test_restore_report_backup_returns_error_when_not_connected(self):
         """restore_report_backup should return error when not connected."""

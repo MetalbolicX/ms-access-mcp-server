@@ -1,5 +1,5 @@
 """Report manipulation tools for MS Access — PR1 Core/CRUD/Properties."""
-from ._helpers import _com, destructive_guard, require_connected
+from ._helpers import destructive_guard, require_connected
 from .container import get_container
 from .server import mcp
 
@@ -131,7 +131,7 @@ def get_report_properties(report_name: str, connection_name: str = "default") ->
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_report_properties(report_name)
+    props = adapter.get_report_properties(report_name)
     if not props:
         return {"success": False, "error": f"No properties found for report '{report_name}'", "report": report_name}
     return {"success": True, "report": report_name, "properties": props}
@@ -159,7 +159,7 @@ def set_report_property(report_name: str, property_name: str, value: str, connec
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_property(report_name, property_name, value)
+    result = adapter.set_report_property(report_name, property_name, value)
     return {"success": result, "report": report_name, "property": property_name, "value": value}
 
 
@@ -184,7 +184,7 @@ def set_report_properties(report_name: str, properties: dict[str, str], connecti
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_properties(report_name, properties)
+    result = adapter.set_report_properties(report_name, properties)
     if not result:
         return {"success": False, "error": f"No properties found for report '{report_name}'"}
     return {"success": True, "report": report_name, "properties": result}
@@ -230,7 +230,7 @@ def get_report_control_properties(report_name: str, control_name: str, connectio
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_report_control_properties(report_name, control_name)
+    props = adapter.get_report_control_properties(report_name, control_name)
     if not props:
         return {"success": False, "error": f"No properties found for control '{control_name}' in report '{report_name}'", "report": report_name, "control": control_name}
     return {"success": True, "report": report_name, "control": control_name, "properties": props}
@@ -259,7 +259,7 @@ def set_report_control_property(report_name: str, control_name: str, property_na
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_control_property(report_name, control_name, property_name, value)
+    result = adapter.set_report_control_property(report_name, control_name, property_name, value)
     return {"success": result, "report": report_name, "control": control_name, "property": property_name, "value": value}
 
 
@@ -285,7 +285,7 @@ def set_report_control_properties(report_name: str, control_name: str, propertie
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_control_properties(report_name, control_name, properties)
+    result = adapter.set_report_control_properties(report_name, control_name, properties)
     if not result:
         return {"success": False, "error": f"No properties found for control '{control_name}' in report '{report_name}'"}
     return {"success": True, "report": report_name, "control": control_name, "properties": result}
@@ -315,7 +315,7 @@ def add_report_control(report_name: str, control_type: str, control_name: str, s
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().add_report_control(report_name, control_type, control_name, section, properties)
+    result = adapter.add_report_control(report_name, control_type, control_name, section, properties)
     return {"success": result, "report": report_name, "control_name": control_name, "control_type": control_type}
 
 
@@ -340,7 +340,7 @@ def remove_report_control(report_name: str, control_name: str, connection_name: 
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().remove_report_control(report_name, control_name)
+    result = adapter.remove_report_control(report_name, control_name)
     return {"success": result, "report": report_name, "control": control_name}
 
 
@@ -384,7 +384,7 @@ def get_report_section_properties(report_name: str, section_id: int, connection_
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_report_section_properties(report_name, section_id)
+    props = adapter.get_report_section_properties(report_name, section_id)
     if not props:
         return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}
     return {"success": True, "report": report_name, "section_id": section_id, "properties": props}
@@ -413,7 +413,7 @@ def set_report_section_property(report_name: str, section_id: int, property_name
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_section_property(report_name, section_id, property_name, value)
+    result = adapter.set_report_section_property(report_name, section_id, property_name, value)
     return {"success": result, "report": report_name, "section_id": section_id, "property": property_name, "value": value}
 
 
@@ -439,7 +439,7 @@ def set_report_section_properties(report_name: str, section_id: int, properties:
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_section_properties(report_name, section_id, properties)
+    result = adapter.set_report_section_properties(report_name, section_id, properties)
     if not result:
         return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}
     return {"success": True, "report": report_name, "section_id": section_id, "properties": result}

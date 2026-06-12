@@ -16,7 +16,6 @@ except ImportError:
 from fastmcp import FastMCP
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from ..services.connection import ConnectionPool
-from ..services.com_automation import COMAutomationService
 from ..services.migration import MigrationService
 from ..services.dev_copy_service import DevCopyService
 from ..connectors.registry import _default_registry
@@ -834,7 +833,6 @@ def __getattr__(name):
     """Resolve legacy module-level service names to container properties (PEP 562)."""
     _mapping = {
         "connection_service": "connection_pool",
-        "com_automation_service": "com_automation",
         "migration_service": "migration",
         "dev_copy_service": "dev_copy",
     }
