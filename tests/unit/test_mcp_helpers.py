@@ -6,6 +6,174 @@ from ms_access_mcp.mcp import server # noqa: F401
 from ms_access_mcp.mcp import _helpers as helpers_module
 
 
+class TestRequireConnectedDecorator:
+    """Tests for the @require_connected() decorator."""
+
+    def test_returns_error_dict_when_disconnected(self):
+        """Wrapped function returns error dict when not connected."""
+        from ms_access_mcp.mcp._helpers import require_connected
+
+        @require_connected()
+        def fake_tool(name: str, connection_name: str = "default") -> dict:
+            return {"success": True, "name": name}
+
+        with patch.object(helpers_module, "_check_connected", return_value=False):
+            result = fake_tool("foo")
+        assert result == {"success": False, "error": "Not connected"}
+
+    def test_passes_through_when_connected(self):
+        """Wrapped function executes normally when connected."""
+        from ms_access_mcp.mcp._helpers import require_connected
+
+        @require_connected()
+        def fake_tool(name: str, connection_name: str = "default") -> dict:
+            return {"success": True, "name": name}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True):
+            result = fake_tool("foo")
+        assert result == {"success": True, "name": "foo"}
+
+    def test_uses_custom_error_return(self):
+        """Custom error_return overrides the default error dict."""
+        from ms_access_mcp.mcp._helpers import require_connected
+
+        custom = {"success": False, "error": "Custom not connected"}
+        decorator = require_connected(error_return=custom)
+
+        @decorator
+        def fake_tool(connection_name: str = "default") -> dict:
+            return {"success": True}
+
+        with patch.object(helpers_module, "_check_connected", return_value=False):
+            result = fake_tool()
+        assert result == custom
+
+    def test_uses_default_connection_when_not_specified(self):
+        """Decorator checks 'default' connection by default."""
+        from ms_access_mcp.mcp._helpers import require_connected
+
+        @require_connected()
+        def fake_tool(connection_name: str = "default") -> dict:
+            return {"success": True}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True) as mock_check:
+            fake_tool()
+        mock_check.assert_called_once_with("default")
+
+    def test_uses_provided_connection_name(self):
+        """Decorator respects explicit connection_name kwarg."""
+        from ms_access_mcp.mcp._helpers import require_connected
+
+        @require_connected()
+        def fake_tool(connection_name: str = "default") -> dict:
+            return {"success": True}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True) as mock_check:
+            fake_tool(connection_name="other_db")
+        mock_check.assert_called_once_with("other_db")
+
+    def test_preserves_function_metadata(self):
+        """functools.wraps preserves __name__ and __doc__."""
+        from ms_access_mcp.mcp._helpers import require_connected
+
+        @require_connected()
+        def my_named_tool(connection_name: str = "default") -> dict:
+            """My docstring."""
+            return {"success": True}
+
+        assert my_named_tool.__name__ == "my_named_tool"
+        assert my_named_tool.__doc__ == "My docstring."
+
+
+class TestDestructiveGuardDecorator:
+    """Tests for the @destructive_guard() decorator."""
+
+    def test_blocks_when_confirm_false(self):
+        """Wrapped function returns guard error when confirm=False."""
+        from ms_access_mcp.mcp._helpers import destructive_guard
+
+        @destructive_guard(action="delete_query")
+        def fake_tool(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+            return {"success": True, "deleted": name}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True):
+            result = fake_tool("myquery", confirm=False)
+        assert result["success"] is False
+        assert "confirm=True required" in result["error"]
+        assert "delete_query" in result["error"]
+
+    def test_dry_run_returns_preview(self):
+        """Wrapped function returns dry-run preview when dry_run=True."""
+        from ms_access_mcp.mcp._helpers import destructive_guard
+
+        @destructive_guard(action="delete_query")
+        def fake_tool(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+            return {"success": True, "deleted": name}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True):
+            result = fake_tool("myquery", dry_run=True)
+        assert result["dry_run"] is True
+        assert result["action"] == "delete_query"
+        assert result["name"] == "myquery"
+
+    def test_proceeds_when_confirm_true(self):
+        """Wrapped function executes when confirm=True and not dry_run."""
+        from ms_access_mcp.mcp._helpers import destructive_guard
+
+        @destructive_guard(action="delete_query")
+        def fake_tool(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+            return {"success": True, "deleted": name}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True):
+            result = fake_tool("myquery", confirm=True)
+        assert result == {"success": True, "deleted": "myquery"}
+
+    def test_checks_connection_before_guard(self):
+        """Decorator checks connection first, then runs guard."""
+        from ms_access_mcp.mcp._helpers import destructive_guard
+
+        @destructive_guard(action="delete_query")
+        def fake_tool(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+            return {"success": True, "deleted": name}
+
+        with patch.object(helpers_module, "_check_connected", return_value=False):
+            result = fake_tool("myquery", confirm=True)
+        assert result == {"success": False, "error": "Not connected"}
+
+    def test_includes_function_args_in_context(self):
+        """Non-special kwargs are passed as context to guard_destructive."""
+        from ms_access_mcp.mcp._helpers import destructive_guard
+
+        @destructive_guard(action="delete_query")
+        def fake_tool(
+            name: str,
+            table_name: str = "default_table",
+            connection_name: str = "default",
+            confirm: bool = False,
+            dry_run: bool = False,
+        ) -> dict:
+            return {"success": True}
+
+        with patch.object(helpers_module, "_check_connected", return_value=True):
+            result = fake_tool("myquery", table_name="Users", dry_run=True)
+        assert result["dry_run"] is True
+        assert result["action"] == "delete_query"
+        assert result["name"] == "myquery"
+        assert result["table_name"] == "Users"
+
+    def test_preserves_function_metadata(self):
+        """functools.wraps preserves __name__ and __doc__."""
+        from ms_access_mcp.mcp._helpers import destructive_guard
+
+        @destructive_guard(action="delete_query")
+        def my_destructive_tool(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
+            """Destructive docstring."""
+            return {"success": True}
+
+        assert my_destructive_tool.__name__ == "my_destructive_tool"
+        assert my_destructive_tool.__doc__ == "Destructive docstring."
+
+
 class TestGuardDestructive:
     """Tests for guard_destructive() helper."""
 

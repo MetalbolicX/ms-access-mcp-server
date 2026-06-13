@@ -1,10 +1,9 @@
 """Linked table tools for MS Access database — Phase 1 SDD."""
-from .server import mcp
-from .container import get_container
-from ._helpers import guard_destructive
-
-from ..orchestrators.credential_vault import CredentialVault
 from ..orchestrators.connect_policy import ConnectPolicy
+from ..orchestrators.credential_vault import CredentialVault
+from ._helpers import destructive_guard, require_connected
+from .container import get_container
+from .server import mcp
 
 
 def _get_vault() -> CredentialVault:
@@ -24,7 +23,7 @@ def _get_orchestrator():
 
 
 def _pool():
-    """Lazy accessor for the connection pool."""
+    """Lazy accessor for connection pool (avoids circular import at module level)."""
     return get_container().connection_pool
 
 
@@ -48,6 +47,7 @@ def _ensure_connected(connection_name: str = "default"):
     return _get_adapter(connection_name)
 
 
+@require_connected()
 @mcp.tool()
 def get_linked_tables(connection_name: str = "default") -> dict:
     """
@@ -60,8 +60,6 @@ def get_linked_tables(connection_name: str = "default") -> dict:
         connection_name: Connection identifier (defaults to "default")
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     try:
         result = adapter.get_linked_tables()
         return result
@@ -71,6 +69,7 @@ def get_linked_tables(connection_name: str = "default") -> dict:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def create_linked_table(name: str, source_table: str, connect_string: str, connection_name: str = "default") -> dict:
     """
@@ -87,8 +86,6 @@ def create_linked_table(name: str, source_table: str, connect_string: str, conne
     result = policy.validate(connect_string)
     if not result.allowed:
         return {"success": False, "error": "; ".join(result.reasons)}
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
 
     adapter = _get_adapter(connection_name)
     if adapter is None:
@@ -102,6 +99,7 @@ def create_linked_table(name: str, source_table: str, connect_string: str, conne
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def refresh_linked_table(
     name: str,
@@ -123,8 +121,6 @@ def refresh_linked_table(
         server_id: Optional server_id to retrieve password from vault
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     # Validate connect_string via ConnectPolicy if provided
     if connect_string is not None:
         policy = ConnectPolicy()
@@ -160,6 +156,7 @@ def refresh_linked_table(
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="unlink_table")
 @mcp.tool()
 def unlink_table(name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -174,11 +171,6 @@ def unlink_table(name: str, connection_name: str = "default", confirm: bool = Fa
         confirm: Must be True to proceed with unlink
         dry_run: If True, returns preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "unlink_table", name=name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -191,6 +183,7 @@ def unlink_table(name: str, connection_name: str = "default", confirm: bool = Fa
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def store_credential(server_id: str, password: str, connection_name: str = "default") -> dict:
     """
@@ -204,8 +197,6 @@ def store_credential(server_id: str, password: str, connection_name: str = "defa
         password: Plaintext password to store securely
         connection_name: Connection identifier (defaults to "default")
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
     try:
         _get_vault().store(server_id, password)
         return {"success": True}
@@ -213,6 +204,7 @@ def store_credential(server_id: str, password: str, connection_name: str = "defa
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="clear_credentials")
 @mcp.tool()
 def clear_credentials(connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -225,11 +217,6 @@ def clear_credentials(connection_name: str = "default", confirm: bool = False, d
         confirm: Must be True to proceed with clearing all credentials
         dry_run: If True, returns preview without executing
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "clear_credentials")
-    if guard is not None:
-        return guard
     try:
         _get_vault().clear()
         return {"success": True}
@@ -237,6 +224,7 @@ def clear_credentials(connection_name: str = "default", confirm: bool = False, d
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def upsert_linked_table(
     local_name: str,
@@ -265,8 +253,6 @@ def upsert_linked_table(
         server_id: Optional server_id to retrieve password from vault (if password not provided)
     """
     adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
     # Validate connect_string via ConnectPolicy before any operations
     policy = ConnectPolicy()
     validation_result = policy.validate(connect_string)

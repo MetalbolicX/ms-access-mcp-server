@@ -115,14 +115,14 @@ class TestModuleBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.export_module_backup.return_value = {"success": True, "backup_path": "/tmp/bak/modTest.bas"}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.export_module_backup.return_value = {"success": True, "backup_path": "/tmp/bak/modTest.bas"}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_module_backup("modTest", None)
                 assert result["success"] is True
-                mock_orch.export_module_backup.assert_called_once()
-                args = mock_orch.export_module_backup.call_args
+                mock_dev_copy.export_module_backup.assert_called_once()
+                args = mock_dev_copy.export_module_backup.call_args
                 assert args[0][0] == "modTest"  # module_name
                 assert args[0][1] == mock_adapter  # adapter
 
@@ -132,14 +132,14 @@ class TestModuleBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.import_module_from_text.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.import_module_from_text.return_value = {"success": True}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_module_from_text("modTest", "/tmp/bak/modTest.bas")
                 assert result["success"] is True
-                mock_orch.import_module_from_text.assert_called_once()
-                args = mock_orch.import_module_from_text.call_args
+                mock_dev_copy.import_module_from_text.assert_called_once()
+                args = mock_dev_copy.import_module_from_text.call_args
                 assert args[0][0] == "modTest"  # module_name
                 assert args[0][1] == "/tmp/bak/modTest.bas"  # file_path
                 assert args[0][2] == mock_adapter  # adapter
@@ -150,14 +150,14 @@ class TestModuleBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.restore_module_backup.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.restore_module_backup.return_value = {"success": True}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_module_backup("modTest", "/tmp/bak/modTest.bas")
                 assert result["success"] is True
-                mock_orch.restore_module_backup.assert_called_once()
-                args = mock_orch.restore_module_backup.call_args
+                mock_dev_copy.restore_module_backup.assert_called_once()
+                args = mock_dev_copy.restore_module_backup.call_args
                 assert args[0][0] == "modTest"  # module_name
                 assert args[0][1] == "/tmp/bak/modTest.bas"  # backup_path
                 assert args[0][2] == mock_adapter  # adapter
@@ -172,14 +172,14 @@ class TestFormBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.export_form_backup.return_value = {"success": True, "backup_path": "/tmp/bak/frmTest.txt"}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.export_form_backup.return_value = {"success": True, "backup_path": "/tmp/bak/frmTest.txt"}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_form_backup("frmTest", None)
                 assert result["success"] is True
-                mock_orch.export_form_backup.assert_called_once()
-                args = mock_orch.export_form_backup.call_args
+                mock_dev_copy.export_form_backup.assert_called_once()
+                args = mock_dev_copy.export_form_backup.call_args
                 assert args[0][0] == "frmTest"  # form_name
                 assert args[0][1] == mock_adapter  # adapter
 
@@ -189,14 +189,14 @@ class TestFormBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.import_form_from_file.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.import_form_from_file.return_value = {"success": True}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_form_from_file("frmTest", "/tmp/bak/frmTest.txt")
                 assert result["success"] is True
-                mock_orch.import_form_from_file.assert_called_once()
-                args = mock_orch.import_form_from_file.call_args
+                mock_dev_copy.import_form_from_file.assert_called_once()
+                args = mock_dev_copy.import_form_from_file.call_args
                 assert args[0][0] == "frmTest"  # form_name
                 assert args[0][1] == "/tmp/bak/frmTest.txt"  # file_path
                 assert args[0][2] == mock_adapter  # adapter
@@ -207,14 +207,14 @@ class TestFormBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.restore_form_backup.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.restore_form_backup.return_value = {"success": True}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_form_backup("frmTest", "/tmp/bak/frmTest.txt")
                 assert result["success"] is True
-                mock_orch.restore_form_backup.assert_called_once()
-                args = mock_orch.restore_form_backup.call_args
+                mock_dev_copy.restore_form_backup.assert_called_once()
+                args = mock_dev_copy.restore_form_backup.call_args
                 assert args[0][0] == "frmTest"  # form_name
                 assert args[0][1] == "/tmp/bak/frmTest.txt"  # backup_path
                 assert args[0][2] == mock_adapter  # adapter
@@ -229,14 +229,14 @@ class TestReportBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/bak/rptTest.txt"}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.export_report_backup.return_value = {"success": True, "backup_path": "/tmp/bak/rptTest.txt"}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.export_report_backup("rptTest", None)
                 assert result["success"] is True
-                mock_orch.export_report_backup.assert_called_once()
-                args = mock_orch.export_report_backup.call_args
+                mock_dev_copy.export_report_backup.assert_called_once()
+                args = mock_dev_copy.export_report_backup.call_args
                 assert args[0][0] == "rptTest"  # report_name
                 assert args[0][1] == mock_adapter  # adapter
 
@@ -246,14 +246,14 @@ class TestReportBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.import_report_from_file.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.import_report_from_file.return_value = {"success": True}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.import_report_from_file("rptTest", "/tmp/bak/rptTest.txt")
                 assert result["success"] is True
-                mock_orch.import_report_from_file.assert_called_once()
-                args = mock_orch.import_report_from_file.call_args
+                mock_dev_copy.import_report_from_file.assert_called_once()
+                args = mock_dev_copy.import_report_from_file.call_args
                 assert args[0][0] == "rptTest"  # report_name
                 assert args[0][1] == "/tmp/bak/rptTest.txt"  # file_path
                 assert args[0][2] == mock_adapter  # adapter
@@ -264,14 +264,14 @@ class TestReportBackupRestore:
         mock_conn.is_connected.return_value = True
         mock_adapter = MagicMock()
         mock_conn.get_adapter.return_value = mock_adapter
-        mock_orch = MagicMock()
-        mock_orch.restore_report_backup.return_value = {"success": True}
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator", return_value=mock_orch):
+        mock_dev_copy = MagicMock()
+        mock_dev_copy.restore_report_backup.return_value = {"success": True}
+        with patch.object(dev_copy_module, '_dev_copy', return_value=mock_dev_copy):
             with patch.object(dev_copy_module, '_pool', return_value=mock_conn):
                 result = server.restore_report_backup("rptTest", "/tmp/bak/rptTest.txt")
                 assert result["success"] is True
-                mock_orch.restore_report_backup.assert_called_once()
-                args = mock_orch.restore_report_backup.call_args
+                mock_dev_copy.restore_report_backup.assert_called_once()
+                args = mock_dev_copy.restore_report_backup.call_args
                 assert args[0][0] == "rptTest"  # report_name
                 assert args[0][1] == "/tmp/bak/rptTest.txt"  # backup_path
                 assert args[0][2] == mock_adapter  # adapter

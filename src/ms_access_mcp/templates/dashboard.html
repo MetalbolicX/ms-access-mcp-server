@@ -3,22 +3,28 @@
 {% block extra_head %}
 <link rel="stylesheet" href="/dist/assets/styles.css">
 <style>
-    .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
-    .card h2 { color: #2c3e50; margin-bottom: 1rem; }
-    .status { display: flex; gap: 2rem; margin-top: 1rem; }
-    .status-item { text-align: center; }
-    .status-value { font-size: 2rem; font-weight: bold; color: #3498db; }
-    .status-label { color: #777; font-size: 0.875rem; }
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem; }
-    .stat-card { background: #f8f9fa; padding: 1rem; border-radius: 6px; text-align: center; cursor: pointer; transition: background 150ms; }
-    .stat-card:hover { background: #e9ecef; }
+    .card { background: var(--color-surface); padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+    .card h2 { color: var(--color-secondary); margin-bottom: 1rem; }
+    .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .card-header-row h2 { margin: 0; }
+    .stats-section { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-top: 1rem; }
+    .stat-card { background: var(--color-surface-alt); padding: 1rem; border-radius: 6px; text-align: center; cursor: pointer; transition: background 150ms; }
+    .stat-card:hover { background: var(--color-surface-hover); }
     .stat-card .stat-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
-    .stat-card .stat-value { font-size: 1.5rem; font-weight: bold; color: #2c3e50; }
-    .stat-card .stat-label { font-size: 0.75rem; color: #777; }
+    .stat-card .stat-value { font-size: 1.5rem; font-weight: bold; color: var(--color-secondary); }
+    .stat-card .stat-label { font-size: 0.75rem; color: var(--color-text-faint); }
     .connect-form { display: flex; flex-direction: column; gap: 1rem; }
-    .connect-form input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+    .connect-form input { padding: 0.5rem; border: 1px solid var(--color-border-strong); border-radius: 4px; width: 100%; }
     .connect-options { display: flex; align-items: center; justify-content: space-between; }
-    .error-message { color: #e74c3c; margin-bottom: 1rem; text-align: center; }
+    .connect-options label { display: flex; align-items: center; gap: 0.5rem; }
+    .connection-info p { color: var(--color-text-muted); margin-bottom: 1rem; }
+    .btn-danger { background: var(--color-accent); width: auto; }
+    .error-message { color: var(--color-accent); margin-bottom: 1rem; text-align: center; }
+    .list-item-row { padding: 0.5rem; border-bottom: 1px solid var(--color-border); }
+    .list-close-btn { background: none; border: none; cursor: pointer; color: var(--color-text-faint); }
+    .relationships-aside { display: flex; justify-content: space-between; align-items: center; }
+    .relationships-aside h2 { margin: 0 0 0.5rem; }
+    .relationships-link { color: var(--color-primary); text-decoration: none; }
 </style>
 {% endblock %}
 
@@ -27,20 +33,20 @@
     <h1>Dashboard</h1>
 
     <!-- Connection Card -->
-    <div class="card" style="margin-bottom: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h2 style="margin: 0;">Database Connection</h2>
+    <section class="card">
+        <div class="card-header-row">
+            <h2>Database Connection</h2>
             <span :class="['status-badge', connectionStatus.connected ? 'connected' : 'disconnected']"
                   x-text="connectionStatus.connected ? 'Connected' : 'Disconnected'"></span>
         </div>
 
         <!-- Connect form (shown when disconnected) -->
         <div x-show="!connectionStatus.connected" class="connect-form">
-            <input type="text" x-model="databasePath" placeholder="C:\path\to\database.accdb" style="width: 100%;">
-            <input type="password" x-model="dbPassword" placeholder="Database password (optional)" style="width: 100%;">
+            <input type="text" x-model="databasePath" placeholder="C:\path\to\database.accdb">
+            <input type="password" x-model="dbPassword" placeholder="Database password (optional)">
             <div class="error-message" x-show="connectError" x-text="connectError"></div>
             <div class="connect-options">
-                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                <label>
                     <input type="checkbox" x-model="useCom"> Use COM Automation
                 </label>
                 <button class="btn" @click="handleConnect" :disabled="!databasePath || isConnecting">
@@ -51,84 +57,82 @@
         </div>
 
         <!-- Connection info (shown when connected) -->
-        <div x-show="connectionStatus.connected">
-            <p style="color: #555; margin-bottom: 1rem;">Database: <strong x-text="connectionStatus.database"></strong></p>
-            <button class="btn" style="background: #e74c3c; width: auto;" @click="handleDisconnect">Disconnect</button>
+        <div x-show="connectionStatus.connected" class="connection-info">
+            <p>Database: <strong x-text="connectionStatus.database"></strong></p>
+            <button class="btn btn-danger" @click="handleDisconnect">Disconnect</button>
         </div>
-    </div>
+    </section>
 
     <!-- Stats Grid (shown when connected) -->
-    <div x-show="connectionStatus.connected">
-        <div class="stats-grid">
-            <div class="stat-card" @click="toggleList('tables')">
-                <div class="stat-icon">📊</div>
-                <div class="stat-value" x-text="statsData?.objects?.tables ?? '--'"></div>
-                <div class="stat-label">Tables</div>
-            </div>
-            <div class="stat-card" @click="toggleList('queries')">
-                <div class="stat-icon">🔍</div>
-                <div class="stat-value" x-text="statsData?.objects?.queries ?? '--'"></div>
-                <div class="stat-label">Queries</div>
-            </div>
-            <div class="stat-card" @click="toggleList('forms')">
-                <div class="stat-icon">📝</div>
-                <div class="stat-value" x-text="statsData?.objects?.forms ?? '--'"></div>
-                <div class="stat-label">Forms</div>
-            </div>
-            <div class="stat-card" @click="toggleList('reports')">
-                <div class="stat-icon">📋</div>
-                <div class="stat-value" x-text="statsData?.objects?.reports ?? '--'"></div>
-                <div class="stat-label">Reports</div>
-            </div>
-            <div class="stat-card" @click="toggleList('macros')">
-                <div class="stat-icon">⚙️</div>
-                <div class="stat-value" x-text="statsData?.objects?.macros ?? '--'"></div>
-                <div class="stat-label">Macros</div>
-            </div>
-            <div class="stat-card" @click="toggleList('modules')">
-                <div class="stat-icon">📦</div>
-                <div class="stat-value" x-text="statsData?.objects?.modules ?? '--'"></div>
-                <div class="stat-label">Modules</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">💾</div>
-                <div class="stat-value" x-text="formatSize(statsData?.file?.size_bytes ?? 0)"></div>
-                <div class="stat-label">DB Size</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">🔧</div>
-                <div class="stat-value" x-text="statsData?.system?.access_version ?? 'N/A'"></div>
-                <div class="stat-label">Access Version</div>
-            </div>
+    <section x-show="connectionStatus.connected" class="stats-section">
+        <div class="stat-card" @click="toggleList('tables')">
+            <div class="stat-icon">📊</div>
+            <div class="stat-value" x-text="statsData?.objects?.tables ?? '--'"></div>
+            <div class="stat-label">Tables</div>
         </div>
-    </div>
+        <div class="stat-card" @click="toggleList('queries')">
+            <div class="stat-icon">🔍</div>
+            <div class="stat-value" x-text="statsData?.objects?.queries ?? '--'"></div>
+            <div class="stat-label">Queries</div>
+        </div>
+        <div class="stat-card" @click="toggleList('forms')">
+            <div class="stat-icon">📝</div>
+            <div class="stat-value" x-text="statsData?.objects?.forms ?? '--'"></div>
+            <div class="stat-label">Forms</div>
+        </div>
+        <div class="stat-card" @click="toggleList('reports')">
+            <div class="stat-icon">📋</div>
+            <div class="stat-value" x-text="statsData?.objects?.reports ?? '--'"></div>
+            <div class="stat-label">Reports</div>
+        </div>
+        <div class="stat-card" @click="toggleList('macros')">
+            <div class="stat-icon">⚙️</div>
+            <div class="stat-value" x-text="statsData?.objects?.macros ?? '--'"></div>
+            <div class="stat-label">Macros</div>
+        </div>
+        <div class="stat-card" @click="toggleList('modules')">
+            <div class="stat-icon">📦</div>
+            <div class="stat-value" x-text="statsData?.objects?.modules ?? '--'"></div>
+            <div class="stat-label">Modules</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">💾</div>
+            <div class="stat-value" x-text="formatSize(statsData?.file?.size_bytes ?? 0)"></div>
+            <div class="stat-label">DB Size</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🔧</div>
+            <div class="stat-value" x-text="statsData?.system?.access_version ?? 'N/A'"></div>
+            <div class="stat-label">Access Version</div>
+        </div>
+    </section>
 
     <!-- Object List Panel -->
-    <div x-show="activeListType" class="card" style="margin-top: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h2 style="margin: 0;" x-text="activeListType + ' (' + getListCount() + ')'"></h2>
-            <button @click="activeListType = null" style="background: none; border: none; cursor: pointer; color: #777;">✕</button>
+    <article x-show="activeListType" class="card">
+        <div class="card-header-row">
+            <h2 x-text="activeListType + ' (' + getListCount() + ')'"></h2>
+            <button @click="activeListType = null" class="list-close-btn">✕</button>
         </div>
         <div x-show="isListLoading" class="loading-state">Loading...</div>
         <div x-show="!isListLoading && getListItems().length === 0">No items found</div>
         <div x-show="!isListLoading && getListItems().length > 0">
             <template x-for="item in getListItems()" :key="item">
-                <div style="padding: 0.5rem; border-bottom: 1px solid #eee;" x-text="item"></div>
+                <div class="list-item-row" x-text="item"></div>
             </template>
         </div>
-    </div>
+    </article>
 
     <!-- Relationships -->
-    <div x-show="connectionStatus.connected" class="card" style="margin-top: 1rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
+    <aside x-show="connectionStatus.connected" class="card">
+        <div class="relationships-aside">
             <div>
-                <h2 style="margin: 0 0 0.5rem;">Relationships</h2>
+                <h2>Relationships</h2>
                 <div class="stat-value" x-text="relationshipCount"></div>
                 <div class="stat-label">relationships defined</div>
             </div>
-            <a href="/er-diagram" style="color: #3498db; text-decoration: none;">Open ER Diagram →</a>
+            <a href="/er-diagram" class="relationships-link">Open ER Diagram →</a>
         </div>
-    </div>
+    </aside>
 </div>
 {% endblock %}
 

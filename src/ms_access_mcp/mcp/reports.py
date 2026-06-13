@@ -1,7 +1,7 @@
 """Report manipulation tools for MS Access — PR1 Core/CRUD/Properties."""
-from .server import mcp
+from ._helpers import destructive_guard, require_connected
 from .container import get_container
-from ._helpers import guard_destructive, _com
+from .server import mcp
 
 
 def _pool():
@@ -33,6 +33,7 @@ def _ensure_connected(connection_name: str = "default"):
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def report_exists(report_name: str, connection_name: str = "default") -> dict:
     """
@@ -49,6 +50,7 @@ def report_exists(report_name: str, connection_name: str = "default") -> dict:
     return {"success": True, "exists": exists, "report": report_name}
 
 
+@require_connected()
 @mcp.tool()
 def get_reports(connection_name: str = "default") -> dict:
     """
@@ -69,6 +71,7 @@ def get_reports(connection_name: str = "default") -> dict:
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def create_report(report_name: str, record_source: str = "", template_name: str = "", properties: dict[str, str] | None = None, connection_name: str = "default") -> dict:
     """
@@ -88,6 +91,7 @@ def create_report(report_name: str, record_source: str = "", template_name: str 
     return {"success": result, "report_name": report_name}
 
 
+@destructive_guard(action="rename_report")
 @mcp.tool()
 def rename_report(old_name: str, new_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -105,9 +109,6 @@ def rename_report(old_name: str, new_name: str, connection_name: str = "default"
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "rename_report", old_name=old_name, new_name=new_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -115,6 +116,7 @@ def rename_report(old_name: str, new_name: str, connection_name: str = "default"
     return {"success": result, "old_name": old_name, "new_name": new_name}
 
 
+@require_connected()
 @mcp.tool()
 def get_report_properties(report_name: str, connection_name: str = "default") -> dict:
     """
@@ -129,12 +131,13 @@ def get_report_properties(report_name: str, connection_name: str = "default") ->
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_report_properties(report_name)
+    props = adapter.get_report_properties(report_name)
     if not props:
         return {"success": False, "error": f"No properties found for report '{report_name}'", "report": report_name}
     return {"success": True, "report": report_name, "properties": props}
 
 
+@destructive_guard(action="set_report_property")
 @mcp.tool()
 def set_report_property(report_name: str, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -153,16 +156,14 @@ def set_report_property(report_name: str, property_name: str, value: str, connec
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_report_property", report_name=report_name, property_name=property_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_property(report_name, property_name, value)
+    result = adapter.set_report_property(report_name, property_name, value)
     return {"success": result, "report": report_name, "property": property_name, "value": value}
 
 
+@destructive_guard(action="set_report_properties")
 @mcp.tool()
 def set_report_properties(report_name: str, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -180,13 +181,10 @@ def set_report_properties(report_name: str, properties: dict[str, str], connecti
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_report_properties", report_name=report_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_properties(report_name, properties)
+    result = adapter.set_report_properties(report_name, properties)
     if not result:
         return {"success": False, "error": f"No properties found for report '{report_name}'"}
     return {"success": True, "report": report_name, "properties": result}
@@ -197,6 +195,7 @@ def set_report_properties(report_name: str, properties: dict[str, str], connecti
 # =============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def get_report_controls(report_name: str, connection_name: str = "default") -> dict:
     """
@@ -215,6 +214,7 @@ def get_report_controls(report_name: str, connection_name: str = "default") -> d
     return {"success": True, "controls": [c.model_dump() for c in controls], "count": len(controls)}
 
 
+@require_connected()
 @mcp.tool()
 def get_report_control_properties(report_name: str, control_name: str, connection_name: str = "default") -> dict:
     """
@@ -230,12 +230,13 @@ def get_report_control_properties(report_name: str, control_name: str, connectio
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_report_control_properties(report_name, control_name)
+    props = adapter.get_report_control_properties(report_name, control_name)
     if not props:
         return {"success": False, "error": f"No properties found for control '{control_name}' in report '{report_name}'", "report": report_name, "control": control_name}
     return {"success": True, "report": report_name, "control": control_name, "properties": props}
 
 
+@destructive_guard(action="set_report_control_property")
 @mcp.tool()
 def set_report_control_property(report_name: str, control_name: str, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -255,16 +256,14 @@ def set_report_control_property(report_name: str, control_name: str, property_na
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_report_control_property", report_name=report_name, control_name=control_name, property_name=property_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_control_property(report_name, control_name, property_name, value)
+    result = adapter.set_report_control_property(report_name, control_name, property_name, value)
     return {"success": result, "report": report_name, "control": control_name, "property": property_name, "value": value}
 
 
+@destructive_guard(action="set_report_control_properties")
 @mcp.tool()
 def set_report_control_properties(report_name: str, control_name: str, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -283,18 +282,16 @@ def set_report_control_properties(report_name: str, control_name: str, propertie
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_report_control_properties", report_name=report_name, control_name=control_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_control_properties(report_name, control_name, properties)
+    result = adapter.set_report_control_properties(report_name, control_name, properties)
     if not result:
         return {"success": False, "error": f"No properties found for control '{control_name}' in report '{report_name}'"}
     return {"success": True, "report": report_name, "control": control_name, "properties": result}
 
 
+@destructive_guard(action="add_report_control")
 @mcp.tool()
 def add_report_control(report_name: str, control_type: str, control_name: str, section: int = 0, properties: dict[str, str] | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -315,16 +312,14 @@ def add_report_control(report_name: str, control_type: str, control_name: str, s
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "add_report_control", report_name=report_name, control_name=control_name, control_type=control_type)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().add_report_control(report_name, control_type, control_name, section, properties)
+    result = adapter.add_report_control(report_name, control_type, control_name, section, properties)
     return {"success": result, "report": report_name, "control_name": control_name, "control_type": control_type}
 
 
+@destructive_guard(action="remove_report_control")
 @mcp.tool()
 def remove_report_control(report_name: str, control_name: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -342,13 +337,10 @@ def remove_report_control(report_name: str, control_name: str, connection_name: 
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "remove_report_control", report_name=report_name, control_name=control_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().remove_report_control(report_name, control_name)
+    result = adapter.remove_report_control(report_name, control_name)
     return {"success": result, "report": report_name, "control": control_name}
 
 
@@ -357,6 +349,7 @@ def remove_report_control(report_name: str, control_name: str, connection_name: 
 # =============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def get_report_sections(report_name: str, connection_name: str = "default") -> dict:
     """
@@ -375,6 +368,7 @@ def get_report_sections(report_name: str, connection_name: str = "default") -> d
     return {"success": True, "report": report_name, "sections": sections, "count": len(sections)}
 
 
+@require_connected()
 @mcp.tool()
 def get_report_section_properties(report_name: str, section_id: int, connection_name: str = "default") -> dict:
     """
@@ -390,12 +384,13 @@ def get_report_section_properties(report_name: str, section_id: int, connection_
     adapter = _ensure_connected(connection_name)
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
-    props = _com().get_report_section_properties(report_name, section_id)
+    props = adapter.get_report_section_properties(report_name, section_id)
     if not props:
         return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}
     return {"success": True, "report": report_name, "section_id": section_id, "properties": props}
 
 
+@destructive_guard(action="set_report_section_property")
 @mcp.tool()
 def set_report_section_property(report_name: str, section_id: int, property_name: str, value: str, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -415,16 +410,14 @@ def set_report_section_property(report_name: str, section_id: int, property_name
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_report_section_property", report_name=report_name, section_id=section_id, property_name=property_name)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_section_property(report_name, section_id, property_name, value)
+    result = adapter.set_report_section_property(report_name, section_id, property_name, value)
     return {"success": result, "report": report_name, "section_id": section_id, "property": property_name, "value": value}
 
 
+@destructive_guard(action="set_report_section_properties")
 @mcp.tool()
 def set_report_section_properties(report_name: str, section_id: int, properties: dict[str, str], connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -443,13 +436,10 @@ def set_report_section_properties(report_name: str, section_id: int, properties:
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "set_report_section_properties", report_name=report_name, section_id=section_id)
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
-    result = _com().set_report_section_properties(report_name, section_id, properties)
+    result = adapter.set_report_section_properties(report_name, section_id, properties)
     if not result:
         return {"success": False, "error": f"No properties found for section {section_id} in report '{report_name}'", "report": report_name, "section_id": section_id}
     return {"success": True, "report": report_name, "section_id": section_id, "properties": result}

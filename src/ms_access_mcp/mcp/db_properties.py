@@ -9,7 +9,7 @@ The ComOnlyAdapterMixin raises NotImplementedError for these methods, so only
 WinComAdapter (COM-only) is capable of serving them.
 """
 
-from ._helpers import guard_destructive
+from ._helpers import destructive_guard, require_connected
 from .container import get_container
 from .server import mcp
 
@@ -31,18 +31,12 @@ def _check_connected(connection_name: str = "default"):
     return _pool().is_connected(connection_name)
 
 
-def _ensure_connected(connection_name: str = "default"):
-    """Check connection and return adapter, or None if not connected."""
-    if not _check_connected(connection_name):
-        return None
-    return _get_adapter(connection_name)
-
-
 # ============================================================================
 # READ TOOL (non-destructive)
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def get_database_properties(
     names: list[str] | None = None,
@@ -69,10 +63,7 @@ def get_database_properties(
     Note: exceptions raised by the adapter are NOT caught — they propagate
     to the MCP framework for visibility.
     """
-    adapter = _ensure_connected(connection_name)
-    if adapter is None:
-        return {"success": False, "error": "Not connected to database"}
-    properties = adapter.get_database_properties(names)
+    properties = _get_adapter(connection_name).get_database_properties(names)
     return {"success": True, "properties": properties}
 
 
@@ -81,6 +72,7 @@ def get_database_properties(
 # ============================================================================
 
 
+@destructive_guard(action="set_database_property")
 @mcp.tool()
 def set_database_property(
     name: str,
@@ -115,13 +107,6 @@ def set_database_property(
     Note: exceptions raised by the adapter are NOT caught — they propagate
     to the MCP framework for visibility.
     """
-    if not _check_connected(connection_name):
-        return {"success": False, "error": "Not connected to database"}
-
-    guard = guard_destructive(confirm, dry_run, "set_database_property", name=name, value=value)
-    if guard is not None:
-        return guard
-
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}

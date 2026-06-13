@@ -95,13 +95,12 @@ class TestCliExportAllBackend:
             "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
             _spy
         )
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.export_all.return_value = {"success": True, "exported": 0}
-            result = runner.invoke(app, [
-                "export-all",
-                "--dir", str(tmp_path),
-                "--db", "/tmp/test.accdb",
-            ])
+        mock.export_all_versioning.return_value = {"success": True, "exported": 0}
+        result = runner.invoke(app, [
+            "export-all",
+            "--dir", str(tmp_path),
+            "--db", "/tmp/test.accdb",
+        ])
 
         assert result.exit_code == 0, result.stdout
         assert captured["backend"] == "odbc"
@@ -122,14 +121,13 @@ class TestCliExportAllBackend:
             "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
             _spy
         )
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.export_all.return_value = {"success": True, "exported": 0}
-            result = runner.invoke(app, [
-                "export-all",
-                "--dir", str(tmp_path),
-                "--db", "/tmp/test.accdb",
-                "--backend", "com",
-            ])
+        mock.export_all_versioning.return_value = {"success": True, "exported": 0}
+        result = runner.invoke(app, [
+            "export-all",
+            "--dir", str(tmp_path),
+            "--db", "/tmp/test.accdb",
+            "--backend", "com",
+        ])
 
         assert result.exit_code == 0, result.stdout
         assert captured["backend"] == "com"
@@ -151,13 +149,12 @@ class TestCliExportAllBackend:
             "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
             _spy
         )
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.export_all.return_value = {"success": True, "exported": 0}
-            result = runner.invoke(app, [
-                "export-all",
-                "--dir", str(tmp_path),
-                "--db", "/tmp/test.accdb",
-            ])
+        mock.export_all_versioning.return_value = {"success": True, "exported": 0}
+        result = runner.invoke(app, [
+            "export-all",
+            "--dir", str(tmp_path),
+            "--db", "/tmp/test.accdb",
+        ])
 
         assert result.exit_code == 0, result.stdout
         # export_all without --include-vba should not pass VBA caps
@@ -182,15 +179,14 @@ class TestCliCompareVersioningBackend:
             "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
             _spy
         )
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.compare.return_value = {
+        mock.compare_versioning.return_value = {
                 "success": True, "new": [], "missing": [], "changed": [], "unchanged": []
             }
-            result = runner.invoke(app, [
-                "compare-versioning",
-                "--dir", str(tmp_path),
-                "--db", "/tmp/test.accdb",
-            ])
+        result = runner.invoke(app, [
+            "compare-versioning",
+            "--dir", str(tmp_path),
+            "--db", "/tmp/test.accdb",
+        ])
 
         assert result.exit_code == 0, result.stdout
         assert captured["backend"] == "odbc"
@@ -210,16 +206,15 @@ class TestCliCompareVersioningBackend:
             "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
             _spy
         )
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.compare.return_value = {
+        mock.compare_versioning.return_value = {
                 "success": True, "new": [], "missing": [], "changed": [], "unchanged": []
             }
-            result = runner.invoke(app, [
-                "compare-versioning",
-                "--dir", str(tmp_path),
-                "--db", "/tmp/test.accdb",
-                "--backend", "com",
-            ])
+        result = runner.invoke(app, [
+            "compare-versioning",
+            "--dir", str(tmp_path),
+            "--db", "/tmp/test.accdb",
+            "--backend", "com",
+        ])
 
         assert result.exit_code == 0, result.stdout
         assert captured["backend"] == "com"
@@ -246,9 +241,9 @@ class TestCliExportVbaBackend:
             _spy
         )
         result = runner.invoke(app, [
-            "export-vba", "Module1",
-            "--db", "/tmp/test.accdb",
-            "--backend", "com",
+        "export-vba", "Module1",
+        "--db", "/tmp/test.accdb",
+        "--backend", "com",
         ])
 
         assert result.exit_code == 0, result.stdout
@@ -268,9 +263,9 @@ class TestCliExportVbaBackend:
             )
         )
         result = runner.invoke(app, [
-            "export-vba", "Module1",
-            "--db", "/tmp/test.accdb",
-            "--backend", "odbc",
+        "export-vba", "Module1",
+        "--db", "/tmp/test.accdb",
+        "--backend", "odbc",
         ])
 
         assert result.exit_code != 0
@@ -298,13 +293,12 @@ class TestCliExportAllVbaMismatch:
             "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
             _select
         )
-        with patch("ms_access_mcp.orchestrators.versioning.VersioningOrchestrator") as MockOrch:
-            MockOrch.return_value.export_all.return_value = {"success": True, "exported": 0}
-            result = runner.invoke(app, [
-                "export-all",
-                "--dir", str(tmp_path),
-                "--db", "/tmp/test.accdb",
-                "--backend", "odbc",
-            ])
+        mock.export_all_versioning.return_value = {"success": True, "exported": 0}
+        result = runner.invoke(app, [
+            "export-all",
+            "--dir", str(tmp_path),
+            "--db", "/tmp/test.accdb",
+            "--backend", "odbc",
+        ])
 
         assert result.exit_code == 0, result.stdout

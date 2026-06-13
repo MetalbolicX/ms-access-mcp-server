@@ -27,10 +27,9 @@ class TestServiceContainer:
         assert c1 is c2
 
     def test_get_container_has_all_services(self):
-        """Container should hold all four core service instances."""
+        """Container should hold all core service instances."""
         c = container.get_container()
         assert c.connection_pool is not None
-        assert c.com_automation is not None
         assert c.migration is not None
         assert c.dev_copy is not None
 

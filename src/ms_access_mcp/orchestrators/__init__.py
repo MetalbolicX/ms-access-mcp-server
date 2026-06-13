@@ -4,13 +4,11 @@ Each orchestrator encapsulates business logic and delegates to adapters,
 returning standardized dicts with success/error keys.
 """
 
-from .versioning import VersioningOrchestrator
 from .linked_table_service import LinkedTableService
 from .credential_vault import CredentialVault
 from .connect_policy import ConnectPolicy, ConnectPolicyResult
 
 __all__ = [
-    "VersioningOrchestrator",
     "LinkedTableService",
     "CredentialVault",
     "ConnectPolicy",

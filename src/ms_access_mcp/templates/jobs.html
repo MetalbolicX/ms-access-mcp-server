@@ -3,66 +3,77 @@
 {% block extra_head %}
 <link rel="stylesheet" href="/dist/assets/styles.css">
 <style>
-    .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
-    .card h2 { color: #2c3e50; margin-bottom: 1rem; }
-    .job-item { padding: 1rem; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+    .card { background: var(--color-surface); padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+    .card h2 { color: var(--color-secondary); margin-bottom: 1rem; }
+    .page-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .page-header-row h1 { margin: 0; }
+    .job-count { color: var(--color-text-faint); font-size: 0.875rem; }
+    .job-list { list-style: none; padding: 0; margin: 0; }
+    .job-item { padding: 1rem; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; flex-direction: column; align-items: flex-start; gap: 0.5rem; }
     .job-item:last-child { border-bottom: none; }
+    .job-item .job-row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
     .job-status { padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.875rem; color: white; }
-    .job-status.pending { background: #f39c12; }
-    .job-status.running { background: #3498db; }
-    .job-status.completed { background: #27ae60; }
-    .job-status.failed { background: #e74c3c; }
+    .job-status.pending { background: var(--color-warning); }
+    .job-status.running { background: var(--color-primary); }
+    .job-status.completed { background: var(--color-success); }
+    .job-status.failed { background: var(--color-accent); }
     .job-info { display: flex; flex-direction: column; gap: 0.25rem; }
-    .job-type { font-weight: 600; color: #2c3e50; }
-    .job-date { color: #999; font-size: 0.75rem; }
-    .error-section { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; color: #e74c3c; font-size: 0.875rem; }
-    .progress-section { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; }
-    .progress-bar { flex: 1; height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
-    .progress-fill { height: 100%; background: #3498db; border-radius: 3px; transition: width 300ms; }
-    .progress-text { font-size: 0.875rem; color: #777; min-width: 40px; }
-    .empty-state { text-align: center; padding: 2rem; color: #999; }
+    .job-meta { display: flex; align-items: center; gap: 0.75rem; }
+    .job-type { font-weight: 600; color: var(--color-secondary); }
+    .job-date { color: var(--color-text-subtle); font-size: 0.75rem; }
+    .error-section { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; color: var(--color-accent); font-size: 0.875rem; }
+    .progress-section { display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem; width: 100%; }
+    .progress-bar { flex: 1; height: 6px; background: var(--color-border); border-radius: 3px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 300ms; }
+    .progress-text { font-size: 0.875rem; color: var(--color-text-faint); min-width: 40px; }
+    .completed-section { font-size: 0.75rem; color: var(--color-text-faint); margin-top: 0.25rem; }
+    .empty-state { text-align: center; padding: 2rem; color: var(--color-text-subtle); }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="card" x-data="jobsPage()">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h1 style="margin: 0;">Job Monitor</h1>
-        <span style="color: #777; font-size: 0.875rem;" x-text="jobs.length + ' jobs'"></span>
+    <div class="page-header-row">
+        <h1>Job Monitor</h1>
+        <span class="job-count" x-text="jobs.length + ' jobs'"></span>
     </div>
 
     <div x-show="jobs.length === 0" class="empty-state">No jobs to display.</div>
 
-    <template x-for="job in jobs" :key="job.id">
-        <div class="card job-item">
-            <div class="job-info">
-                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                    <span class="job-type" x-text="job.type"></span>
-                    <span :class="['job-status', job.status]" x-text="job.status"></span>
+    <ul class="job-list">
+        <template x-for="job in jobs" :key="job.id">
+            <li class="job-item">
+                <div class="job-row">
+                    <div class="job-info">
+                        <div class="job-meta">
+                            <span class="job-type" x-text="job.type"></span>
+                            <span :class="['job-status', job.status]" x-text="job.status"></span>
+                        </div>
+                        <span class="job-date" x-text="formatDate(job.created_at)"></span>
+                    </div>
                 </div>
-                <span class="job-date" x-text="formatDate(job.created_at)"></span>
-            </div>
 
-            <!-- Progress bar for running jobs -->
-            <div x-show="job.status === 'running'" class="progress-section">
-                <div class="progress-bar">
-                    <div class="progress-fill" :style="{ width: job.progress + '%' }"></div>
+                <!-- Progress bar for running jobs -->
+                <div x-show="job.status === 'running'" class="progress-section">
+                    <div class="progress-bar">
+                        <div class="progress-fill" :style="{ width: job.progress + '%' }"></div>
+                    </div>
+                    <span class="progress-text" x-text="job.progress + '%'"></span>
                 </div>
-                <span class="progress-text" x-text="job.progress + '%'"></span>
-            </div>
 
-            <!-- Error for failed jobs -->
-            <div x-show="job.error" class="error-section">
-                <span>⚠</span>
-                <span x-text="job.error"></span>
-            </div>
+                <!-- Error for failed jobs -->
+                <div x-show="job.error" class="error-section">
+                    <span>⚠</span>
+                    <span x-text="job.error"></span>
+                </div>
 
-            <!-- Completed timestamp -->
-            <div x-show="job.completed_at" style="font-size: 0.75rem; color: #777; margin-top: 0.25rem;">
-                Completed at <span x-text="formatDate(job.completed_at)"></span>
-            </div>
-        </div>
-    </template>
+                <!-- Completed timestamp -->
+                <div x-show="job.completed_at" class="completed-section">
+                    Completed at <span x-text="formatDate(job.completed_at)"></span>
+                </div>
+            </li>
+        </template>
+    </ul>
 </div>
 {% endblock %}
 

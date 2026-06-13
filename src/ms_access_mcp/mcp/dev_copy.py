@@ -3,9 +3,34 @@
 Note: Dev copy operations work with the active connection and require
 the connection pool to have adapter and current_database properties.
 """
-from .server import mcp, _get_path_guard
+from ._helpers import _validate_path, destructive_guard, require_connected
 from .container import get_container
-from ._helpers import _pool, _get_adapter, _check_connected, guard_destructive, _validate_path
+from .server import mcp
+
+
+def _pool():
+    """Lazy accessor for connection pool (avoids circular import at module level)."""
+    return get_container().connection_pool
+
+
+def _get_adapter(connection_name: str = "default"):
+    """Get adapter for a named connection, or return None if not found."""
+    try:
+        return _pool().get_adapter(connection_name)
+    except KeyError:
+        return None
+
+
+def _check_connected(connection_name: str = "default"):
+    """Check if a named connection is connected."""
+    return _pool().is_connected(connection_name)
+
+
+def _ensure_connected(connection_name: str = "default"):
+    """Check connection and return adapter, or None if not connected."""
+    if not _check_connected(connection_name):
+        return None
+    return _get_adapter(connection_name)
 
 
 def _dev_copy():
@@ -46,6 +71,7 @@ def _get_current_db_path(connection_name: str = "default"):
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def compact_repair(action: str, source_path: str, dest_path: str, keep_original: bool = True, connection_name: str = "default") -> dict:
     """
@@ -81,6 +107,7 @@ def compact_repair(action: str, source_path: str, dest_path: str, keep_original:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def copy_database(source: str, dest: str, connection_name: str = "default") -> dict:
     """
@@ -117,6 +144,7 @@ def copy_database(source: str, dest: str, connection_name: str = "default") -> d
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def export_module_backup(module_name: str, backup_dir: str | None = None, connection_name: str = "default") -> dict:
     """
@@ -131,13 +159,12 @@ def export_module_backup(module_name: str, backup_dir: str | None = None, connec
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
     try:
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.export_module_backup(module_name, adapter, backup_dir)
+        return _dev_copy().export_module_backup(adapter, module_name, backup_dir)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def import_module_from_text(module_name: str, file_path: str, connection_name: str = "default") -> dict:
     """
@@ -156,13 +183,12 @@ def import_module_from_text(module_name: str, file_path: str, connection_name: s
         return {"success": False, "error": "Not connected to database"}
     try:
         file_path = _validate_path(file_path)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.import_module_from_text(module_name, file_path, adapter)
+        return _dev_copy().import_module_from_text(adapter, module_name, file_path)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def restore_module_backup(module_name: str, backup_path: str, connection_name: str = "default") -> dict:
     """
@@ -178,13 +204,12 @@ def restore_module_backup(module_name: str, backup_path: str, connection_name: s
         return {"success": False, "error": "Not connected to database"}
     try:
         backup_path = _validate_path(backup_path)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.restore_module_backup(module_name, backup_path, adapter)
+        return _dev_copy().restore_module_backup(adapter, module_name, backup_path)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def export_form_backup(form_name: str, backup_dir: str | None = None, connection_name: str = "default") -> dict:
     """
@@ -199,13 +224,12 @@ def export_form_backup(form_name: str, backup_dir: str | None = None, connection
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
     try:
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.export_form_backup(form_name, adapter, backup_dir)
+        return _dev_copy().export_form_backup(adapter, form_name, backup_dir)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def import_form_from_file(form_name: str, file_path: str, connection_name: str = "default") -> dict:
     """
@@ -225,13 +249,12 @@ def import_form_from_file(form_name: str, file_path: str, connection_name: str =
         return {"success": False, "error": "Not connected to database"}
     try:
         file_path = _validate_path(file_path)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.import_form_from_file(form_name, file_path, adapter)
+        return _dev_copy().import_form_from_text(adapter, form_name, file_path)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def restore_form_backup(form_name: str, backup_path: str, connection_name: str = "default") -> dict:
     """
@@ -247,13 +270,12 @@ def restore_form_backup(form_name: str, backup_path: str, connection_name: str =
         return {"success": False, "error": "Not connected to database"}
     try:
         backup_path = _validate_path(backup_path)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.restore_form_backup(form_name, backup_path, adapter)
+        return _dev_copy().restore_form_backup(adapter, form_name, backup_path)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def export_report_backup(report_name: str, backup_dir: str | None = None, connection_name: str = "default") -> dict:
     """
@@ -268,13 +290,12 @@ def export_report_backup(report_name: str, backup_dir: str | None = None, connec
     if adapter is None:
         return {"success": False, "error": "Not connected to database"}
     try:
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.export_report_backup(report_name, adapter, backup_dir)
+        return _dev_copy().export_report_backup(adapter, report_name, backup_dir)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def import_report_from_file(report_name: str, file_path: str, connection_name: str = "default") -> dict:
     """
@@ -290,13 +311,12 @@ def import_report_from_file(report_name: str, file_path: str, connection_name: s
         return {"success": False, "error": "Not connected to database"}
     try:
         file_path = _validate_path(file_path)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.import_report_from_file(report_name, file_path, adapter)
+        return _dev_copy().import_report_from_file(adapter, report_name, file_path)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
 
+@require_connected()
 @mcp.tool()
 def restore_report_backup(report_name: str, backup_path: str, connection_name: str = "default") -> dict:
     """
@@ -312,9 +332,7 @@ def restore_report_backup(report_name: str, backup_path: str, connection_name: s
         return {"success": False, "error": "Not connected to database"}
     try:
         backup_path = _validate_path(backup_path)
-        from ms_access_mcp.orchestrators.versioning import VersioningOrchestrator
-        orch = VersioningOrchestrator()
-        return orch.restore_report_backup(report_name, backup_path, adapter)
+        return _dev_copy().restore_report_backup(adapter, report_name, backup_path)
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -324,6 +342,7 @@ def restore_report_backup(report_name: str, backup_path: str, connection_name: s
 # ============================================================================
 
 
+@require_connected()
 @mcp.tool()
 def create_dev_copy(backup_dir: str | None = None, connection_name: str = "default") -> dict:
     """
@@ -357,6 +376,7 @@ def create_dev_copy(backup_dir: str | None = None, connection_name: str = "defau
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="deploy_dev_copy")
 @mcp.tool()
 def deploy_dev_copy(production_path: str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -377,9 +397,6 @@ def deploy_dev_copy(production_path: str | None = None, connection_name: str = "
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "deploy_dev_copy")
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}
@@ -391,6 +408,7 @@ def deploy_dev_copy(production_path: str | None = None, connection_name: str = "
         return {"success": False, "error": str(e)}
 
 
+@destructive_guard(action="discard_dev_copy")
 @mcp.tool()
 def discard_dev_copy(production_path: str | None = None, connection_name: str = "default", confirm: bool = False, dry_run: bool = False) -> dict:
     """
@@ -407,9 +425,6 @@ def discard_dev_copy(production_path: str | None = None, connection_name: str = 
     """
     if not _check_connected(connection_name):
         return {"success": False, "error": "Not connected to database"}
-    guard = guard_destructive(confirm, dry_run, "discard_dev_copy")
-    if guard is not None:
-        return guard
     adapter = _get_adapter(connection_name)
     if adapter is None:
         return {"success": False, "error": "No adapter available"}

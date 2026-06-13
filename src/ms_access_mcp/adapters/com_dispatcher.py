@@ -361,7 +361,3 @@ class ComDispatcher:
             pass  # Not on Windows or win32gui not available
         except Exception:
             pass  # Best-effort only
-
-    def _cleanup_com(self) -> None:
-        """Legacy wrapper — delegates to _release_com_safe()."""
-        self._release_com_safe()

@@ -28,12 +28,17 @@ class TestComDispatcherCleanup:
         assert hasattr(dispatcher, '_release_com_safe')
         assert callable(dispatcher._release_com_safe)
 
-    def test_cleanup_com_delegates_to_release_com_safe(self):
-        """_cleanup_com() calls _release_com_safe() internally."""
+    def test_cleanup_com_removed(self):
+        """_cleanup_com() was deleted — only _release_com_safe() remains.
+
+        The legacy wrapper existed only to delegate to _release_com_safe() and had
+        no production callers (PR5 / code-quality-refactor / Phase 5). Keeping a
+        passthrough wrapper around the canonical cleanup method is dead code.
+        """
         dispatcher = ComDispatcher()
-        with patch.object(dispatcher, '_release_com_safe') as mock_release:
-            dispatcher._cleanup_com()
-            mock_release.assert_called_once_with()
+        assert not hasattr(dispatcher, '_cleanup_com'), (
+            "_cleanup_com() is dead code — remove it. Only _release_com_safe() should exist."
+        )
 
     def test_release_com_safe_handles_clean_state(self):
         """_release_com_safe runs without error when all objects are None."""
@@ -119,3 +124,19 @@ def test_odbc_adapter_instantiation():
     assert isinstance(adapter, AccessAdapter)
     # Returns False for non-existent file, no exception
     assert adapter.connect("C:\\nonexistent\\dummy.accdb") is False
+
+
+class TestDeadCodeRemoval:
+    """Verify PR5 dead code removal — orphan modules with zero production callers."""
+
+    def test_ddl_builder_module_removed(self):
+        """The ddl_builder module is dead code (PR5 / Phase 5).
+
+        JetDdlBuilder had zero production callers and zero test callers. The
+        SQL generation pipeline uses JetSqlGenerator directly, not through this
+        wrapper. Keeping an orphan class around is a maintenance hazard.
+        """
+        import importlib
+
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module("ms_access_mcp.adapters.ddl_builder")

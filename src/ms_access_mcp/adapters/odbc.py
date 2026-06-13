@@ -12,20 +12,37 @@ from ..models.database import (
 )
 from ..models.migration import ColumnSchema, TableSchema, UnknownMetadata
 from .com_only_mixin import ComOnlyAdapterMixin
-from .interfaces import IDataAdapter, ISchemaAdapter
+from .interfaces import IDataAdapter, IDatabasePropertiesAdapter, ISchemaAdapter
 
 # Connection string templates for Access databases
 ACCESS_DRIVER = "{Microsoft Access Driver (*.mdb, *.accdb)}"
 ACE_OLEDB_12 = "Microsoft.ACE.OLEDB.12.0"
 ACE_OLEDB_16 = "Microsoft.ACE.OLEDB.16.0"
 
+# Canonical Access → ODBC type map (single source of truth).
+# Importable by other modules; see schema_inspector.py and wincom.py.
+ODBC_TYPE_MAP = {
+    "Text": "VARCHAR",
+    "Long Integer": "INT",
+    "Integer": "SMALLINT",
+    "Boolean": "BIT",
+    "Date/Time": "DATETIME",
+    "Currency": "MONEY",
+    "Memo": "TEXT",
+    "Double": "FLOAT",
+    "Single": "REAL",
+    "Binary": "VARBINARY",
+}
 
-class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
+
+class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePropertiesAdapter):
     """Data-only adapter using pyodbc for fast read-only access.
 
     Inherits ComOnlyAdapterMixin first so its NotImplementedError stubs
     take precedence over AccessAdapter protocol stubs for COM-only methods.
-    Implements IDataAdapter + ISchemaAdapter (via interfaces).
+    Implements IDataAdapter + ISchemaAdapter + IDatabasePropertiesAdapter
+    (via interfaces). IDatabasePropertiesAdapter methods raise
+    NotImplementedError — ODBC cannot read DAO CurrentDb.Properties.
     """
 
     # Default driver string — used when ACCESS_MCP_ODBC_DRIVER is not set
@@ -677,19 +694,6 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         if not self.is_connected():
             return {"success": False, "error": "Not connected"}
 
-        ODBC_TYPE_MAP = {
-            "Text": "VARCHAR",
-            "Long Integer": "INT",
-            "Integer": "SMALLINT",
-            "Boolean": "BIT",
-            "Date/Time": "DATETIME",
-            "Currency": "MONEY",
-            "Memo": "TEXT",
-            "Double": "FLOAT",
-            "Single": "REAL",
-            "Binary": "VARBINARY",
-        }
-
         col_defs = []
         for col in columns:
             name = col["name"]
@@ -827,6 +831,62 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
             return False
 
     # ========================================================================
+    # IDatabasePropertiesAdapter stubs — ODBC cannot read DAO CurrentDb.Properties.
+    # OdbcAdapter declares this protocol (per PR2) so services can type-hint
+    # uniformly against IDatabasePropertiesAdapter.
+    # ========================================================================
+
+    def get_database_properties(self, names: list[str] | None = None) -> dict:
+        """Get database properties — requires COM automation (DAO CurrentDb.Properties)."""
+        raise NotImplementedError(
+            "get_database_properties requires COM automation (WinComAdapter)"
+        )
+
+    def set_database_property(
+        self, name: str, value: str, type: str | None = None
+    ) -> bool:
+        """Set a database property — requires COM automation (DAO CurrentDb.Properties)."""
+        raise NotImplementedError(
+            "set_database_property requires COM automation (WinComAdapter)"
+        )
+
+    # ========================================================================
+    # IVersioningAdapter stubs — ODBC cannot export/import versioned objects.
+    # Kept here (not in ComOnlyAdapterMixin) for OdbcAdapter's AccessAdapter
+    # backward compatibility.
+    # ========================================================================
+
+    def export_all_versioning(self, output_dir: str) -> dict:
+        """Export all versioned objects — requires COM automation."""
+        raise NotImplementedError(
+            "export_all_versioning requires COM automation (WinComAdapter)"
+        )
+
+    def import_all_versioning(self, input_dir: str) -> dict:
+        """Import all versioned objects — requires COM automation."""
+        raise NotImplementedError(
+            "import_all_versioning requires COM automation (WinComAdapter)"
+        )
+
+    def compare_versioning(self, export_dir: str) -> dict:
+        """Compare versioned objects — requires COM automation."""
+        raise NotImplementedError(
+            "compare_versioning requires COM automation (WinComAdapter)"
+        )
+
+    def export_query_to_text(self, query_name: str) -> str:
+        """Export a query definition to text — requires COM automation."""
+        raise NotImplementedError(
+            "export_query_to_text requires COM automation (WinComAdapter)"
+        )
+
+    def import_query_from_text(self, query_name: str, query_data: str) -> bool:
+        """Import a query definition from text — requires COM automation."""
+        raise NotImplementedError(
+            "import_query_from_text requires COM automation (WinComAdapter)"
+        )
+
+    # ========================================================================
     # Internal helpers
     # ========================================================================
 
@@ -865,19 +925,6 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
     # ========================================================================
     # Table Alterations (ISchemaAdapter)
     # ========================================================================
-
-    ODBC_TYPE_MAP = {
-        "Text": "VARCHAR",
-        "Long Integer": "INT",
-        "Integer": "SMALLINT",
-        "Boolean": "BIT",
-        "Date/Time": "DATETIME",
-        "Currency": "MONEY",
-        "Memo": "TEXT",
-        "Double": "FLOAT",
-        "Single": "REAL",
-        "Binary": "VARBINARY",
-    }
 
     def alter_table(self, table_name: str, operations: list[dict]) -> dict:
         """Apply schema modifications to a table.
@@ -1102,7 +1149,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         size = params.get("size", 255) if col_type == "Text" else 0
         nullable = params.get("nullable", True)
 
-        odbc_type = self.ODBC_TYPE_MAP.get(col_type, "VARCHAR")
+        odbc_type = ODBC_TYPE_MAP.get(col_type, "VARCHAR")
         if size > 0 and col_type == "Text":
             col_def = f"[{name}] {odbc_type}({size})"
         elif odbc_type == "VARCHAR":
@@ -1129,7 +1176,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter):
         size = params.get("size", 255) if col_type == "Text" else 0
         nullable = params.get("nullable", True)
 
-        odbc_type = self.ODBC_TYPE_MAP.get(col_type, "VARCHAR")
+        odbc_type = ODBC_TYPE_MAP.get(col_type, "VARCHAR")
         if size > 0 and col_type == "Text":
             col_def = f"[{name}] {odbc_type}({size})"
         elif odbc_type == "VARCHAR":

@@ -3,23 +3,26 @@
 {% block extra_head %}
 <link rel="stylesheet" href="/dist/assets/styles.css">
 <style>
-    .card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
-    .card h2 { color: #2c3e50; margin-bottom: 1rem; }
+    .card { background: var(--color-surface); padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 1rem; }
+    .card h2 { color: var(--color-secondary); margin-bottom: 1rem; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #eee; }
-    th { color: #555; font-weight: 600; }
+    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--color-border); }
+    th { color: var(--color-text-muted); font-weight: 600; }
     .explorer-layout { display: grid; grid-template-columns: 280px 1fr; gap: 1rem; }
-    .tables-panel { border: 1px solid #eee; border-radius: 8px; padding: 1rem; }
+    .tables-panel { border: 1px solid var(--color-border); border-radius: 8px; padding: 1rem; }
+    .tables-panel-title { font-weight: 600; margin-bottom: 0.5rem; }
     .tables-list { max-height: 400px; overflow-y: auto; margin-top: 0.5rem; }
     .table-item { display: flex; justify-content: space-between; padding: 0.5rem; border-radius: 4px; cursor: pointer; }
     .table-item:hover { background: #f0f0f0; }
     .table-item.active { background: #e3f2fd; }
-    .table-name { color: #2c3e50; font-size: 14px; }
-    .table-name.active { color: #3498db; font-weight: 600; }
-    .table-count { color: #999; font-size: 12px; }
-    .search-input { width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 1rem; }
-    .empty-state { display: flex; align-items: center; justify-content: center; height: 200px; color: #999; }
-    .error-message { color: #e74c3c; margin-bottom: 1rem; }
+    .table-name { color: var(--color-secondary); font-size: 14px; }
+    .table-name.active { color: var(--color-primary); font-weight: 600; }
+    .table-count { color: var(--color-text-subtle); font-size: 12px; }
+    .search-input { width: 100%; padding: 0.5rem; border: 1px solid var(--color-border-strong); border-radius: 4px; margin-bottom: 1rem; }
+    .empty-state { display: flex; align-items: center; justify-content: center; height: 200px; color: var(--color-text-subtle); }
+    .error-message { color: var(--color-accent); margin-bottom: 1rem; }
+    .required-yes { color: var(--color-accent); }
+    .required-no { color: var(--color-text-subtle); }
 </style>
 {% endblock %}
 
@@ -30,8 +33,8 @@
 
     <div class="explorer-layout">
         <!-- Tables List -->
-        <div class="tables-panel">
-            <div style="font-weight: 600; margin-bottom: 0.5rem;">Tables (<span x-text="tables?.count ?? 0"></span>)</div>
+        <section class="tables-panel" aria-label="Tables list">
+            <div class="tables-panel-title">Tables (<span x-text="tables?.count ?? 0"></span>)</div>
             <div class="tables-list">
                 <template x-for="table in filteredTables" :key="table.name">
                     <div :class="['table-item', { active: selectedTable === table.name }]"
@@ -42,23 +45,23 @@
                     </div>
                 </template>
             </div>
-        </div>
+        </section>
 
         <!-- Table Details -->
-        <div>
+        <section>
             <div x-show="!selectedTable" class="empty-state card">
                 <span>Select a table to view its schema</span>
             </div>
 
-            <div x-show="selectedTable && tableSchema" class="card">
+            <article x-show="selectedTable && tableSchema" class="card">
                 <h2 x-text="tableSchema?.table?.name"></h2>
                 <table>
                     <thead>
                         <tr>
-                            <th>Column</th>
-                            <th>Type</th>
-                            <th>Size</th>
-                            <th>Required</th>
+                            <th scope="col">Column</th>
+                            <th scope="col">Type</th>
+                            <th scope="col">Size</th>
+                            <th scope="col">Required</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -68,17 +71,17 @@
                                 <td x-text="field.type"></td>
                                 <td x-text="field.size"></td>
                                 <td>
-                                    <span :style="{ color: field.required ? '#e74c3c' : '#999' }"
+                                    <span :class="field.required ? 'required-yes' : 'required-no'"
                                           x-text="field.required ? 'Required' : 'Optional'"></span>
                                 </td>
                             </tr>
                         </template>
                     </tbody>
                 </table>
-            </div>
+            </article>
 
             <div x-show="tableSchema?.error" class="error-message" x-text="tableSchema.error"></div>
-        </div>
+        </section>
     </div>
 </div>
 {% endblock %}
