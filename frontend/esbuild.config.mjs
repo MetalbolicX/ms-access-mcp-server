@@ -35,10 +35,6 @@ const pages = [
     outName: 'dashboard',
   },
   {
-    entry: resolve(__dirname, 'src', 'pages', 'schema.ts'),
-    outName: 'schema',
-  },
-  {
     entry: resolve(__dirname, 'src', 'pages', 'jobs.ts'),
     outName: 'jobs',
   },

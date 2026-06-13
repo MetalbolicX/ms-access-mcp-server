@@ -386,7 +386,7 @@ def _add_ssr_routes(app: Any) -> None:
     import hmac
     from .container import get_container
     from ..config import ServerConfig
-    from .pages import login_page, dashboard_page, schema_page, er_diagram_page, jobs_page
+    from .pages import login_page, dashboard_page, er_diagram_page, jobs_page
 
     def _require_session(request: Request) -> tuple[str | None, Any]:
         """Return (api_key, None) or (None, redirect)."""
@@ -430,11 +430,13 @@ def _add_ssr_routes(app: Any) -> None:
     app.add_route("/dashboard", ssr_dashboard, methods=["GET"])
 
     async def ssr_schema(request: Request):
-        """Schema explorer page (requires session)."""
-        api_key, error = _require_session(request)
-        if error:
-            return error
-        return await schema_page(request, api_key)
+        """Legacy /schema route — redirects to the unified /er-diagram explorer.
+
+        No session check: the redirect target enforces auth. This is a
+        server-side 302 so legacy bookmarks and direct links resolve without
+        client JS (spec: "Legacy entry redirect").
+        """
+        return RedirectResponse(url="/er-diagram", status_code=302)
 
     app.add_route("/schema", ssr_schema, methods=["GET"])
 
@@ -571,7 +573,6 @@ def get_ssr_app():
     from .pages import (
         login_page,
         dashboard_page,
-        schema_page,
         er_diagram_page,
         jobs_page,
     )
@@ -620,15 +621,13 @@ def get_ssr_app():
 
     @app.get("/schema", response_class=HTMLResponse)
     async def schema_explorer(request: Request):
-        """Schema explorer page (requires session)."""
-        container = get_container()
-        session_svc = container.session_service
-        if session_svc is None:
-            return RedirectResponse(url="/login", status_code=302)
-        api_key = _get_session_api_key(request, session_svc)
-        if not api_key:
-            return RedirectResponse(url="/login", status_code=302)
-        return await schema_page(request, api_key)
+        """Legacy /schema route — redirects to the unified /er-diagram explorer.
+
+        No session check: the redirect target enforces auth. This is a
+        server-side 302 so legacy bookmarks and direct links resolve without
+        client JS (spec: "Legacy entry redirect").
+        """
+        return RedirectResponse(url="/er-diagram", status_code=302)
 
     @app.get("/er-diagram", response_class=HTMLResponse)
     async def er_diagram(request: Request):

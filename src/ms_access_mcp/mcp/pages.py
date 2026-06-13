@@ -4,9 +4,9 @@ Provides page route handlers for the SSR frontend:
 - GET /: redirect to /login or /dashboard based on session
 - GET /login: login page
 - GET /dashboard: main dashboard
-- GET /schema: schema explorer
-- GET /er-diagram: ER diagram (Vue 3 + Vue Flow)
+- GET /er-diagram: unified schema explorer (Vue 3 + Vue Flow)
 - GET /jobs: job monitor
+- GET /schema: legacy redirect to /er-diagram (see server.py)
 
 Each handler renders the appropriate Jinja2 template with the
 page-specific context and session data.
@@ -75,17 +75,6 @@ async def dashboard_page(request: Request, api_key: str) -> HTMLResponse:
         "api_key": api_key,
     }
     html = _render_template("dashboard.html", context)
-    return HTMLResponse(content=html)
-
-
-async def schema_page(request: Request, api_key: str) -> HTMLResponse:
-    """Render the schema explorer page."""
-    context = {
-        "request": request,
-        "page_title": "Schema Explorer",
-        "api_key": api_key,
-    }
-    html = _render_template("schema.html", context)
     return HTMLResponse(content=html)
 
 

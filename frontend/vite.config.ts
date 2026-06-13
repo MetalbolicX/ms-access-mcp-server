@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
   if (mode === 'library') {
     return {
       plugins: [vue()],
+      define: { 'process.env.NODE_ENV': JSON.stringify('production') },
       build: {
         lib: {
           entry: resolve(__dirname, 'src/pages/er-diagram/main.ts'),
