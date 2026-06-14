@@ -1,4 +1,5 @@
-"""DaoAdapter lifecycle + DaoSession helper (slices 1—2 of dao-first-linked-tables-properties).
+"""DaoAdapter lifecycle + DaoSession helper + schema/property read surface
+(slices 1—4 of dao-first-linked-tables-properties).
 
 * :class:`DaoSession` — reusable DAO open/close context manager,
   extracted from :class:`DaoRelationshipReader`. Used for short-lived,
@@ -7,8 +8,11 @@
 * :class:`DaoAdapter` — Windows-only DAO backend owning a long-lived
   ``DAO.DBEngine.120`` handle on the shared ``ComDispatcher`` STA
   thread. Slice 2 adds the ``connect()`` / ``disconnect()`` /
-  ``is_connected()`` lifecycle; CRUD, schema, and linked-table
-  surfaces land in slices 3+.
+  ``is_connected()`` lifecycle. Slice 4 adds the schema/property read
+  surface: it composes :class:`SchemaInspector` and
+  :class:`DbOperations` over its dispatcher and delegates each
+  ``ISchemaAdapter`` / ``IDatabasePropertiesAdapter`` method to those
+  helpers. CRUD and linked-table surfaces land in slice 5+.
 """
 
 from __future__ import annotations
@@ -18,6 +22,8 @@ from types import TracebackType
 from typing import Any
 
 from .com_dispatcher import ComDispatcher
+from .db_operations import DbOperations
+from .schema_inspector import SchemaInspector
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +144,16 @@ class DaoAdapter:
         # dispatcher may be shared with other adapters in slice 5,
         # so we cannot rely solely on dispatcher._current_db.
         self._connected: bool = False
+        # Slice 4: schema/property read surface. Both helpers run on
+        # the shared ComDispatcher STA thread; their inner _do()
+        # closures read ``self._dispatcher.current_db``, which the
+        # adapter populates in :meth:`connect`. Composition over
+        # inheritance: we keep SchemaInspector's DAO logic intact
+        # and only route the public methods through this class so
+        # ``DaoAdapter`` satisfies ``ISchemaAdapter`` and
+        # ``IDatabasePropertiesAdapter`` from a single entry point.
+        self._schema: SchemaInspector = SchemaInspector(self._dispatcher)
+        self._db_ops: DbOperations = DbOperations(self._dispatcher)
 
     # ------------------------------------------------------------------ #
     # Connection lifecycle (slice 2 of dao-first-linked-tables-properties)
@@ -227,3 +243,159 @@ class DaoAdapter:
         :meth:`disconnect` always clears it.
         """
         return self._connected
+
+    # ------------------------------------------------------------------ #
+    # Schema / property read surface (slice 4 of dao-first-linked-tables-properties)
+    # ------------------------------------------------------------------ #
+    #
+    # Each method below is a thin delegation to either
+    # :class:`SchemaInspector` or :class:`DbOperations`. The helpers
+    # already gate on the dispatcher's connection state, so a
+    # not-connected call returns the spec-mandated empty/zero value
+    # (empty list for reads, ``False`` for ``set_database_property``)
+    # without raising. This matches the
+    # ``ISchemaAdapter``/``IDatabasePropertiesAdapter`` contract for
+    # the OdbcAdapter fallback path.
+    #
+    # Spec coverage:
+    #   * §1 Schema/queries/indexes/relationships — read methods below.
+    #   * §1 Database properties via DAO — ``get_database_properties``
+    #     and ``set_database_property`` delegate to ``DbOperations``,
+    #     preserving the four-bucket shape (``startup``, ``app``,
+    #     ``project``, ``all``) and the auto-detect type behaviour.
+    #   * §1 Spec scenario "Query round-trip" — ``create_query`` →
+    #     ``set_query_sql`` → ``get_queries`` round-trips through the
+    #     same DAO ``QueryDefs`` collection via the shared dispatcher.
+
+    # --- ISchemaAdapter (read) ----------------------------------------- #
+
+    def get_tables(self) -> list:
+        """Return user tables (filtered: no ``MSys`` / ``~`` / linked)."""
+        return self._schema.get_tables()
+
+    def get_system_tables(self) -> list:
+        """Return system tables (``MSys`` prefix)."""
+        return self._schema.get_system_tables()
+
+    def get_queries(self) -> list:
+        """Return saved queries, excluding system queries."""
+        return self._schema.get_queries()
+
+    def get_indexes(self, table_name: str) -> list:
+        """Return all indexes (primary + secondary) for ``table_name``."""
+        return self._schema.get_indexes(table_name)
+
+    def get_relationships(self) -> list:
+        """Return foreign-key relationships, excluding system relations."""
+        return self._schema.get_relationships()
+
+    def get_object_metadata(self, object_name: str) -> dict:
+        """Return metadata for a database object (table / form / etc.)."""
+        return self._schema.get_object_metadata(object_name)
+
+    def get_table_schema_plan(self) -> tuple:
+        """Return ``(list[TableSchema], UnknownMetadata)`` for migration."""
+        return self._schema.get_table_schema_plan()
+
+    def generate_sql(self, output_path: str) -> dict:
+        """Generate Jet SQL DDL and write to ``output_path``."""
+        return self._schema.generate_sql(output_path)
+
+    def get_database_statistics(self) -> dict:
+        """Return O(1) database statistics — counts, file info, version."""
+        return self._schema.get_database_statistics()
+
+    # --- ISchemaAdapter (write, slice 4 minimum) ----------------------- #
+
+    def create_query(self, name: str, sql: str) -> dict:
+        """Create a saved query (QueryDef) on the current database."""
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                qdef = db.CreateQueryDef(name, sql)
+                db.QueryDefs.Append(qdef)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def set_query_sql(self, name: str, sql: str) -> dict:
+        """Update the SQL of an existing saved query."""
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                qdef = self._dispatcher.current_db.QueryDefs(name)
+                qdef.SQL = sql
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_query(self, name: str) -> dict:
+        """Delete a saved query from the current database."""
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                self._dispatcher.current_db.QueryDefs.Delete(name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def create_relationship(
+        self,
+        table_name: str,
+        relationship_name: str,
+        columns: list[str],
+        foreign_table: str,
+        foreign_columns: list[str],
+    ) -> dict:
+        """Create a foreign-key relationship via DAO Relations."""
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+        if len(columns) != len(foreign_columns):
+            return {
+                "success": False,
+                "error": "columns and foreign_columns must have same length",
+            }
+        return self._schema.create_relationship(
+            table_name,
+            relationship_name,
+            columns,
+            foreign_table,
+            foreign_columns,
+        )
+
+    def delete_relationship(self, table_name: str, relationship_name: str) -> dict:
+        """Delete a foreign-key relationship via DAO Relations."""
+        return self._schema.delete_relationship(table_name, relationship_name)
+
+    # --- IDatabasePropertiesAdapter ------------------------------------ #
+
+    def get_database_properties(self, names: list[str] | None = None) -> dict:
+        """Return the four-bucket database properties shape.
+
+        Delegates to :class:`DbOperations` so the
+        ``startup``/``app``/``project``/``all`` categorisation and the
+        name-filter behaviour match the existing ``DbOperations``
+        contract used by :class:`WinComAdapter`.
+        """
+        return self._db_ops.get_database_properties(names)
+
+    def set_database_property(self, name: str, value: str, type: str | None = None) -> bool:
+        """Create or update a database property on the current DB.
+
+        Type is auto-detected (``Boolean`` → ``Long`` → ``Double`` →
+        ``Text``) when ``type`` is ``None``.
+        """
+        return self._db_ops.set_database_property(name, value, type)
