@@ -98,7 +98,8 @@ class TestSchemaHappyPath:
 
         ODBC's get_tables() queries MSysObjects which does not exist in SQLite,
         so no tables are enumerated. The ER diagram still returns success=True
-        with empty nodes and edges.
+        with empty nodes and edges. get_relationships() refuses via
+        MSysRelationships on SQLite and gracefully falls back to [].
         """
         result = call_mcp_tool(
             "get_er_diagram",
