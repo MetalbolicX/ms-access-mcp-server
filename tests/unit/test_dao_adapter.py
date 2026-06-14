@@ -1069,3 +1069,908 @@ class TestDaoAdapterRelationshipCrud:
 
         assert result["success"] is False
         assert "Not connected" in result["error"]
+
+
+# ===================================================================== #
+# Slice 5 — DAO CRUD + DDL (write) surface
+# ===================================================================== #
+#
+# DaoAdapter implements the IDataAdapter row CRUD methods (execute_query,
+# insert_data, update_data, delete_data, execute_raw_sql, export_data)
+# and the ISchemaAdapter table/index DDL methods (create_table,
+# delete_table, create_index, drop_index, alter_table) using DAO on the
+# shared ComDispatcher STA thread.
+#
+# The contract mirrors OdbcAdapter: result shapes use ``affected`` for
+# writes and ``rows``/``count``/``columns`` for queries. WHERE strings
+# pass the same allowlist sanitization as WinComAdapter (slice 3+) and
+# inline value formatting follows the same SQL-literal pattern.
+
+
+# --------------------------------------------------------------------- #
+# execute_query
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterExecuteQuery:
+    """DaoAdapter.execute_query() returns DAO OpenRecordset results."""
+
+    def test_execute_query_returns_rows(self):
+        """Spec: SELECT returns success=True with rows/columns/count."""
+        from datetime import datetime
+
+        rs = MagicMock()
+        rs.EOF = False
+        rs.Fields.Count = 3
+        f_id = MagicMock()
+        f_id.Name = "ID"
+        f_name = MagicMock()
+        f_name.Name = "Name"
+        f_dt = MagicMock()
+        f_dt.Name = "Created"
+        rs.Fields.side_effect = lambda i: [f_id, f_name, f_dt][i]
+        # First row
+        f_id.Value = 1
+        f_name.Value = "Alice"
+        f_dt.Value = datetime(2024, 1, 1, 12, 0, 0)
+
+        # MoveNext is a no-op until we flip EOF
+        def _move_next() -> None:
+            rs.EOF = True
+
+        rs.MoveNext.side_effect = _move_next
+
+        db = MagicMock()
+        db.OpenRecordset.return_value = rs
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.execute_query("SELECT ID, Name, Created FROM Customers")
+
+        assert result["success"] is True
+        assert result["rows"] == [{"ID": 1, "Name": "Alice", "Created": "2024-01-01T12:00:00"}]
+        assert result["count"] == 1
+        assert result["columns"] == ["ID", "Name", "Created"]
+
+    def test_execute_query_empty_result(self):
+        """No rows → empty list, count=0, columns still extracted."""
+        rs = MagicMock()
+        rs.EOF = True
+        db = MagicMock()
+        db.OpenRecordset.return_value = rs
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.execute_query("SELECT * FROM Empty")
+
+        assert result == {
+            "success": True,
+            "rows": [],
+            "count": 0,
+            "columns": [],
+        }
+
+    def test_execute_query_ignores_params(self):
+        """DAO cannot bind ? params; the arg is accepted but ignored."""
+        rs = MagicMock()
+        rs.EOF = True
+        db = MagicMock()
+        db.OpenRecordset.return_value = rs
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        # Should not raise even though DAO cannot bind params
+        result = adapter.execute_query("SELECT * FROM T WHERE ID = ?", params=[1])
+
+        assert result["success"] is True
+        db.OpenRecordset.assert_called_once_with("SELECT * FROM T WHERE ID = ?")
+
+    def test_execute_query_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.execute_query("SELECT 1")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+        assert result["rows"] == []
+        assert result["count"] == 0
+        assert result["columns"] == []
+
+    def test_execute_query_dao_error_returns_error(self):
+        db = MagicMock()
+        db.OpenRecordset.side_effect = RuntimeError("DAO boom")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.execute_query("SELECT bogus")
+
+        assert result["success"] is False
+        assert "DAO boom" in result["error"]
+        assert result["rows"] == []
+
+
+# --------------------------------------------------------------------- #
+# insert_data
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterInsertData:
+    """DaoAdapter.insert_data() inserts rows via DAO Execute with inline values."""
+
+    def test_insert_data_single_row(self):
+        db = MagicMock()
+        db.RecordsAffected = 1
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.insert_data("Customers", {"Name": "Alice", "Email": "alice@example.com"})
+
+        assert result["success"] is True
+        assert result["affected"] == 1
+        db.Execute.assert_called_once()
+        sql = db.Execute.call_args[0][0]
+        assert "INSERT INTO [Customers]" in sql
+        assert "[Name]" in sql
+        assert "[Email]" in sql
+        assert "'Alice'" in sql
+        assert "'alice@example.com'" in sql
+
+    def test_insert_data_multiple_rows(self):
+        db = MagicMock()
+        db.RecordsAffected = 1
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.insert_data(
+            "Customers",
+            [
+                {"Name": "Alice", "Email": "alice@example.com"},
+                {"Name": "Bob", "Email": "bob@example.com"},
+            ],
+        )
+
+        assert result["success"] is True
+        assert result["affected"] == 2
+        assert db.Execute.call_count == 2
+
+    def test_insert_data_formats_inline_values(self):
+        """Bool/None/int/str are formatted as DAO SQL literals (no ? placeholders)."""
+        db = MagicMock()
+        db.RecordsAffected = 1
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        adapter.insert_data(
+            "T",
+            {
+                "n": 42,
+                "b": True,
+                "s": "O'Reilly",
+                "z": None,
+            },
+        )
+
+        sql = db.Execute.call_args[0][0]
+        assert "?" not in sql
+        assert "42" in sql
+        assert "-1" in sql  # True → -1
+        assert "'O''Reilly'" in sql  # single-quote escape
+        assert "NULL" in sql
+
+    def test_insert_data_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.insert_data("T", {"x": 1})
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+    def test_insert_data_dao_error_returns_error(self):
+        db = MagicMock()
+        db.Execute.side_effect = RuntimeError("constraint violation")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.insert_data("T", {"x": 1})
+
+        assert result["success"] is False
+        assert "constraint violation" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# update_data
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterUpdateData:
+    """DaoAdapter.update_data() updates rows via DAO Execute with inline values."""
+
+    def test_update_data_with_where_dict(self):
+        db = MagicMock()
+        db.RecordsAffected = 3
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.update_data("Customers", {"Name": "Alice"}, {"ID": 1})
+
+        assert result["success"] is True
+        assert result["affected"] == 3
+        db.Execute.assert_called_once()
+        sql = db.Execute.call_args[0][0]
+        assert "UPDATE [Customers] SET" in sql
+        assert "[Name] = 'Alice'" in sql
+        assert "WHERE [ID] = 1" in sql
+
+    def test_update_data_with_where_string(self):
+        db = MagicMock()
+        db.RecordsAffected = 2
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.update_data(
+            "Customers",
+            {"Name": "Alice"},
+            "ID = 1 AND Status = 'Active'",
+        )
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "UPDATE [Customers] SET" in sql
+        assert "ID = 1 AND Status = 'Active'" in sql
+
+    def test_update_data_no_where_updates_all_rows(self):
+        db = MagicMock()
+        db.RecordsAffected = 100
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.update_data("Customers", {"Status": "Inactive"})
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "WHERE" not in sql
+
+    def test_update_data_rejects_dangerous_where_string(self):
+        """WHERE strings with --, ;, DROP, etc. are blocked before execution."""
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.update_data("T", {"x": 1}, "1=1; DROP TABLE Users--")
+
+        assert result["success"] is False
+        assert "disallowed" in result["error"].lower() or "injection" in result["error"].lower()
+        # No Execute call — sanitization runs before dispatch
+        db.Execute.assert_not_called()
+
+    def test_update_data_rejects_tautology_or_1_eq_1(self):
+        """``OR 1=1`` style tautology at the start of the WHERE is blocked."""
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.update_data("T", {"x": 1}, "OR 1=1")
+
+        assert result["success"] is False
+        db.Execute.assert_not_called()
+
+    def test_update_data_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.update_data("T", {"x": 1}, {"ID": 1})
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+    def test_update_data_dao_error_returns_error(self):
+        db = MagicMock()
+        db.Execute.side_effect = RuntimeError("type mismatch")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.update_data("T", {"x": 1}, {"ID": 1})
+
+        assert result["success"] is False
+        assert "type mismatch" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# delete_data
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterDeleteData:
+    """DaoAdapter.delete_data() deletes rows via DAO Execute."""
+
+    def test_delete_data_with_where_dict(self):
+        db = MagicMock()
+        db.RecordsAffected = 2
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_data("Customers", {"ID": 1, "Status": "Inactive"})
+
+        assert result["success"] is True
+        assert result["affected"] == 2
+        sql = db.Execute.call_args[0][0]
+        assert "DELETE FROM [Customers]" in sql
+        assert "[ID] = 1" in sql
+        assert "[Status] = 'Inactive'" in sql
+
+    def test_delete_data_with_where_string(self):
+        db = MagicMock()
+        db.RecordsAffected = 1
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_data("Customers", "ID = 1 AND Status = 'Spam'")
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "ID = 1 AND Status = 'Spam'" in sql
+
+    def test_delete_data_no_where_deletes_all(self):
+        db = MagicMock()
+        db.RecordsAffected = 10
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_data("Customers")
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "DELETE FROM [Customers]" in sql
+        assert "WHERE" not in sql
+
+    def test_delete_data_rejects_dangerous_where_string(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_data("T", "1=1 OR 1=1; DROP TABLE Users--")
+
+        assert result["success"] is False
+        db.Execute.assert_not_called()
+
+    def test_delete_data_rejects_dangerous_keyword(self):
+        """WHERE strings containing DROP/DELETE/INSERT etc. are blocked."""
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_data("T", "ID = 1; DROP TABLE Users")
+
+        assert result["success"] is False
+        db.Execute.assert_not_called()
+
+    def test_delete_data_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.delete_data("T", {"ID": 1})
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+    def test_delete_data_dao_error_returns_error(self):
+        db = MagicMock()
+        db.Execute.side_effect = RuntimeError("locked")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_data("T", {"ID": 1})
+
+        assert result["success"] is False
+        assert "locked" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# execute_raw_sql
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterExecuteRawSql:
+    """DaoAdapter.execute_raw_sql() runs arbitrary SQL via DAO.Execute."""
+
+    def test_execute_raw_sql_returns_records_affected(self):
+        db = MagicMock()
+        db.RecordsAffected = 5
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.execute_raw_sql("DELETE FROM Logs")
+
+        assert result == 5
+        db.Execute.assert_called_once()
+        # DAO_DB_FAIL_ON_ERROR = 128
+        assert db.Execute.call_args[0][1] == 128
+
+    def test_execute_raw_sql_not_connected_raises(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        with pytest.raises(RuntimeError, match="Not connected"):
+            adapter.execute_raw_sql("SELECT 1")
+
+    def test_execute_raw_sql_propagates_dao_error(self):
+        db = MagicMock()
+        db.Execute.side_effect = RuntimeError("syntax error")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        with pytest.raises(RuntimeError, match="syntax error"):
+            adapter.execute_raw_sql("SELEKT 1")
+
+
+# --------------------------------------------------------------------- #
+# export_data
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterExportData:
+    """DaoAdapter.export_data() delegates to the export strategy selector."""
+
+    def test_export_data_uses_strategy_selector(self):
+        adapter, _dispatcher = _make_adapter_with_mock_dispatcher()
+        # Stub the strategy selector on the adapter
+        from ms_access_mcp.adapters.export.strategies import (
+            CsvStrategy,
+            ExportStrategySelector,
+        )
+
+        adapter._strategy_selector = ExportStrategySelector()
+        adapter._strategy_selector.register(CsvStrategy())
+        # Provide execute_query and execute_raw so the strategy can call them
+        adapter.execute_query = MagicMock(
+            return_value={"success": True, "rows": [], "columns": [], "count": 0}
+        )
+        adapter._execute_raw = MagicMock(return_value=0)
+
+        result = adapter.export_data("SELECT 1", "out.csv", format="csv")
+
+        # CSV fast path returns success; details depend on whether the IISAM
+        # path was available — but result is always a dict.
+        assert isinstance(result, dict)
+        assert "success" in result
+
+    def test_export_data_unsupported_format_returns_error(self):
+        adapter, _ = _make_adapter_with_mock_dispatcher()
+        from ms_access_mcp.adapters.export.strategies import ExportStrategySelector
+
+        adapter._strategy_selector = ExportStrategySelector()
+
+        result = adapter.export_data("SELECT 1", "out.xyz", format="xyz")
+
+        assert result["success"] is False
+        assert "Unsupported" in result["error"] or "format" in result["error"].lower()
+
+    def test_export_data_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.export_data("SELECT 1", "out.csv", format="csv")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+    def test_export_data_forwards_options(self):
+        """Format-specific options (delimiter/encoding) reach the strategy."""
+        adapter, _ = _make_adapter_with_mock_dispatcher()
+        from ms_access_mcp.adapters.export.strategies import (
+            CsvStrategy,
+            ExportStrategySelector,
+        )
+
+        # Capture the ExportContext the strategy receives
+        captured: dict = {}
+
+        class _SpyStrategy(CsvStrategy):
+            def export(self, context):  # type: ignore[override]
+                captured["context"] = context
+                return {"success": True, "rows_exported": 0, "file_path": context.file_path}
+
+        adapter._strategy_selector = ExportStrategySelector()
+        adapter._strategy_selector.register(_SpyStrategy())
+        adapter.execute_query = MagicMock(
+            return_value={"success": True, "rows": [], "columns": [], "count": 0}
+        )
+        adapter._execute_raw = MagicMock(return_value=0)
+
+        adapter.export_data("SELECT 1", "out.csv", format="csv", delimiter="|", encoding="utf-8")
+
+        ctx = captured["context"]
+        assert ctx.options.get("delimiter") == "|"
+        assert ctx.options.get("encoding") == "utf-8"
+
+
+# --------------------------------------------------------------------- #
+# create_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterCreateTable:
+    """DaoAdapter.create_table() runs CREATE TABLE via DAO.Execute."""
+
+    def test_create_table_basic(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_table(
+            "T",
+            [
+                {"name": "ID", "type": "Long Integer", "is_autoincrement": True},
+                {"name": "Name", "type": "Text", "size": 100, "required": True},
+            ],
+        )
+
+        assert result["success"] is True
+        db.Execute.assert_called_once()
+        sql = db.Execute.call_args[0][0]
+        assert "CREATE TABLE [T]" in sql
+        assert "[ID] INTEGER NOT NULL" in sql
+        assert "[Name] VARCHAR(100) NOT NULL" in sql
+        assert "PRIMARY KEY ([ID])" in sql
+
+    def test_create_table_without_pk(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_table(
+            "T", [{"name": "Name", "type": "Text", "size": 50, "required": False}]
+        )
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "PRIMARY KEY" not in sql
+        # DAO default for non-required columns is NULL (implicit).
+        # The DDL omits the NULL keyword in that case — matching
+        # WinComAdapter.create_table.
+        assert "[Name] VARCHAR(50)" in sql
+        assert "NOT NULL" not in sql
+
+    def test_create_table_with_dao_error_returns_error(self):
+        db = MagicMock()
+        db.Execute.side_effect = RuntimeError("table exists")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_table("T", [{"name": "X", "type": "Text"}])
+
+        assert result["success"] is False
+        assert "table exists" in result["error"]
+
+    def test_create_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.create_table("T", [{"name": "X", "type": "Text"}])
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# delete_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterDeleteTable:
+    """DaoAdapter.delete_table() drops a table and cleans up inbound/outbound relations."""
+
+    def test_delete_table_basic(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        # No relations referencing the table
+        db.Relations.Count = 0
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_table("T")
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "DROP TABLE [T]" in sql
+
+    def test_delete_table_removes_referencing_relations(self):
+        """If a relation references the table, it must be removed before DROP."""
+        db = MagicMock()
+        db.Execute = MagicMock()
+        # Two relations: one references the table as Table, one as ForeignTable,
+        # one unrelated.
+        rel_target_as_table = MagicMock()
+        rel_target_as_table.Name = "FK_X_T"
+        rel_target_as_table.Table = "T"
+        rel_target_as_table.ForeignTable = "X"
+        rel_target_as_foreign = MagicMock()
+        rel_target_as_foreign.Name = "FK_T_Y"
+        rel_target_as_foreign.Table = "Y"
+        rel_target_as_foreign.ForeignTable = "T"
+        rel_unrelated = MagicMock()
+        rel_unrelated.Name = "FK_A_B"
+        rel_unrelated.Table = "A"
+        rel_unrelated.ForeignTable = "B"
+
+        db.Relations.Count = 3
+        # Iterate in reverse order to avoid index shifts
+        db.Relations.side_effect = lambda i: [
+            rel_target_as_table,
+            rel_target_as_foreign,
+            rel_unrelated,
+        ][2 - i]
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.delete_table("T")
+
+        assert result["success"] is True
+        # Both referencing relations were removed
+        assert db.Relations.Delete.call_count == 2
+        deleted_names = {c.args[0] for c in db.Relations.Delete.call_args_list}
+        assert deleted_names == {"FK_X_T", "FK_T_Y"}
+        db.Execute.assert_called_once_with("DROP TABLE [T]", 128)
+
+    def test_delete_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.delete_table("T")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# create_index
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterCreateIndex:
+    """DaoAdapter.create_index() runs CREATE INDEX via DAO.Execute."""
+
+    def test_create_index_basic(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_index("Orders", "IX_OrderDate", ["OrderDate", "CustomerID"])
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "CREATE INDEX [IX_OrderDate] ON [Orders] ([OrderDate], [CustomerID])" in sql
+        assert "UNIQUE" not in sql
+        assert "IGNORE NULL" not in sql
+
+    def test_create_index_unique(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_index("T", "UX_Email", ["Email"], unique=True)
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "CREATE UNIQUE INDEX" in sql
+
+    def test_create_index_with_ignore_nulls(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_index("T", "IX_X", ["X"], ignore_nulls=True)
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "WITH IGNORE NULL" in sql
+
+    def test_create_index_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.create_index("T", "IX_X", ["X"])
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# drop_index
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterDropIndex:
+    """DaoAdapter.drop_index() runs DROP INDEX via DAO.Execute."""
+
+    def test_drop_index_basic(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.drop_index("Orders", "IX_OrderDate")
+
+        assert result["success"] is True
+        db.Execute.assert_called_once()
+        sql = db.Execute.call_args[0][0]
+        assert "DROP INDEX [IX_OrderDate] ON [Orders]" in sql
+
+    def test_drop_index_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.drop_index("T", "IX_X")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+    def test_drop_index_dao_error_returns_error(self):
+        db = MagicMock()
+        db.Execute.side_effect = RuntimeError("index not found")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.drop_index("T", "IX_X")
+
+        assert result["success"] is False
+        assert "index not found" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# alter_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterAlterTable:
+    """DaoAdapter.alter_table() applies a list of DDL operations to a table."""
+
+    def test_alter_table_add_column(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table(
+            "T",
+            [{"action": "add_column", "params": {"name": "X", "type": "Text", "size": 50}}],
+        )
+
+        assert result["success"] is True
+        assert len(result["operations"]) == 1
+        assert result["operations"][0]["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "ALTER TABLE [T] ADD COLUMN [X] VARCHAR(50) NULL" in sql
+
+    def test_alter_table_drop_column(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table("T", [{"action": "drop_column", "params": {"name": "X"}}])
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "ALTER TABLE [T] DROP COLUMN [X]" in sql
+
+    def test_alter_table_modify_column(self):
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table(
+            "T",
+            [
+                {
+                    "action": "modify_column",
+                    "params": {"name": "X", "type": "Long Integer", "nullable": False},
+                }
+            ],
+        )
+
+        assert result["success"] is True
+        sql = db.Execute.call_args[0][0]
+        assert "ALTER TABLE [T] ALTER COLUMN [X] INTEGER NOT NULL" in sql
+
+    def test_alter_table_rename_table(self):
+        """Rename uses DAO TableDef.Name assignment, not DDL."""
+        tdef = MagicMock()
+        tdef.Name = "OldName"
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([tdef])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table(
+            "OldName",
+            [{"action": "rename_table", "params": {"new_name": "NewName"}}],
+        )
+
+        assert result["success"] is True
+        # Renamed in place
+        assert tdef.Name == "NewName"
+
+    def test_alter_table_rename_column(self):
+        """Rename column uses DAO Field.Name assignment, not DDL."""
+        old_field = MagicMock()
+        old_field.Name = "OldCol"
+        tdef = MagicMock()
+        tdef.Name = "T"  # explicit so _MockDaoTableDefs can look it up
+        # Use a Fields mock that returns our field by name OR index
+        tdef.Fields.Count = 1
+        tdef.Fields.side_effect = lambda key: (
+            old_field
+            if (isinstance(key, int) and key == 0) or key == "OldCol"
+            else (_ for _ in ()).throw(KeyError(key))
+        )
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([tdef])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table(
+            "T",
+            [
+                {
+                    "action": "rename_column",
+                    "params": {"name": "OldCol", "new_name": "NewCol"},
+                }
+            ],
+        )
+
+        assert result["success"] is True
+        assert old_field.Name == "NewCol"
+
+    def test_alter_table_unknown_action_recorded_as_failure(self):
+        """Unknown actions are reported per-op; overall success is False."""
+        db = MagicMock()
+        db.Execute = MagicMock()
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table("T", [{"action": "nonsense", "params": {}}])
+
+        assert result["success"] is False
+        assert result["operations"][0]["success"] is False
+        assert "Unknown action" in result["operations"][0]["error"]
+
+    def test_alter_table_per_op_failure_does_not_abort(self):
+        """A failed op is reported; subsequent ops still execute."""
+        db = MagicMock()
+        # First Execute call (drop column) raises; second (add column) succeeds
+        db.Execute.side_effect = [RuntimeError("col missing"), None]
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.alter_table(
+            "T",
+            [
+                {"action": "drop_column", "params": {"name": "X"}},
+                {"action": "add_column", "params": {"name": "Y", "type": "Text"}},
+            ],
+        )
+
+        assert result["success"] is False  # overall: at least one failure
+        assert result["operations"][0]["success"] is False
+        assert result["operations"][1]["success"] is True
+
+    def test_alter_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.alter_table("T", [{"action": "add_column", "params": {"name": "X"}}])
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]

@@ -1,5 +1,5 @@
 """DaoAdapter lifecycle + DaoSession helper + schema/property read surface
-(slices 1—4 of dao-first-linked-tables-properties).
+(slices 1—5 of dao-first-linked-tables-properties).
 
 * :class:`DaoSession` — reusable DAO open/close context manager,
   extracted from :class:`DaoRelationshipReader`. Used for short-lived,
@@ -12,16 +12,18 @@
   surface: it composes :class:`SchemaInspector` and
   :class:`DbOperations` over its dispatcher and delegates each
   ``ISchemaAdapter`` / ``IDatabasePropertiesAdapter`` method to those
-  helpers. CRUD and linked-table surfaces land in slice 5+.
+  helpers. Slice 5 adds the row CRUD and table/index DDL surface.
 """
 
 from __future__ import annotations
 
 import logging
+import re
+from datetime import datetime
 from types import TracebackType
 from typing import Any
 
-from .com_dispatcher import ComDispatcher
+from .com_dispatcher import DAO_DB_FAIL_ON_ERROR, ComDispatcher
 from .db_operations import DbOperations
 from .schema_inspector import SchemaInspector
 
@@ -154,6 +156,12 @@ class DaoAdapter:
         # ``IDatabasePropertiesAdapter`` from a single entry point.
         self._schema: SchemaInspector = SchemaInspector(self._dispatcher)
         self._db_ops: DbOperations = DbOperations(self._dispatcher)
+        # Slice 5: export strategies. Same registry as
+        # ``OdbcAdapter`` / ``WinComAdapter`` so the strategy
+        # pattern (csv / json / excel) is reusable across backends.
+        from .export.strategies import ExportStrategySelector
+
+        self._strategy_selector: ExportStrategySelector = ExportStrategySelector()
 
     # ------------------------------------------------------------------ #
     # Connection lifecycle (slice 2 of dao-first-linked-tables-properties)
@@ -399,3 +407,688 @@ class DaoAdapter:
         ``Text``) when ``type`` is ``None``.
         """
         return self._db_ops.set_database_property(name, value, type)
+
+    # ------------------------------------------------------------------ #
+    # SQL value formatting + WHERE sanitization
+    # ------------------------------------------------------------------ #
+    #
+    # DAO's ``Database.Execute`` does not support ``?`` parameter
+    # placeholders the way pyodbc does — values must be inlined into
+    # the SQL string. The helpers below match the format used by
+    # ``WinComAdapter`` (slice 3+) so DAO-emitted SQL is byte-identical
+    # to COM-emitted SQL for the same input.
+    #
+    # The WHERE-string allowlist is the same one WinComAdapter uses,
+    # kept here as a class attribute so tests can pin the contract.
+
+    # Regex allowlist for raw WHERE strings in update_data/delete_data.
+    # Permitted characters: alphanumeric, whitespace, SQL operators
+    # (., = < > ( ) ' " - %).
+    _WHERE_ALLOWLIST_RE = r"^[\w\s\.\,\=\<\>\(\)\'\"\-%]+$"
+    # Dangerous DDL/DML keywords that have no legitimate use in a raw
+    # WHERE clause. Mirrors the policy in WinComAdapter.
+    _DANGEROUS_WHERE_PATTERNS = (
+        r"--",  # SQL single-line comment
+        r"/\*",  # SQL block comment start
+        r"\bDROP\b",
+        r"\bDELETE\b",
+        r"\bINSERT\b",
+        r"\bUPDATE\b",
+        r"\bALTER\b",
+        r"\bCREATE\b",
+        r"\bTRUNCATE\b",
+        r"\bEXEC\b",
+        r"\bEXECUTE\b",
+        r"\bUNION\b",
+        # Tautology patterns: OR followed by digit-comparison (OR 1=1).
+        r"^\s*OR\s+\d+\s*=\s*\d+",
+    )
+
+    @staticmethod
+    def _format_dao_value(val: object) -> str:
+        """Format a Python value for inline use in DAO SQL.
+
+        DAO.Execute does NOT support ``?`` parameter placeholders the way
+        ADO does, so values are formatted as SQL literals:
+
+        * ``None`` → ``NULL``
+        * ``bool`` → ``-1`` (True) or ``0`` (False) — Access convention
+        * ``int`` / ``float`` → ``str(val)``
+        * ``datetime`` → ``#YYYY-MM-DD HH:MM:SS#`` (Access date literal)
+        * ``str`` → single-quoted with internal ``'`` doubled
+        """
+        if val is None:
+            return "NULL"
+        if isinstance(val, bool):
+            return "-1" if val else "0"
+        if isinstance(val, (int, float)):
+            return str(val)
+        if isinstance(val, datetime):
+            return f"#{val.strftime('%Y-%m-%d %H:%M:%S')}#"
+        # String — single-quote and escape internal quotes
+        s = str(val).replace("'", "''")
+        return f"'{s}'"
+
+    @staticmethod
+    def _sanitize_where_string(where_str: str) -> str | None:
+        """Validate a raw WHERE string against the SQL injection allowlist.
+
+        Returns the validated string if it passes, or ``None`` if it
+        contains characters or keywords outside the policy. The caller
+        is responsible for turning ``None`` into a structured error
+        response.
+        """
+        if not re.match(DaoAdapter._WHERE_ALLOWLIST_RE, where_str):
+            return None
+        for pattern in DaoAdapter._DANGEROUS_WHERE_PATTERNS:
+            if re.search(pattern, where_str, re.IGNORECASE):
+                return None
+        return where_str
+
+    @staticmethod
+    def _access_sql_type(access_type: str, size: int = 255) -> str:
+        """Map an Access type name to its Jet SQL DDL string.
+
+        Mirrors :meth:`WinComAdapter._access_sql_type` so DAO-emitted
+        DDL is identical to COM-emitted DDL for the same input.
+        """
+        type_map = {
+            "Text": f"VARCHAR({size})",
+            "Long Integer": "INTEGER",
+            "Integer": "SMALLINT",
+            "Byte": "BYTE",
+            "Currency": "MONEY",
+            "Single": "SINGLE",
+            "Double": "DOUBLE",
+            "Date/Time": "DATETIME",
+            "Memo": "MEMO",
+            "Boolean": "BIT",
+            "Binary": "BINARY",
+            "GUID": "GUID",
+            "Big Integer": "BIGINT",
+            "Unsigned Byte": "BYTE",
+            "Unsigned Integer": "INTEGER",
+            "Unsigned Long Integer": "INTEGER",
+            "Decimal": "DECIMAL",
+            "Counter": "COUNTER",
+            "AutoNumber": "COUNTER",
+        }
+        return type_map.get(access_type, "VARCHAR(255)")
+
+    # ------------------------------------------------------------------ #
+    # IDataAdapter (row CRUD + raw SQL) — slice 5
+    # ------------------------------------------------------------------ #
+    #
+    # Spec §1 "CRUD via DAO": all IDataAdapter methods dispatch to DAO
+    # on the shared ComDispatcher STA thread. Result shapes match
+    # OdbcAdapter's existing contract so callers stay uniform across
+    # backends (``{"success", "rows", "count", "columns"}`` for
+    # queries, ``{"success", "affected"}`` for writes).
+
+    def execute_query(self, sql: str, params: list | None = None) -> dict:
+        """Execute a SQL ``SELECT`` via DAO ``OpenRecordset``.
+
+        Args:
+            sql: SELECT statement to execute.
+            params: Not used for DAO — kept for protocol compatibility.
+
+        Returns:
+            dict with ``success``, ``rows`` (list[dict]),
+            ``count`` (int), ``columns`` (list[str]), and on failure
+            ``error`` (str). Shape matches :meth:`OdbcAdapter.execute_query`.
+        """
+        _ = params
+        if not self._dispatcher.is_connected():
+            return {
+                "success": False,
+                "rows": [],
+                "count": 0,
+                "columns": [],
+                "error": "Not connected",
+            }
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                rs = db.OpenRecordset(sql)
+                if rs.EOF:
+                    rs.Close()
+                    return {"success": True, "rows": [], "count": 0, "columns": []}
+
+                columns = []
+                for i in range(rs.Fields.Count):
+                    columns.append(rs.Fields(i).Name)
+
+                results: list[dict] = []
+                while not rs.EOF:
+                    row: dict = {}
+                    for i, col in enumerate(columns):
+                        val = rs.Fields(i).Value
+                        if val is not None and hasattr(val, "strftime"):
+                            val = val.isoformat()
+                        row[col] = val
+                    results.append(row)
+                    rs.MoveNext()
+
+                rs.Close()
+                return {
+                    "success": True,
+                    "rows": results,
+                    "count": len(results),
+                    "columns": columns,
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "rows": [],
+                    "count": 0,
+                    "columns": [],
+                    "error": str(e),
+                }
+
+        return self._dispatcher.call(_do)
+
+    def insert_data(self, table_name: str, data: dict | list[dict]) -> dict:
+        """Insert one or more rows via DAO ``Execute`` with inline values.
+
+        Args:
+            table_name: Name of the target table.
+            data: A single dict for one row, or a list of dicts for
+                multiple rows. Values are formatted as DAO SQL literals
+                via :meth:`_format_dao_value` — DAO cannot bind ``?``
+                placeholders.
+
+        Returns:
+            dict with ``success`` and ``affected`` (int), plus
+            ``error`` on failure. Shape matches
+            :meth:`OdbcAdapter.insert_data`.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected", "affected": 0}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                rows = data if isinstance(data, list) else [data]
+                total_affected = 0
+                for row in rows:
+                    cols = ", ".join(f"[{c}]" for c in row.keys())
+                    vals = ", ".join(self._format_dao_value(v) for v in row.values())
+                    sql = f"INSERT INTO [{table_name}] ({cols}) VALUES ({vals})"
+                    db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                    total_affected += db.RecordsAffected
+                return {"success": True, "affected": total_affected}
+            except Exception as e:
+                return {"success": False, "error": str(e), "affected": 0}
+
+        return self._dispatcher.call(_do)
+
+    def update_data(
+        self,
+        table_name: str,
+        set_dict: dict,
+        where_dict: dict | str | None = None,
+    ) -> dict:
+        """Update rows via DAO ``Execute`` with inline values.
+
+        Args:
+            table_name: Name of the target table.
+            set_dict: Column → new value pairs to set.
+            where_dict: Dict of conditions (ANDed), a raw SQL WHERE
+                string (validated against the allowlist), or ``None``
+                to update all rows.
+
+        Returns:
+            dict with ``success`` and ``affected`` (int), plus
+            ``error`` on failure.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected", "affected": 0}
+
+        # Sanitize raw WHERE strings BEFORE entering the dispatcher —
+        # injection rejection must never reach the DAO engine.
+        if isinstance(where_dict, str):
+            if self._sanitize_where_string(where_dict) is None:
+                return {
+                    "success": False,
+                    "error": "where_dict contains disallowed characters — SQL injection blocked",
+                    "affected": 0,
+                }
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                set_clause = ", ".join(
+                    f"[{c}] = {self._format_dao_value(v)}" for c, v in set_dict.items()
+                )
+                sql = f"UPDATE [{table_name}] SET {set_clause}"
+                if where_dict is not None:
+                    if isinstance(where_dict, str):
+                        sql += f" WHERE {where_dict}"
+                    else:
+                        where_clause = " AND ".join(
+                            f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items()
+                        )
+                        sql += f" WHERE {where_clause}"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True, "affected": db.RecordsAffected}
+            except Exception as e:
+                return {"success": False, "error": str(e), "affected": 0}
+
+        return self._dispatcher.call(_do)
+
+    def delete_data(
+        self,
+        table_name: str,
+        where_dict: dict | str | None = None,
+    ) -> dict:
+        """Delete rows via DAO ``Execute``.
+
+        Args:
+            table_name: Name of the target table.
+            where_dict: Dict of conditions (ANDed), a raw SQL WHERE
+                string (validated), or ``None`` to delete all rows.
+
+        Returns:
+            dict with ``success`` and ``affected`` (int), plus
+            ``error`` on failure.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected", "affected": 0}
+
+        if isinstance(where_dict, str):
+            if self._sanitize_where_string(where_dict) is None:
+                return {
+                    "success": False,
+                    "error": "where_dict contains disallowed characters — SQL injection blocked",
+                    "affected": 0,
+                }
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                sql = f"DELETE FROM [{table_name}]"
+                if where_dict is not None:
+                    if isinstance(where_dict, str):
+                        sql += f" WHERE {where_dict}"
+                    else:
+                        where_clause = " AND ".join(
+                            f"[{c}] = {self._format_dao_value(v)}" for c, v in where_dict.items()
+                        )
+                        sql += f" WHERE {where_clause}"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True, "affected": db.RecordsAffected}
+            except Exception as e:
+                return {"success": False, "error": str(e), "affected": 0}
+
+        return self._dispatcher.call(_do)
+
+    def execute_raw_sql(self, sql: str) -> int:
+        """Execute arbitrary SQL via DAO ``Execute``.
+
+        Returns:
+            int: Number of records affected. Raises ``RuntimeError``
+            when not connected so callers can distinguish "no database"
+            from "zero rows affected".
+        """
+        if not self._dispatcher.is_connected():
+            raise RuntimeError("Not connected")
+
+        def _do() -> int:
+            db = self._dispatcher.current_db
+            db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+            return db.RecordsAffected
+
+        return self._dispatcher.call(_do)
+
+    def _execute_raw(self, sql: str) -> int:
+        """Strategy-pattern hook for ``ExportStrategy.execute_raw``.
+
+        Bound into the export ``ExportContext`` so ``CsvStrategy`` /
+        ``ExcelStrategy`` can issue IISAM ``INSERT INTO [Text;...]
+        SELECT ...`` statements on the same long-lived DAO handle.
+        """
+        return self.execute_raw_sql(sql)
+
+    def export_data(
+        self,
+        sql: str,
+        file_path: str,
+        format: str = "csv",
+        **options: Any,
+    ) -> dict:
+        """Export the result of a SQL SELECT query to a file.
+
+        Delegates to the same ``ExportStrategy`` registry used by
+        :class:`OdbcAdapter` and :class:`WinComAdapter`. The strategy
+        tries an Access-engine IISAM fast path first (for CSV and
+        Excel) and falls back to a Python-side writer when the engine
+        is unavailable or the format has no IISAM support (JSON).
+
+        Args:
+            sql: Raw ``SELECT`` query to execute.
+            file_path: Destination file path.
+            format: ``"csv"`` (default), ``"json"``, or ``"excel"``.
+            **options: Format-specific options forwarded to the strategy.
+
+        Returns:
+            dict with ``success`` and ``rows_exported`` / ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        from .export.strategies import ExportContext
+
+        try:
+            strategy = self._strategy_selector.get(format)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
+
+        context = ExportContext(
+            sql=sql,
+            file_path=file_path,
+            options=options,
+            execute_query=self.execute_query,
+            execute_raw=self._execute_raw,
+        )
+        return strategy.export(context)
+
+    # ------------------------------------------------------------------ #
+    # ISchemaAdapter (table/index DDL) — slice 5
+    # ------------------------------------------------------------------ #
+    #
+    # Spec §1 "Schema, queries, indexes via DAO": the table DDL and
+    # index DDL surfaces are implemented via DAO ``Execute`` for DDL
+    # (``CREATE TABLE`` / ``DROP TABLE`` / ``CREATE INDEX`` /
+    # ``DROP INDEX`` / ``ALTER TABLE``) and via DAO object model for
+    # renames (``TableDef.Name``, ``Field.Name``). Relation cleanup
+    # in ``delete_table`` matches ``WinComAdapter.delete_table`` —
+    # inbound and outbound relations are removed first so a
+    # foreign-key-referenced table can still be dropped.
+
+    def create_table(self, table_name: str, columns: list[dict]) -> dict:
+        """Create a new table via DAO ``Execute`` with Jet DDL.
+
+        Args:
+            table_name: Name of the table to create.
+            columns: List of dicts with keys ``name`` (str), ``type``
+                (Access type name), ``size`` (int, optional, default 255),
+                ``required`` (bool, optional, default False),
+                ``is_autoincrement`` (bool, optional, default False),
+                ``primary_key`` (bool, optional, default False).
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                col_defs: list[str] = []
+                pk_col: str | None = None
+                for col in columns:
+                    col_name = col["name"]
+                    col_type = col.get("type", "Text")
+                    col_size = col.get("size", 255)
+                    required = col.get("required", False)
+                    is_autoincrement = col.get("is_autoincrement", False)
+                    is_pk = col.get("primary_key", False)
+
+                    type_sql = self._access_sql_type(col_type, col_size)
+                    col_def = f"[{col_name}] {type_sql}"
+                    if is_autoincrement or is_pk:
+                        col_def += " NOT NULL"
+                        if is_autoincrement:
+                            pk_col = col_name
+                    elif required:
+                        col_def += " NOT NULL"
+                    col_defs.append(col_def)
+
+                if pk_col:
+                    col_defs.append(f"PRIMARY KEY ([{pk_col}])")
+
+                sql = f"CREATE TABLE [{table_name}] ({', '.join(col_defs)})"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def delete_table(self, table_name: str) -> dict:
+        """Drop a table via DAO ``Execute`` after removing referencing relations.
+
+        Iterates ``db.Relations`` in reverse order and deletes any
+        relation where the target table is either ``Table`` or
+        ``ForeignTable``, then issues ``DROP TABLE``. Reverse-order
+        iteration avoids index-shift bugs when an element is removed.
+
+        Args:
+            table_name: Name of the table to drop.
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                # Walk Relations in reverse so deleting one doesn't
+                # shift the indices of the rest.
+                for i in range(db.Relations.Count - 1, -1, -1):
+                    rel = db.Relations(i)
+                    if rel.Table == table_name or rel.ForeignTable == table_name:
+                        db.Relations.Delete(rel.Name)
+                db.Execute(f"DROP TABLE [{table_name}]", DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def create_index(
+        self,
+        table_name: str,
+        index_name: str,
+        columns: list[str],
+        unique: bool = False,
+        ignore_nulls: bool = False,
+    ) -> dict:
+        """Create an index via Jet DDL.
+
+        Jet SQL: ``CREATE [UNIQUE] INDEX [name] ON [table] (col_list) [WITH IGNORE NULL]``.
+
+        Args:
+            table_name: Name of the table to index.
+            index_name: Name for the new index.
+            columns: List of column names to include.
+            unique: If ``True``, creates a ``UNIQUE`` index.
+            ignore_nulls: If ``True``, appends ``WITH IGNORE NULL``.
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                col_list = ", ".join(f"[{col}]" for col in columns)
+                sql = "CREATE "
+                if unique:
+                    sql += "UNIQUE "
+                sql += f"INDEX [{index_name}] ON [{table_name}] ({col_list})"
+                if ignore_nulls:
+                    sql += " WITH IGNORE NULL"
+                db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def drop_index(self, table_name: str, index_name: str) -> dict:
+        """Drop an index via Jet DDL.
+
+        Jet SQL: ``DROP INDEX [name] ON [table]``. The ``ON [table]``
+        clause is **required** in Jet SQL — Access rejects the ODBC
+        form.
+
+        Args:
+            table_name: Name of the table containing the index.
+            index_name: Name of the index to drop.
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                db.Execute(
+                    f"DROP INDEX [{index_name}] ON [{table_name}]",
+                    DAO_DB_FAIL_ON_ERROR,
+                )
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def alter_table(self, table_name: str, operations: list[dict]) -> dict:
+        """Apply a list of schema modifications to a table.
+
+        Supports ``add_column`` / ``drop_column`` / ``modify_column``
+        via Jet DDL, and ``rename_table`` / ``rename_column`` via the
+        DAO object model (``TableDef.Name``, ``Field.Name``).
+        Unknown actions are reported per-op; per-op failures do not
+        abort the rest of the batch.
+
+        Args:
+            table_name: Target table name.
+            operations: List of operation dicts, each with ``action``
+                and ``params`` keys.
+
+        Returns:
+            dict with ``success`` (overall), ``operations`` (per-op
+            results), and on connection failure ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "operations": [], "error": "Not connected"}
+
+        valid_actions = {
+            "add_column",
+            "drop_column",
+            "modify_column",
+            "rename_table",
+            "rename_column",
+        }
+        results: list[dict] = []
+
+        def _do() -> dict:
+            for op in operations:
+                action = op.get("action")
+                params = op.get("params", {})
+
+                if action not in valid_actions:
+                    results.append(
+                        {
+                            "action": action,
+                            "success": False,
+                            "error": f"Unknown action: {action}",
+                        }
+                    )
+                    continue
+
+                try:
+                    if action == "add_column":
+                        result = self._alter_table_add_column(table_name, params)
+                    elif action == "drop_column":
+                        result = self._alter_table_drop_column(table_name, params)
+                    elif action == "modify_column":
+                        result = self._alter_table_modify_column(table_name, params)
+                    elif action == "rename_table":
+                        result = self._alter_table_rename_table(table_name, params)
+                    elif action == "rename_column":
+                        result = self._alter_table_rename_column(table_name, params)
+                    else:
+                        result = {"success": False, "error": f"Unhandled action: {action}"}
+                    results.append({"action": action, **result})
+                except Exception as e:
+                    results.append({"action": action, "success": False, "error": str(e)})
+
+            overall = all(r["success"] for r in results)
+            return {"success": overall, "operations": results}
+
+        return self._dispatcher.call(_do)
+
+    def _alter_table_add_column(self, table_name: str, params: dict) -> dict:
+        """Execute ``ALTER TABLE ADD COLUMN`` via DAO DDL."""
+        name = params["name"]
+        col_type = params.get("type", "Text")
+        size = params.get("size", 255)
+        nullable = params.get("nullable", True)
+
+        type_sql = self._access_sql_type(col_type, size)
+        col_def = f"[{name}] {type_sql}"
+        if not nullable:
+            col_def += " NOT NULL"
+        else:
+            col_def += " NULL"
+
+        sql = f"ALTER TABLE [{table_name}] ADD COLUMN {col_def}"
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return {"success": True}
+
+    def _alter_table_drop_column(self, table_name: str, params: dict) -> dict:
+        """Execute ``ALTER TABLE DROP COLUMN`` via DAO DDL."""
+        name = params["name"]
+        sql = f"ALTER TABLE [{table_name}] DROP COLUMN [{name}]"
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return {"success": True}
+
+    def _alter_table_modify_column(self, table_name: str, params: dict) -> dict:
+        """Execute ``ALTER TABLE ALTER COLUMN`` via DAO DDL."""
+        name = params["name"]
+        col_type = params.get("type", "Text")
+        size = params.get("size", 255)
+        nullable = params.get("nullable", True)
+
+        type_sql = self._access_sql_type(col_type, size)
+        col_def = f"[{name}] {type_sql}"
+        if not nullable:
+            col_def += " NOT NULL"
+        else:
+            col_def += " NULL"
+
+        sql = f"ALTER TABLE [{table_name}] ALTER COLUMN {col_def}"
+        db = self._dispatcher.current_db
+        db.Execute(sql, DAO_DB_FAIL_ON_ERROR)
+        return {"success": True}
+
+    def _alter_table_rename_table(self, table_name: str, params: dict) -> dict:
+        """Rename a table via ``TableDef.Name`` assignment."""
+        new_name = params["new_name"]
+        db = self._dispatcher.current_db
+        tdef = db.TableDefs(table_name)
+        tdef.Name = new_name
+        return {"success": True}
+
+    def _alter_table_rename_column(self, table_name: str, params: dict) -> dict:
+        """Rename a column via ``Field.Name`` assignment."""
+        old_name = params["name"]
+        new_name = params["new_name"]
+        db = self._dispatcher.current_db
+        tdef = db.TableDefs(table_name)
+        field = tdef.Fields(old_name)
+        field.Name = new_name
+        return {"success": True}
