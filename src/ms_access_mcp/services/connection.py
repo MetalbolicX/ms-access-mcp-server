@@ -30,7 +30,7 @@ class ConnectionState:
 
     adapter: AccessAdapter
     db_path: str
-    adapter_type: Literal["com", "odbc"]
+    adapter_type: Literal["com", "odbc", "dao"]
     password: str = ""  # Database password (optional, for password-protected DBs)
     created_at: datetime = field(default_factory=datetime.now)
     pid: int | None = None  # Process ID of the Access instance for scoped cleanup
@@ -66,12 +66,35 @@ class ConnectionPool:
     # Connection lifecycle
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _infer_adapter_type(adapter_obj: object) -> Literal["com", "odbc", "dao"]:
+        """Return the canonical adapter_type string for an adapter instance.
+
+        Order matters: ``DaoAdapter`` is a more specific match than
+        ``WinComAdapter`` (slice 5 will compose them, but even before
+        then, an explicit DaoAdapter instance must report "dao").
+
+        The parameter is typed as ``object`` (not ``AccessAdapter``) so
+        callers can pass a slice 1 ``DaoAdapter`` that doesn't yet
+        implement the full protocol — slice 3 will tighten this.
+        """
+        from ..adapters.dao import DaoAdapter
+        from ..adapters.wincom import WinComAdapter
+
+        # isinstance is duck-typed so the missing methods on slice 1
+        # DaoAdapter don't affect this dispatch.
+        if isinstance(adapter_obj, DaoAdapter):
+            return "dao"
+        if isinstance(adapter_obj, WinComAdapter):
+            return "com"
+        return "odbc"
+
     def connect(
         self,
         name_or_db_path: str,
         db_path_or_adapter: Optional[str | AccessAdapter] = None,
         adapter: str | AccessAdapter | None = "odbc",
-        adapter_type: Literal["com", "odbc"] | None = None,
+        adapter_type: Literal["com", "odbc", "dao"] | None = None,
         password: str = "",
     ) -> ConnectionState | bool:
         """Create or replace a named connection, or backward-compatible connect.
@@ -130,6 +153,7 @@ class ConnectionPool:
 
             from ..adapters.wincom import WinComAdapter
             from ..adapters.odbc import OdbcAdapter
+            from ..adapters.dao import DaoAdapter
 
             # 3rd arg is a pre-created adapter instance → named connection with it
             # The caller is responsible for connecting the adapter before registering it.
@@ -139,7 +163,7 @@ class ConnectionPool:
                 and hasattr(adapter, "disconnect")
             ):
                 adapter_obj = cast(AccessAdapter, adapter)
-                actual_adapter_type: Literal["com", "odbc"] = adapter_type or "com"
+                actual_adapter_type: Literal["com", "odbc", "dao"] = adapter_type or "com"
                 state = ConnectionState(
                     adapter=adapter_obj,
                     db_path=db_path,
@@ -152,18 +176,33 @@ class ConnectionPool:
             # Standard new API: connect(name, db_path, adapter_type_string)
             if adapter in ("auto", None):
                 # Auto mode: delegate to BackendSelector for environment-aware selection
-                adapter_obj = self._backend_selector.get_adapter(
-                    db_path, backend="auto", capabilities=None
+                adapter_obj = cast(
+                    AccessAdapter,
+                    self._backend_selector.get_adapter(
+                        db_path, backend="auto", capabilities=None
+                    ),
                 )
                 # Infer adapter_type from the actual class returned
-                from ..adapters.wincom import WinComAdapter
-
-                actual_adapter_type = "com" if isinstance(adapter_obj, WinComAdapter) else "odbc"
-            else:
-                actual_adapter_type = (
-                    cast(str, adapter) if isinstance(adapter, str) else (adapter_type or "odbc")
+                actual_adapter_type: Literal["com", "odbc", "dao"] = self._infer_adapter_type(
+                    adapter_obj
                 )
-                adapter_obj = WinComAdapter() if actual_adapter_type == "com" else OdbcAdapter()
+            else:
+                if isinstance(adapter, str):
+                    actual_adapter_type: Literal["com", "odbc", "dao"] = adapter  # type: ignore[assignment]
+                elif adapter_type is not None:
+                    actual_adapter_type = adapter_type
+                else:
+                    actual_adapter_type = "odbc"
+                if actual_adapter_type == "com":
+                    adapter_obj: AccessAdapter = WinComAdapter()
+                elif actual_adapter_type == "dao":
+                    # DaoAdapter implements AccessAdapter but slice 1 only
+                    # ships the ctor + is_connected(); connect()/data surface
+                    # land in slice 3. Cast to AccessAdapter so pyright is
+                    # happy until the protocol is fully satisfied.
+                    adapter_obj = cast(AccessAdapter, DaoAdapter(db_path=db_path))
+                else:
+                    adapter_obj = OdbcAdapter()
             result = adapter_obj.connect(db_path, password=password)
             if not result:
                 raise RuntimeError(

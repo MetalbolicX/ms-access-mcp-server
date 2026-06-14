@@ -103,11 +103,17 @@ class TestBackendSelectorEnvVar:
 
 
 class TestBackendSelectorDefault:
-    """REQ-2 & REQ-12: Default (no args) returns OdbcAdapter."""
+    """REQ-2 & REQ-12: Default (no args) returns OdbcAdapter on non-Windows.
 
-    def test_no_args_no_env_returns_odbc(self, monkeypatch):
-        """No backend arg + no env var → OdbcAdapter (default)."""
+    On Windows, the default is now DaoAdapter (slice 2 of
+    dao-first-linked-tables-properties). The Linux default is still
+    OdbcAdapter; pin that path here.
+    """
+
+    def test_no_args_no_env_returns_odbc_on_linux(self, monkeypatch):
+        """No backend arg + no env var + Linux → OdbcAdapter (default)."""
         monkeypatch.delenv("ACCESS_MCP_BACKEND", raising=False)
+        monkeypatch.setattr(sys, "platform", "linux")
 
         from ms_access_mcp.services.backend_selector import BackendSelector
         from ms_access_mcp.adapters.odbc import OdbcAdapter
@@ -189,8 +195,14 @@ class TestCapabilityForcesCom:
         assert isinstance(adapter, WinComAdapter)
 
     def test_odbc_safe_caps_use_odbc(self, monkeypatch):
-        """capabilities={CAN_READ_DATA, CAN_INTROSPECT_SCHEMA} → ODBC."""
+        """capabilities={CAN_READ_DATA, CAN_INTROSPECT_SCHEMA} → ODBC on Linux.
+
+        On Windows the same caps now resolve to DaoAdapter — the
+        equivalent assertion lives in
+        ``test_backend_selector_dao.test_auto_windows_data_read_caps_picks_dao``.
+        """
         monkeypatch.delenv("ACCESS_MCP_BACKEND", raising=False)
+        monkeypatch.setattr(sys, "platform", "linux")
 
         from ms_access_mcp.services.backend_selector import (
             BackendSelector,

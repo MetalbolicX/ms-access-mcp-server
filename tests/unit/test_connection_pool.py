@@ -37,6 +37,12 @@ class TestConnectionState:
         state = ConnectionState(adapter=adapter, db_path="/tmp/db.accdb", adapter_type="com")
         assert state.adapter_type == "com"
 
+    def test_connection_state_holds_dao_adapter_type(self):
+        """`adapter_type="dao"` is now valid — DAO is a first-class backend."""
+        adapter = make_mock_adapter()
+        state = ConnectionState(adapter=adapter, db_path="/tmp/db.accdb", adapter_type="dao")
+        assert state.adapter_type == "dao"
+
 
 # =============================================================================
 # ConnectionPool.initial_state — pool empty, default active context
@@ -219,8 +225,52 @@ class TestPoolConnect:
         with patch("ms_access_mcp.adapters.odbc.OdbcAdapter", return_value=mock_odbc_adapter):
             state = pool.connect("prod", "/tmp/prod.accdb", "odbc")
 
+        mock_selector.assert_not_called() if hasattr(mock_selector, "assert_not_called") else None
         mock_selector.get_adapter.assert_not_called()
         assert state.adapter_type == "odbc"
+
+    def test_connect_explicit_dao_uses_dao_adapter(self, monkeypatch):
+        """connect(name, db_path, 'dao') should instantiate a DaoAdapter directly."""
+        monkeypatch.setattr("sys.platform", "win32")
+        pool = ConnectionPool()
+        mock_selector = MagicMock()
+        pool._backend_selector = mock_selector
+
+        mock_dao_adapter = make_mock_adapter()
+        with patch("ms_access_mcp.adapters.dao.DaoAdapter", return_value=mock_dao_adapter):
+            state = pool.connect("prod", "/tmp/prod.accdb", "dao")
+
+        mock_selector.get_adapter.assert_not_called()
+        assert state.adapter_type == "dao"
+        mock_dao_adapter.connect.assert_called_once()
+
+    def test_connect_auto_mode_can_resolve_to_dao(self, monkeypatch):
+        """Auto mode on Windows may resolve to DaoAdapter; pool should accept it.
+
+        Slice 2 only wires routing — the DaoAdapter ``connect()`` method
+        itself is added in slice 3. We define a tiny subclass that adds
+        a stub ``connect`` so the pool can call it and tag the state.
+        """
+        from ms_access_mcp.adapters.dao import DaoAdapter
+
+        class _DaoAdapterWithConnect(DaoAdapter):
+            """DaoAdapter subclass with a slice 3-style connect() stub."""
+
+            def connect(self, db_path, password=""):  # type: ignore[override]
+                return True
+
+        monkeypatch.setattr("sys.platform", "win32")
+        real_dao = _DaoAdapterWithConnect(db_path="/tmp/prod.accdb")
+
+        pool = ConnectionPool()
+        mock_selector = MagicMock()
+        mock_selector.get_adapter.return_value = real_dao
+        pool._backend_selector = mock_selector
+
+        state = pool.connect("prod", "/tmp/prod.accdb", "auto")
+
+        assert state.adapter_type == "dao"
+        assert state.adapter is real_dao
 
 
 # =============================================================================

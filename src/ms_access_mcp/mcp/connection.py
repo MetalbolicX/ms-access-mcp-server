@@ -1,7 +1,7 @@
 """Connection management tools for MS Access database — Phase 1 SDD.
 
 Tools:
-- connect_access(database_path, use_com=False, name=None) → connects named connection
+- connect_access(database_path, use_com=False, backend=None, name=None) → connects named connection
 - disconnect_access(name=None) → disconnects named connection
 - list_connections() → returns all connections with status (NEW)
 - set_active_connection(name) → sets active context (NEW)
@@ -9,7 +9,8 @@ Tools:
 - is_connected() → checks connection status
 """
 
-from typing import Literal
+from typing import Literal, Optional
+
 from .server import mcp, _get_path_guard
 
 from ..adapters.wincom import WinComAdapter
@@ -25,16 +26,25 @@ def _pool():
 
 @mcp.tool()
 def connect_access(
-    database_path: str, use_com: bool = False, name: str = "default", password: str = ""
+    database_path: str,
+    use_com: bool = False,
+    name: str = "default",
+    password: str = "",
+    backend: Optional[Literal["odbc", "com", "dao", "auto"]] = None,
 ) -> dict:
     """
     Connect to an Access database.
 
     Args:
         database_path: Path to .accdb or .mdb file
-        use_com: Use COM automation (True) or ODBC only (False)
+        use_com: Use COM automation (True) or ODBC only (False). Kept for
+            backward compatibility — ignored when ``backend`` is set.
         name: Named connection identifier (defaults to "default")
         password: Optional database password for password-protected DBs
+        backend: Explicit backend selector (slice 2 of
+            dao-first-linked-tables-properties). One of ``"odbc"``,
+            ``"com"``, ``"dao"``, or ``"auto"`` (default). When set,
+            takes precedence over ``use_com``.
     """
     # Validate path against allowed directories when HTTP config is active
     path_guard = _get_path_guard()
@@ -44,11 +54,15 @@ def connect_access(
         except ValueError as e:
             return {"success": False, "error": str(e)}
 
-    adapter = WinComAdapter() if use_com else OdbcAdapter()
+    # Resolve adapter_type: explicit backend param wins over use_com.
+    # When both are unset, fall back to the legacy use_com behaviour.
+    if backend is not None:
+        adapter_type: Literal["odbc", "com", "dao", "auto"] = backend
+    else:
+        adapter_type = "com" if use_com else "odbc"
 
     try:
         # Use the new named connection API with password support
-        adapter_type: Literal["com", "odbc"] = "com" if use_com else "odbc"
         state = _pool().connect(name, database_path, adapter_type, password=password)
         if state:
             return {"success": True, "connected": True, "database": database_path, "name": name}
@@ -58,9 +72,7 @@ def connect_access(
                 "connected": False,
                 "database": database_path,
                 "name": name,
-                "error": "COM connect failed — check server stderr for details"
-                if use_com
-                else "ODBC connect failed",
+                "error": f"{adapter_type} connect failed",
             }
     except KeyError as e:
         return {"success": False, "error": str(e)}

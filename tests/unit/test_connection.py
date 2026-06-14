@@ -142,6 +142,64 @@ class TestConnectAccessWithPassword:
             assert result["success"] is True
 
 
+class TestConnectAccessBackendParam:
+    """connect_access accepts an optional ``backend=`` selector arg (slice 2).
+
+    The legacy ``use_com`` parameter is preserved for backward
+    compatibility. When ``backend`` is set it wins over ``use_com``.
+    """
+
+    def test_connect_access_backend_odbc_routes_to_pool(self):
+        """``backend='odbc'`` is forwarded to pool.connect(..., adapter_type='odbc')."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        mock_conn.connect.return_value = MagicMock()
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+        ):
+            result = conn_module.connect_access("test.accdb", backend="odbc")
+            assert result["success"] is True
+            call_args = mock_conn.connect.call_args
+            assert call_args is not None
+            # 3rd positional arg or `adapter` kwarg is the adapter_type string
+            adapter_arg = call_args[0][2] if len(call_args[0]) > 2 else call_args[1].get("adapter")
+            assert adapter_arg == "odbc"
+
+    def test_connect_access_backend_dao_routes_to_pool(self):
+        """``backend='dao'`` is forwarded to pool.connect(..., adapter_type='dao')."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        mock_conn.connect.return_value = MagicMock()
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+        ):
+            result = conn_module.connect_access("test.accdb", backend="dao")
+            assert result["success"] is True
+            call_args = mock_conn.connect.call_args
+            assert call_args is not None
+            adapter_arg = call_args[0][2] if len(call_args[0]) > 2 else call_args[1].get("adapter")
+            assert adapter_arg == "dao"
+
+    def test_connect_access_backend_wins_over_use_com(self):
+        """``backend='odbc'`` overrides ``use_com=True`` (the new param takes precedence)."""
+        mock_conn = MagicMock()
+        mock_conn.is_connected.return_value = False
+        mock_conn.connect.return_value = MagicMock()
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+        ):
+            result = conn_module.connect_access(
+                "test.accdb", use_com=True, backend="odbc"
+            )
+            assert result["success"] is True
+            call_args = mock_conn.connect.call_args
+            adapter_arg = call_args[0][2] if len(call_args[0]) > 2 else call_args[1].get("adapter")
+            assert adapter_arg == "odbc"
+
+
 class TestDisconnectAccessWithName:
     """Tests for disconnect_access tool with name parameter."""
 

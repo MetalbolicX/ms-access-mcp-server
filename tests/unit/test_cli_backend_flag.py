@@ -74,6 +74,27 @@ class TestGetAdapterFunction:
         adapter = _get_adapter("/tmp/test.accdb", backend="com")
         assert captured["backend"] == "com"
 
+    def test_backend_dao_routes_to_selector(self, monkeypatch):
+        """_get_adapter(..., backend='dao') calls BackendSelector.get_adapter(backend='dao').
+
+        Slice 2 of dao-first-linked-tables-properties.
+        """
+        captured = {}
+
+        def _spy(db_path, backend=None, capabilities=None):
+            captured["db_path"] = db_path
+            captured["backend"] = backend
+            mock = MagicMock()
+            mock.connect.return_value = True
+            return mock
+
+        monkeypatch.setattr(
+            "ms_access_mcp.services.backend_selector.BackendSelector.get_adapter",
+            _spy
+        )
+        adapter = _get_adapter("/tmp/test.accdb", backend="dao")
+        assert captured["backend"] == "dao"
+
 
 class TestCliExportAllBackend:
     """Verify export-all routes through BackendSelector."""

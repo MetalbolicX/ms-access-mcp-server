@@ -14,7 +14,12 @@ from ms_access_mcp.services.backend_selector import (
 app = typer.Typer(help="MS Access versioning CLI")
 
 
-BACKEND_OPT = typer.Option("odbc", "--backend", "-b", help="Adapter backend: 'odbc' (cross-platform, default) or 'com' (Windows only, for VBA/forms)")
+BACKEND_OPT = typer.Option(
+    "odbc",
+    "--backend",
+    "-b",
+    help="Adapter backend: 'odbc' (default), 'dao' (Windows, data/schema), 'com' (Windows, VBA/forms), or 'auto'.",
+)
 
 
 @app.command()
@@ -79,10 +84,10 @@ def serve(
 # Global adapter init helper — called by most commands
 def _get_adapter(
     db_path: str,
-    backend: Literal["odbc", "com", "auto"] = "odbc",
+    backend: Literal["odbc", "com", "dao", "auto"] = "odbc",
     capabilities: BackendCapabilities | None = None,
 ):
-    """Create and connect an adapter via BackendSelector. backend = 'odbc' (default) or 'com'."""
+    """Create and connect an adapter via BackendSelector."""
     adapter = BackendSelector.get_adapter(db_path=db_path, backend=backend, capabilities=capabilities)
     if not adapter.connect(db_path):
         raise typer.Exit(code=1)
@@ -105,7 +110,7 @@ def export_all(
     dedup: bool = typer.Option(True, "--dedup/--no-dedup", help="Skip unchanged files"),
     module_ext: str = typer.Option(".bas", "--module-ext", help="Module file extension"),
     db_path: str = typer.Option(..., "--db", help="Path to .accdb file"),
-    backend: Literal["odbc", "com", "auto"] = BACKEND_OPT,
+    backend: Literal["odbc", "com", "dao", "auto"] = BACKEND_OPT,
 ):
     """Export all objects to text files for version control."""
     adapter = _get_adapter(db_path, backend)
@@ -122,7 +127,7 @@ def export_all(
 def compare_versioning(
     directory: str = typer.Option(..., "--dir", help="Export directory"),
     db_path: str = typer.Option(..., "--db", help="Path to .accdb file"),
-    backend: Literal["odbc", "com", "auto"] = BACKEND_OPT,
+    backend: Literal["odbc", "com", "dao", "auto"] = BACKEND_OPT,
 ):
     """Compare database state against export directory."""
     adapter = _get_adapter(db_path, backend)
@@ -175,7 +180,7 @@ def export_vba(
     module_name: str,
     db_path: str = typer.Option(..., "--db", help="Path to .accdb file"),
     output: Optional[Path] = None,
-    backend: Literal["odbc", "com", "auto"] = BACKEND_OPT,
+    backend: Literal["odbc", "com", "dao", "auto"] = BACKEND_OPT,
 ):
     """Export a VBA module to a .bas file. Requires --backend com (Windows only)."""
     output_path = output or Path(f"{module_name}.bas")
