@@ -14,11 +14,18 @@ Why this exists:
 
 Resource lifecycle:
     Each ``get_relationships()`` call opens the DAO ``Database`` locally
-    with ``Exclusive=False, ReadOnly=True`` so a concurrent ODBC read on
-    the same ``.accdb`` file is NOT blocked, and ``db.Close()`` runs in
-    a ``finally`` block to release the COM handle deterministically.
-    Cheap for local Access files; avoids long-lived COM lock conflicts
-    and STA apartment-affinity issues across async executor threads.
+    with ``Exclusive=False, ReadOnly=True`` (via :class:`DaoSession`) so a
+    concurrent ODBC read on the same ``.accdb`` file is NOT blocked, and
+    the handle is closed deterministically when the context exits. Cheap
+    for local Access files; avoids long-lived COM lock conflicts and
+    STA apartment-affinity issues across async executor threads.
+
+    The open/close pattern was extracted into :class:`DaoSession` in slice
+    1 of the ``dao-first-linked-tables-properties`` change. Slice 2 will
+    fold the relationship logic itself into :class:`DaoAdapter`; this
+    reader remains as a callable-injection seam for OdbcAdapter (see
+    ``odbc.py``) and for any caller that needs a one-off read without
+    owning a long-lived adapter.
 
 Failure modes:
     - Missing ``win32com`` / DAO not installed: raised on import / Dispatch.
@@ -27,19 +34,21 @@ Failure modes:
     - ``OpenDatabase`` fails (file in use, bad password): caught and
       ``[]`` returned.
     - Iteration over ``db.Relations`` fails mid-way: DB still closed in
-      ``finally``; ``[]`` returned.
+      the context-manager exit; ``[]`` returned.
 
 Filtering:
     Relations whose name starts with ``~`` (Access temp objects) or
     ``MSys`` (Access system relations) are skipped — same filter as
     :class:`SchemaInspector`.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
 from ..models.database import RelationshipInfo
+from .dao import DaoSession
 
 
 class DaoRelationshipReader:
@@ -75,42 +84,19 @@ class DaoRelationshipReader:
             relations (``~`` and ``MSys`` prefixes) are filtered out.
             Returns ``[]`` on any DAO failure.
         """
-        db: Any | None = None
         try:
-            db = self._open_database()
-            return self._read_relations(db)
+            with DaoSession(self._db_path, password=self._password, read_only=True) as session:
+                return self._read_relations(session.db)
         except Exception as e:
             # DAO is best-effort; if the file is locked, the password is
             # wrong, or the engine is missing, we degrade to empty list
             # — the ODBC reader is the canonical fallback.
-            self._logger.warning(
-                "DaoRelationshipReader.get_relationships failed: %s", e
-            )
+            self._logger.warning("DaoRelationshipReader.get_relationships failed: %s", e)
             return []
-        finally:
-            if db is not None:
-                self._close(db)
 
     # ------------------------------------------------------------------ #
     # Implementation
     # ------------------------------------------------------------------ #
-
-    def _open_database(self) -> Any:
-        """Open the DAO database in read-only, non-exclusive mode.
-
-        ``OpenDatabase(path, Exclusive=False, ReadOnly=True, connect_str)``
-        — see https://learn.microsoft.com/en-us/office/client-developer/access/desktop-database-reference/database-opendatabase-method
-
-        Returns the DAO ``Database`` COM object. Never returns ``None``;
-        raises on failure.
-        """
-        # Lazy import — win32com is Windows-only and not installed by
-        # default on Linux/macOS CI environments.
-        import win32com.client  # type: ignore[import-not-found]
-
-        engine = win32com.client.Dispatch("DAO.DBEngine.120")
-        connect_str = f";PWD={self._password}" if self._password else ""
-        return engine.OpenDatabase(self._db_path, False, True, connect_str)
 
     @staticmethod
     def _read_relations(db: Any) -> list[RelationshipInfo]:
@@ -143,11 +129,3 @@ class DaoRelationshipReader:
                 )
             )
         return relationships
-
-    @staticmethod
-    def _close(db: Any) -> None:
-        """Close the DAO database. Swallows exceptions on teardown."""
-        try:
-            db.Close()
-        except Exception:
-            pass

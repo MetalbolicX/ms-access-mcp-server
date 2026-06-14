@@ -51,6 +51,11 @@ class ComDispatcher:
         self._current_db: Optional[Any] = None
         self._ado_conn: Optional[Any] = None
         self._db_path: Optional[str] = None
+        # Unhealthy flag — set True on construction; flipped to False on
+        # transient COM errors so callers can probe before reusing the
+        # handle. Slice 1 of dao-first-linked-tables-properties wires
+        # this; the full mark-on-error policy lives in DaoAdapter.
+        self._is_healthy: bool = True
 
     @property
     def access_app(self) -> Any:
@@ -94,12 +99,98 @@ class ComDispatcher:
         """Check if the dispatcher has an active Access.Application connection."""
         return self._access_app is not None and self._current_db is not None
 
+    # ------------------------------------------------------------------ #
+    # Health tracking (slice 1 of dao-first-linked-tables-properties)
+    # ------------------------------------------------------------------ #
+
+    def is_healthy(self) -> bool:
+        """Return True if the dispatcher is in a healthy state.
+
+        DaoAdapter flips this to False on a transient COM error; callers
+        check ``is_healthy()`` before reusing the handle. Reset to True
+        after a successful reconnect.
+        """
+        return self._is_healthy
+
+    def mark_unhealthy(self) -> None:
+        """Mark the connection as unhealthy. Idempotent."""
+        self._is_healthy = False
+
+    def reset_health(self) -> None:
+        """Reset the unhealthy flag. Called after a successful reconnect."""
+        self._is_healthy = True
+
+    # ------------------------------------------------------------------ #
+    # DAO-only open path (slice 1 of dao-first-linked-tables-properties)
+    # ------------------------------------------------------------------ #
+
+    def open_dao_database(
+        self,
+        db_path: str,
+        password: str = "",
+        read_only: bool = False,
+    ) -> Any:
+        """Open a DAO ``Database`` directly, without Access.Application.
+
+        Runs on the STA thread, replaces any existing handle in
+        ``self._current_db`` (closing it first), and returns the new
+        handle. Used by ``DaoAdapter`` to own a long-lived DAO handle
+        that is shared with ``SchemaInspector`` / ``DbOperations`` via
+        ``self._current_db``.
+
+        Raises ``com_error`` / ``OSError`` on open failure; callers
+        (``DaoAdapter``) should catch and re-raise as
+        :class:`DaoOperationError` to mark the connection unhealthy.
+        """
+
+        def _do() -> Any:
+            import win32com.client  # type: ignore[import-not-found]  # lazy win32
+
+            engine = win32com.client.Dispatch("DAO.DBEngine.120")
+            connect_str = f";PWD={password}" if password else ""
+            if self._current_db is not None:
+                # DAO_DBEngine.120 cannot hold two databases on the same
+                # engine simultaneously; close before opening another.
+                try:
+                    self._current_db.Close()
+                except Exception:
+                    pass
+                self._current_db = None
+            self._current_db = engine.OpenDatabase(db_path, False, read_only, connect_str)
+            self._db_path = db_path
+            self._is_healthy = True
+            return self._current_db
+
+        return self.call(_do)
+
+    def close_dao_database(self) -> None:
+        """Close the DAO ``Database`` currently held by the dispatcher.
+
+        No-op if no handle is open. Used by ``DaoAdapter.disconnect()``
+        and by the dispatcher teardown path; the Access.Application
+        ``Quit()`` is not invoked (this is DAO-only).
+        """
+        if not self._started or self._thread is None:
+            self._current_db = None
+            return
+
+        def _do() -> None:
+            if self._current_db is None:
+                return
+            try:
+                self._current_db.Close()
+            except Exception:
+                pass
+            self._current_db = None
+
+        self.call(_do)
+
     def set_db_path(self, db_path: str) -> None:
         """Set the database path (called by adapter.connect before opening)."""
         self._db_path = db_path
 
     def shutdown(self) -> None:
-        """Signal the dispatcher thread to stop and clean up COM objects." + """
+        """Signal the dispatcher thread to stop and clean up COM objects." +"""
         self._stopping = True
         # Flush pending futures with CancelledError before shutting down
         self._flush_pending_futures()
@@ -112,6 +203,7 @@ class ComDispatcher:
         self._current_db = None
         self._ado_conn = None
         self._db_path = None
+        self._is_healthy = True
         self._started = False
 
     def _flush_pending_futures(self) -> None:
@@ -225,15 +317,18 @@ class ComDispatcher:
             self._access_app = None
 
             # 5. Force-kill fallback (Windows only) — PID-scoped to avoid killing other Access instances
-            if not quit_ok and sys.platform == 'win32':
+            if not quit_ok and sys.platform == "win32":
                 pid_killed = False
                 try:
                     import win32process
+
                     hwnd = app.hWndAccessApp()
                     _, pid = win32process.GetWindowThreadProcessId(hwnd)
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(pid)],
-                        capture_output=True, text=True, timeout=10
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
                     )
                     pid_killed = True
                 except Exception as e:
@@ -244,7 +339,9 @@ class ComDispatcher:
                     try:
                         subprocess.run(
                             ["taskkill", "/F", "/IM", "MSACCESS.EXE"],
-                            capture_output=True, text=True, timeout=10
+                            capture_output=True,
+                            text=True,
+                            timeout=10,
                         )
                     except Exception as e:
                         errors.append(f"taskkill /IM fallback: {e}")
@@ -291,6 +388,7 @@ class ComDispatcher:
             def dismiss_dialogs(hwnd: int, _: object) -> None:
                 from ctypes import windll
                 import ctypes
+
                 _, pid = win32process.GetWindowThreadProcessId(hwnd)
                 cls = win32gui.GetClassName(hwnd)
                 if cls != "#32770":
@@ -313,10 +411,11 @@ class ComDispatcher:
                     windll.user32.SendMessageTimeoutW(
                         hwnd,
                         win32con.WM_COMMAND,
-                        1, 0,  # IDOK
+                        1,
+                        0,  # IDOK
                         win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
                         500,
-                        ctypes.byref(ctypes.c_ulong())
+                        ctypes.byref(ctypes.c_ulong()),
                     )
                 except Exception:
                     pass
@@ -324,10 +423,11 @@ class ComDispatcher:
                     windll.user32.SendMessageTimeoutW(
                         hwnd,
                         win32con.WM_COMMAND,
-                        2, 0,  # IDCANCEL
+                        2,
+                        0,  # IDCANCEL
                         win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
                         500,
-                        ctypes.byref(ctypes.c_ulong())
+                        ctypes.byref(ctypes.c_ulong()),
                     )
                 except Exception:
                     pass
@@ -335,18 +435,16 @@ class ComDispatcher:
                     windll.user32.SendMessageTimeoutW(
                         hwnd,
                         win32con.WM_CLOSE,
-                        0, 0,
+                        0,
+                        0,
                         win32con.SMTO_ABORTIFHUNG | win32con.SMTO_NOTIMEOUTIFNOTHUNG,
                         500,
-                        ctypes.byref(ctypes.c_ulong())
+                        ctypes.byref(ctypes.c_ulong()),
                     )
                 except Exception:
                     pass
                 try:
-                    win32gui.PostMessage(
-                        hwnd, win32con.WM_SYSCOMMAND,
-                        win32con.SC_CLOSE, 0
-                    )
+                    win32gui.PostMessage(hwnd, win32con.WM_SYSCOMMAND, win32con.SC_CLOSE, 0)
                 except Exception:
                     pass
 
@@ -355,6 +453,7 @@ class ComDispatcher:
             for _ in range(4):
                 win32gui.EnumWindows(dismiss_dialogs, None)
                 import time
+
                 time.sleep(0.25)
 
         except ImportError:

@@ -111,11 +111,21 @@ class WinComAdapter(
                 return None
         return where_str
 
-    def __init__(self, db_path: str | None = None, strategy_selector: Any | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str | None = None,
+        strategy_selector: Any | None = None,
+        dispatcher: ComDispatcher | None = None,
+    ) -> None:
         from .export.strategies import ExportStrategySelector
 
         self._db_path: str | None = db_path
-        self._dispatcher = ComDispatcher()
+        # Dispatcher is the single-tenant STA thread. Slice 1 of the
+        # dao-first-linked-tables-properties change adds the injection
+        # seam so a future DaoAdapter can share this thread instead of
+        # spawning its own. Default behaviour (no `dispatcher=` arg) is
+        # unchanged: WinComAdapter owns its own ComDispatcher.
+        self._dispatcher: ComDispatcher = dispatcher or ComDispatcher()
         self._vba = VbaOperations(self._dispatcher)
         self._ui = UiOperations(self._dispatcher, vba=self._vba)
         self._db_ops = DbOperations(self._dispatcher)

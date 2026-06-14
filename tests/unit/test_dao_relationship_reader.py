@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock, patch
 
+from ms_access_mcp.adapters.dao import DaoSession
 from ms_access_mcp.adapters.dao_relationship_reader import DaoRelationshipReader
 
 
@@ -311,3 +312,27 @@ class TestDaoRelationshipReader:
 
         assert result == []
         mock_db.Close.assert_called_once()
+
+
+# ---------------------------------------------------------------------- #
+# DaoSession helper — tested here because the reader is its first user.
+# Slice 1 of dao-first-linked-tables-properties extracted the open/close
+# pattern into DaoSession. The reader's own tests already cover the
+# open/close behavior end-to-end; this test pins the password-handling
+# contract the future DaoAdapter will rely on.
+# ---------------------------------------------------------------------- #
+
+
+class TestDaoSessionHelper:
+    """DaoSession is the reusable open/close context manager used by the reader."""
+
+    @patch("win32com.client.Dispatch")
+    def test_session_passes_password_in_connect_string(self, mock_dispatch):
+        """When a password is provided, the DAO connect string includes ``;PWD=...``."""
+        engine = MagicMock()
+        engine.OpenDatabase.return_value = MagicMock()
+        mock_dispatch.return_value = engine
+
+        with DaoSession(r"C:\fake\db.accdb", password="secret"):
+            pass
+        assert engine.OpenDatabase.call_args[0][3] == ";PWD=secret"

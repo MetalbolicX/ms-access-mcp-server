@@ -107,3 +107,54 @@ class TestComDispatcherLogging:
             # Verify the warning message mentions the error
             warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
             assert any("ADO Close" in c or "RuntimeError" in c for c in warning_calls)
+
+
+class TestComDispatcherHealthTracking:
+    """Slice 1 of dao-first-linked-tables-properties: unhealthy-state flag.
+
+    The flag starts True, flips to False on ``mark_unhealthy()``, and
+    resets to True via ``reset_health()`` or ``shutdown()``.
+    """
+
+    def test_starts_healthy(self):
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        assert dispatcher.is_healthy() is True
+
+    def test_mark_unhealthy_flips_flag(self):
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher.mark_unhealthy()
+        assert dispatcher.is_healthy() is False
+
+    def test_mark_unhealthy_is_idempotent(self):
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher.mark_unhealthy()
+        dispatcher.mark_unhealthy()
+        assert dispatcher.is_healthy() is False
+
+    def test_reset_health_restores_flag(self):
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher.mark_unhealthy()
+        assert dispatcher.is_healthy() is False
+        dispatcher.reset_health()
+        assert dispatcher.is_healthy() is True
+
+    def test_shutdown_resets_health(self):
+        """After shutdown, a fresh dispatcher instance is healthy again.
+
+        ``shutdown()`` tears down the thread and resets the flag, so a
+        reconnect (slice 2) starts from a known-good state.
+        """
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher.mark_unhealthy()
+        dispatcher.shutdown()
+        assert dispatcher.is_healthy() is True
