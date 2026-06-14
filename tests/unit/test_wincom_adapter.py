@@ -2781,3 +2781,93 @@ class TestWinComAdapterPasswordForwarding:
         # Should not raise
         result = adapter.connect(str(db_path))
         assert isinstance(result, bool)
+
+
+# ===================================================================== #
+# Slice 7 — WinComAdapter delegates linked-table methods to composed DaoAdapter
+# ===================================================================== #
+
+
+class TestWinComLinkedTablesDelegateToDaoAdapter:
+    """The slice-7 cleanup refactor replaces WinComAdapter's own linked-table
+    implementations with delegations to a composed :class:`DaoAdapter` that
+    shares the WinComAdapter's :class:`ComDispatcher`. These tests pin the
+    delegation contract so future refactors don't accidentally re-introduce
+    a parallel implementation in WinComAdapter.
+    """
+
+    def test_composed_dao_adapter_shares_dispatcher(self, mock_com_modules, tmp_path):
+        """The composed DaoAdapter uses the same ComDispatcher as WinComAdapter."""
+        from ms_access_mcp.adapters.dao import DaoAdapter
+
+        adapter = WinComAdapter()
+        # The composed DaoAdapter must share the dispatcher so the
+        # linked-table methods read the same DAO handle the
+        # WinComAdapter opened in connect().
+        assert isinstance(adapter._dao, DaoAdapter)
+        assert adapter._dao._dispatcher is adapter._dispatcher
+
+    def test_get_linked_tables_delegates_to_composed_dao(self, mock_com_modules, tmp_path):
+        """WinComAdapter.get_linked_tables returns the result from composed DaoAdapter."""
+        adapter = WinComAdapter()
+        # Replace the composed DaoAdapter's method with a MagicMock
+        adapter._dao.get_linked_tables = MagicMock(
+            return_value={"success": True, "linked_tables": ["a", "b"]}
+        )
+
+        result = adapter.get_linked_tables()
+
+        adapter._dao.get_linked_tables.assert_called_once_with()
+        assert result == {"success": True, "linked_tables": ["a", "b"]}
+
+    def test_create_linked_table_delegates_to_composed_dao(
+        self, mock_com_modules, tmp_path
+    ):
+        """WinComAdapter.create_linked_table forwards args to composed DaoAdapter."""
+        adapter = WinComAdapter()
+        adapter._dao.create_linked_table = MagicMock(return_value={"success": True})
+
+        adapter.create_linked_table("L", "R", "ODBC;DSN=X;PWD=s")
+
+        adapter._dao.create_linked_table.assert_called_once_with(
+            "L", "R", "ODBC;DSN=X;PWD=s"
+        )
+
+    def test_refresh_linked_table_delegates_to_composed_dao(
+        self, mock_com_modules, tmp_path
+    ):
+        """WinComAdapter.refresh_linked_table forwards optional connect_string."""
+        adapter = WinComAdapter()
+        adapter._dao.refresh_linked_table = MagicMock(return_value={"success": True})
+
+        # Both with and without connect_string must be forwarded verbatim.
+        adapter.refresh_linked_table("L")
+        adapter._dao.refresh_linked_table.assert_called_with("L", None)
+
+        adapter._dao.refresh_linked_table.reset_mock()
+        adapter.refresh_linked_table("L", "ODBC;DSN=X;PWD=new")
+        adapter._dao.refresh_linked_table.assert_called_with(
+            "L", "ODBC;DSN=X;PWD=new"
+        )
+
+    def test_recreate_linked_table_delegates_to_composed_dao(
+        self, mock_com_modules, tmp_path
+    ):
+        """WinComAdapter.recreate_linked_table forwards all 4 args (incl. attributes)."""
+        adapter = WinComAdapter()
+        adapter._dao.recreate_linked_table = MagicMock(return_value={"success": True})
+
+        adapter.recreate_linked_table("L", "R", "ODBC;DSN=X", attributes=0x80000001)
+
+        adapter._dao.recreate_linked_table.assert_called_once_with(
+            "L", "R", "ODBC;DSN=X", 0x80000001
+        )
+
+    def test_unlink_table_delegates_to_composed_dao(self, mock_com_modules, tmp_path):
+        """WinComAdapter.unlink_table forwards name to composed DaoAdapter."""
+        adapter = WinComAdapter()
+        adapter._dao.unlink_table = MagicMock(return_value={"success": True})
+
+        adapter.unlink_table("L")
+
+        adapter._dao.unlink_table.assert_called_once_with("L")

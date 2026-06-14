@@ -3,7 +3,7 @@ Integration test for OdbcAdapter.get_relationships() against a real .accdb.
 
 Creates a temporary database with tables + a foreign-key relationship via
 COM automation, then reads the relationships back via ODBC's MSysRelationships
-query to verify the new OdbcSchemaReader path works end-to-end.
+query to verify the OdbcSchemaReader path works end-to-end.
 
 Note: the dedicated DAO integration test
 ``tests/integration/test_dao_relationship_reader_real.py`` covers the real
@@ -12,6 +12,12 @@ with their `attributes` populated, and the concurrent-ODBC-after-DAO
 invariant).  This test stays focused on the OdbcSchemaReader fallback
 path — it creates a temp .accdb with a single FK and asserts the
 ODBC ``MSysRelationships`` query returns it.
+
+Slice 7 of dao-first-linked-tables-properties routes OdbcAdapter on
+Windows through ``DaoAdapter.read_relationships_short_lived`` (the
+short-lived reader replaces the deleted ``DaoRelationshipReader``
+helper), but the OdbcSchemaReader fallback path covered here is
+unchanged.
 
 Markers: com_integration
 

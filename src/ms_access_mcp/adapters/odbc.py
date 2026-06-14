@@ -416,14 +416,29 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePr
     def _build_relationship_reader(
         self, db_path: str, password: str
     ) -> Callable[[], list[RelationshipInfo]]:
-        """DAO reader on Windows when available; OdbcSchemaReader otherwise."""
+        """DAO reader on Windows when available; OdbcSchemaReader otherwise.
+
+        Slice 7 of dao-first-linked-tables-properties: the standalone
+        ``dao_relationship_reader.DaoRelationshipReader`` helper has
+        been removed. ``DaoAdapter.read_relationships_short_lived`` is
+        the new single source of truth for one-off DAO relationship
+        reads (uses ``DaoSession`` for the short-lived handle so a
+        concurrent ODBC read is not blocked).
+        """
         from .odbc_schema_reader import OdbcSchemaReader
 
         if sys.platform == "win32":
             try:
-                from .dao_relationship_reader import DaoRelationshipReader
+                from functools import partial
 
-                return DaoRelationshipReader(db_path, password, _logger).get_relationships
+                from .dao import DaoAdapter
+
+                return partial(
+                    DaoAdapter.read_relationships_short_lived,
+                    db_path=db_path,
+                    password=password,
+                    logger=_logger,
+                )
             except Exception as e:
                 _logger.info("DAO reader unavailable (%s); using OdbcSchemaReader", e)
         return OdbcSchemaReader(self._conn, _logger).get_relationships

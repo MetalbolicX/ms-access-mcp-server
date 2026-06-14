@@ -1,5 +1,5 @@
 """DaoAdapter lifecycle + DaoSession helper + schema/property read surface
-(slices 1—6 of dao-first-linked-tables-properties).
+(slices 1—7 of dao-first-linked-tables-properties).
 
 * :class:`DaoSession` — reusable DAO open/close context manager,
   extracted from :class:`DaoRelationshipReader`. Used for short-lived,
@@ -15,7 +15,10 @@
   helpers. Slice 5 adds the row CRUD and table/index DDL surface.
   Slice 6 adds the five linked-table methods operating on
   ``db.TableDefs`` with password-stripping and hidden-attribute
-  preservation.
+  preservation. Slice 7 adds ``read_relationships_short_lived`` so
+  :class:`OdbcAdapter` can read DAO-quality relationships without
+  owning a long-lived :class:`DaoAdapter` and the old standalone
+  :mod:`dao_relationship_reader` helper is removed.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from datetime import datetime
 from types import TracebackType
 from typing import Any
 
+from ..models.database import RelationshipInfo
 from .com_dispatcher import DAO_DB_FAIL_ON_ERROR, ComDispatcher
 from .db_operations import DbOperations
 from .schema_inspector import SchemaInspector
@@ -1365,3 +1369,89 @@ class DaoAdapter:
                 return {"success": False, "error": str(e)}
 
         return self._dispatcher.call(_do)
+
+    # ------------------------------------------------------------------ #
+    # Short-lived relationship reader (slice 7 of dao-first-linked-tables-properties)
+    # ------------------------------------------------------------------ #
+    #
+    # Replaces the standalone :mod:`dao_relationship_reader` helper. Same
+    # contract: open a temporary read-only DAO ``Database`` handle via
+    # :class:`DaoSession`, project ``db.Relations`` to
+    # :class:`RelationshipInfo`, filter ``~`` and ``MSys`` system
+    # relations, and degrade to ``[]`` on any failure. Exposed as a
+    # static method so :class:`OdbcAdapter` can request DAO-quality
+    # relationships without instantiating a long-lived :class:`DaoAdapter`.
+
+    @staticmethod
+    def read_relationships_short_lived(
+        db_path: str,
+        password: str = "",
+        logger: logging.Logger | None = None,
+    ) -> list[RelationshipInfo]:
+        """Read foreign-key relationships via a short-lived read-only DAO handle.
+
+        Mirrors the legacy :class:`ms_access_mcp.adapters.dao_relationship_reader.DaoRelationshipReader`
+        contract so :class:`OdbcAdapter` can keep using a one-off read
+        on Windows without owning a long-lived :class:`DaoAdapter`
+        instance. Uses :class:`DaoSession` (already extracted in slice 1)
+        to open ``Exclusive=False, ReadOnly=True`` so a concurrent
+        ODBC read on the same ``.accdb`` file is NOT blocked.
+
+        Args:
+            db_path: Absolute path to the ``.accdb`` or ``.mdb`` file.
+            password: Optional database password; appended as
+                ``;PWD=...`` to the DAO ``OpenDatabase`` connect string
+                when non-empty.
+            logger: Logger for graceful-degradation warnings. Defaults
+                to this module's logger when ``None``.
+
+        Returns:
+            list[RelationshipInfo]: One entry per FK with multi-column
+            FKs aggregated into a single ``RelationshipInfo`` and
+            system relations (``~`` and ``MSys`` prefixes) filtered
+            out. Returns ``[]`` on any DAO failure (engine missing,
+            file in use, bad password, malformed ``Relations``
+            collection).
+        """
+        log = logger or logging.getLogger(__name__)
+        try:
+            with DaoSession(db_path, password=password, read_only=True) as session:
+                return DaoAdapter._read_relations_from_db(session.db)
+        except Exception as e:
+            log.warning("DaoAdapter.read_relationships_short_lived failed: %s", e)
+            return []
+
+    @staticmethod
+    def _read_relations_from_db(db: Any) -> list[RelationshipInfo]:
+        """Walk ``db.Relations`` and project to ``RelationshipInfo`` shape.
+
+        Mirrors the filter (``~`` and ``MSys``) used by
+        :class:`SchemaInspector.get_relationships` and the
+        :class:`OdbcSchemaReader` fallback. Used by both the
+        long-lived :meth:`DaoAdapter.get_relationships` (slice 4) and
+        the short-lived :meth:`read_relationships_short_lived` (slice 7)
+        so the two code paths share one canonical projection.
+        """
+        relationships: list[RelationshipInfo] = []
+        rels = db.Relations
+        for i in range(rels.Count):
+            rel = rels(i)
+            if rel.Name.startswith("~") or rel.Name.startswith("MSys"):
+                continue
+            child_cols: list[str] = []
+            parent_cols: list[str] = []
+            for j in range(rel.Fields.Count):
+                f = rel.Fields(j)
+                child_cols.append(f.Name)
+                parent_cols.append(f.ForeignName)
+            relationships.append(
+                RelationshipInfo(
+                    name=rel.Name,
+                    table=rel.Table,
+                    foreign_table=rel.ForeignTable,
+                    attributes=str(rel.Attributes),
+                    columns=child_cols,
+                    foreign_columns=parent_cols,
+                )
+            )
+        return relationships

@@ -1,22 +1,24 @@
 """Unit tests for DaoAdapter lifecycle + DaoOperationError + schema/property surface.
 
-Slices 1—4 of dao-first-linked-tables-properties: pins the
+Slices 1—7 of dao-first-linked-tables-properties: pins the
 construction contract (slice 1), the connect / disconnect /
 is_connected lifecycle (slice 2), the schema/property read
 surface (slice 4), the row CRUD + table/index DDL surface (slice 5),
-and the linked-table surface (slice 6). DAO backend wiring and
-selector cutover land in later slices.
+the linked-table surface (slice 6), and the short-lived relationship
+reader (``DaoAdapter.read_relationships_short_lived``) that replaces
+the deleted ``DaoRelationshipReader`` helper (slice 7). DAO backend
+wiring and selector cutover landed in earlier slices.
 """
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
-from ms_access_mcp.adapters.dao import DaoAdapter, DaoOperationError
+from ms_access_mcp.adapters.dao import DaoAdapter, DaoOperationError, DaoSession
 from ms_access_mcp.models.database import (
     IndexInfo,
     QueryInfo,
@@ -2540,3 +2542,424 @@ class TestDaoAdapterUnlinkTable:
 
         assert result["success"] is False
         assert "Not connected" in result["error"]
+
+
+# ===================================================================== #
+# Slice 7 — DaoSession contract + DaoAdapter.read_relationships_short_lived
+# ===================================================================== #
+#
+# Slice 7 of the dao-first-linked-tables-properties change deletes the
+# standalone ``dao_relationship_reader.py`` helper and exposes the same
+# capability as ``DaoAdapter.read_relationships_short_lived``. The tests
+# that previously lived in ``tests/unit/test_dao_relationship_reader.py``
+# are migrated here because the behavior now lives in
+# ``ms_access_mcp.adapters.dao``. ``DaoSession`` itself is also covered
+# here because the reader is its primary caller.
+
+
+def _make_relation_mock(
+    name: str,
+    table: str,
+    foreign_table: str,
+    fields: list[tuple[str, str]],
+    attributes: int = 0,
+) -> MagicMock:
+    """Build a MagicMock that mimics a DAO ``Relation`` object."""
+    rel = MagicMock()
+    rel.Name = name
+    rel.Table = table
+    rel.ForeignTable = foreign_table
+    rel.Attributes = attributes
+
+    field_mocks: list[MagicMock] = []
+    for child_col, parent_col in fields:
+        f = MagicMock()
+        f.Name = child_col
+        f.ForeignName = parent_col
+        field_mocks.append(f)
+    rel.Fields.Count = len(field_mocks)
+
+    def _fields_getter(i):
+        return field_mocks[i]
+
+    rel.Fields.side_effect = _fields_getter
+    rel.Fields.Item.side_effect = _fields_getter
+    return rel
+
+
+def _make_db_mock(relations: list[MagicMock]) -> MagicMock:
+    """Build a MagicMock that mimics a DAO ``Database`` object."""
+    db = MagicMock()
+    db.Relations.Count = len(relations)
+
+    def _rel_getter(i):
+        return relations[i]
+
+    db.Relations.side_effect = _rel_getter
+    db.Relations.Item.side_effect = _rel_getter
+    return db
+
+
+class TestDaoSession:
+    """DaoSession is the reusable open/close context manager for short-lived
+    read-only DAO handles. It was extracted from DaoRelationshipReader in
+    slice 1 of dao-first-linked-tables-properties and is now used by
+    DaoAdapter.read_relationships_short_lived (slice 7).
+    """
+
+    @patch("win32com.client.Dispatch")
+    def test_session_passes_password_in_connect_string(self, mock_dispatch):
+        """When a password is provided, the DAO connect string includes ``;PWD=...``."""
+        engine = MagicMock()
+        engine.OpenDatabase.return_value = MagicMock()
+        mock_dispatch.return_value = engine
+
+        with DaoSession(r"C:\fake\db.accdb", password="secret"):
+            pass
+        assert engine.OpenDatabase.call_args[0][3] == ";PWD=secret"
+
+    @patch("win32com.client.Dispatch")
+    def test_session_no_password_uses_empty_connect_string(self, mock_dispatch):
+        """When no password is provided, the connect string arg is empty."""
+        engine = MagicMock()
+        engine.OpenDatabase.return_value = MagicMock()
+        mock_dispatch.return_value = engine
+
+        with DaoSession(r"C:\fake\db.accdb"):
+            pass
+        # 4th positional arg is the connect string
+        assert engine.OpenDatabase.call_args[0][3] == ""
+
+    @patch("win32com.client.Dispatch")
+    def test_session_opens_read_only_by_default(self, mock_dispatch):
+        """Default read_only=True means OpenDatabase is called with read-only=True."""
+        engine = MagicMock()
+        engine.OpenDatabase.return_value = MagicMock()
+        mock_dispatch.return_value = engine
+
+        with DaoSession(r"C:\fake\db.accdb"):
+            pass
+        # Signature: OpenDatabase(name, exclusive, read_only, connect)
+        # positional args: [name, exclusive, read_only, connect]
+        assert engine.OpenDatabase.call_args[0][2] is True
+
+    @patch("win32com.client.Dispatch")
+    def test_session_close_closes_db(self, mock_dispatch):
+        """Exiting the context manager calls db.Close()."""
+        engine = MagicMock()
+        db = MagicMock()
+        engine.OpenDatabase.return_value = db
+        mock_dispatch.return_value = engine
+
+        with DaoSession(r"C:\fake\db.accdb"):
+            pass
+        db.Close.assert_called_once()
+
+
+class TestDaoAdapterReadRelationshipsShortLived:
+    """Tests for the slice-7 short-lived DAO relationship reader.
+
+    Migrated from ``tests/unit/test_dao_relationship_reader.py`` after
+    the standalone ``DaoRelationshipReader`` class was deleted. The
+    function lives on :class:`DaoAdapter` and uses
+    :class:`DaoSession` for the short-lived read-only handle.
+    """
+
+    def setup_method(self):
+        self.db_path = r"C:\fake\db.accdb"
+        self.password = ""
+        self.logger = MagicMock()
+
+    # ------------------------------------------------------------------ #
+    # Happy path
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_single_fk_returns_one_relationship(self, mock_dispatch):
+        """1 relation, 1 column → 1 RelationshipInfo with all fields populated."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock(
+            [
+                _make_relation_mock(
+                    "FK_Orders_Customers",
+                    "Orders",
+                    "Customers",
+                    [("CustomerID", "ID")],
+                    attributes=256,
+                )
+            ]
+        )
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert len(result) == 1
+        rel = result[0]
+        assert rel.name == "FK_Orders_Customers"
+        assert rel.table == "Orders"
+        assert rel.foreign_table == "Customers"
+        assert rel.columns == ["CustomerID"]
+        assert rel.foreign_columns == ["ID"]
+        # attributes must be the string form of DAO Attributes
+        assert rel.attributes == "256"
+        # OpenDatabase was called once
+        mock_engine.OpenDatabase.assert_called_once()
+        # DB was closed in the finally
+        mock_db.Close.assert_called_once()
+
+    # ------------------------------------------------------------------ #
+    # Multi-column composite FK
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_multi_column_fk_merged_into_one_relationship(self, mock_dispatch):
+        """2 columns for same (child, parent) → 1 RelationshipInfo with both columns."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock(
+            [
+                _make_relation_mock(
+                    "FK_OrderDetails_Orders",
+                    "OrderDetails",
+                    "Orders",
+                    [("OrderID", "ID"), ("LineNo", "LineNo")],
+                    attributes=0,
+                )
+            ]
+        )
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert len(result) == 1
+        rel = result[0]
+        assert rel.name == "FK_OrderDetails_Orders"
+        assert rel.table == "OrderDetails"
+        assert rel.foreign_table == "Orders"
+        assert rel.columns == ["OrderID", "LineNo"]
+        assert rel.foreign_columns == ["ID", "LineNo"]
+
+    # ------------------------------------------------------------------ #
+    # Multiple independent FKs
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_multiple_independent_fks_returned_separately(self, mock_dispatch):
+        """2 unrelated FKs → 2 RelationshipInfo entries."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock(
+            [
+                _make_relation_mock(
+                    "FK_Orders_Customers",
+                    "Orders",
+                    "Customers",
+                    [("CustomerID", "ID")],
+                ),
+                _make_relation_mock(
+                    "FK_Orders_Employees",
+                    "Orders",
+                    "Employees",
+                    [("EmployeeID", "ID")],
+                ),
+            ]
+        )
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert len(result) == 2
+        names = {r.name for r in result}
+        assert "FK_Orders_Customers" in names
+        assert "FK_Orders_Employees" in names
+
+    # ------------------------------------------------------------------ #
+    # System relations filtered
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_system_relations_filtered(self, mock_dispatch):
+        """Relations whose name starts with `~` or `MSys` are skipped."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock(
+            [
+                _make_relation_mock(
+                    "FK_Orders_Customers",
+                    "Orders",
+                    "Customers",
+                    [("CustomerID", "ID")],
+                ),
+                _make_relation_mock(
+                    "~TMPCache",
+                    "Orders",
+                    "Whatever",
+                    [("X", "Y")],
+                ),
+                _make_relation_mock(
+                    "MSysRelZZZ",
+                    "Orders",
+                    "Whatever2",
+                    [("A", "B")],
+                ),
+            ]
+        )
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert len(result) == 1
+        assert result[0].name == "FK_Orders_Customers"
+        for r in result:
+            assert not r.name.startswith("~")
+            assert not r.name.startswith("MSys")
+
+    # ------------------------------------------------------------------ #
+    # Empty result
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_empty_relations_returns_empty_list(self, mock_dispatch):
+        """``Relations.Count == 0`` → [] and Close() still called."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock([])
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert result == []
+        # Close still happens for an empty DB
+        mock_db.Close.assert_called_once()
+
+    # ------------------------------------------------------------------ #
+    # Close is called even on exception
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_close_called_even_on_exception(self, mock_dispatch):
+        """If iteration raises, db.Close() runs in the finally block."""
+        mock_engine = MagicMock()
+        mock_db = MagicMock()
+        # db.Relations access itself raises
+        type(mock_db.Relations).Count = property(
+            lambda self_: (_ for _ in ()).throw(RuntimeError("relations boom"))
+        )
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        # No exception escapes; reader returns [] on internal error
+        assert result == []
+        # Critical invariant: Close() was called even though the iteration failed
+        mock_db.Close.assert_called_once()
+
+    # ------------------------------------------------------------------ #
+    # OpenDatabase raises — returns [] and logs WARNING
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_open_database_raises_returns_empty_with_warning(self, mock_dispatch):
+        """OpenDatabase failure → [] and WARNING logged, no exception."""
+        mock_engine = MagicMock()
+        mock_engine.OpenDatabase.side_effect = RuntimeError(
+            "Cannot open database — file in use"
+        )
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert result == []
+        # WARNING was logged
+        self.logger.warning.assert_called()
+
+    # ------------------------------------------------------------------ #
+    # OpenDatabase OK, db.Relations access raises — Close in finally
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_open_ok_relations_access_raises_returns_empty_close_in_finally(
+        self, mock_dispatch
+    ):
+        """db.Relations raises after a successful open → [] and Close() still called."""
+        mock_engine = MagicMock()
+        mock_db = MagicMock()
+        rels = mock_db.Relations
+        type(rels).Count = property(
+            lambda self_: (_ for _ in ()).throw(RuntimeError("Relations access boom"))
+        )
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        result = DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        assert result == []
+        mock_db.Close.assert_called_once()
+
+    # ------------------------------------------------------------------ #
+    # Password is forwarded to the connect string
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_password_forwarded_to_open_database(self, mock_dispatch):
+        """When password is provided, OpenDatabase gets ``;PWD=<pw>`` in connect str."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock([])
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        DaoAdapter.read_relationships_short_lived(
+            self.db_path, "secret", self.logger
+        )
+
+        # 4th positional arg of OpenDatabase(name, exclusive, read_only, connect)
+        connect_str = mock_engine.OpenDatabase.call_args[0][3]
+        assert connect_str == ";PWD=secret"
+
+    # ------------------------------------------------------------------ #
+    # Read-only flag is True (so concurrent ODBC reads are not blocked)
+    # ------------------------------------------------------------------ #
+
+    @patch("win32com.client.Dispatch")
+    def test_opens_with_read_only_true(self, mock_dispatch):
+        """The short-lived handle must be opened ReadOnly=True."""
+        mock_engine = MagicMock()
+        mock_db = _make_db_mock([])
+        mock_engine.OpenDatabase.return_value = mock_db
+        mock_dispatch.return_value = mock_engine
+
+        DaoAdapter.read_relationships_short_lived(
+            self.db_path, self.password, self.logger
+        )
+
+        # 3rd positional arg is read_only
+        assert mock_engine.OpenDatabase.call_args[0][2] is True
+
+    # ------------------------------------------------------------------ #
+    # Static method — callable on the class without an instance
+    # ------------------------------------------------------------------ #
+
+    def test_callable_as_static_method(self):
+        """read_relationships_short_lived is a static method — callable on the class."""
+        # Smoke-test the descriptor: it's reachable without an instance
+        assert callable(DaoAdapter.read_relationships_short_lived)
+        # And the static helper used by the long-lived path too
+        assert callable(DaoAdapter._read_relations_from_db)

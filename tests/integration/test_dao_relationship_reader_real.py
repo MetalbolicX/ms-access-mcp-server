@@ -5,6 +5,12 @@ the DAO reader on Windows, returns the 4 known FKs with the correct
 tables, columns, and non-empty ``attributes``, and proves the DAO open
 does NOT lock the file (a concurrent ODBC read still succeeds).
 
+Slice 7 of dao-first-linked-tables-properties replaces the standalone
+``DaoRelationshipReader`` class with
+``DaoAdapter.read_relationships_short_lived``. This test exercises the
+new path against the live project database and proves the open/close
+behavior (concurrent ODBC read after DAO open) is unchanged.
+
 This is the "real .accdb" counterpart of the SQLite-backed
 ``test_mcp_schema.py::test_get_er_diagram_via_sqlite`` test.
 
@@ -128,12 +134,16 @@ class TestDaoRelationshipReaderReal:
         """
         import pyodbc
 
-        from ms_access_mcp.adapters.dao_relationship_reader import DaoRelationshipReader
+        from ms_access_mcp.adapters.dao import DaoAdapter
         from ms_access_mcp.logging import get_logger
 
-        # 1) DAO reader extracts FKs
-        dao_reader = DaoRelationshipReader(accdb_path, "", get_logger(__name__))
-        dao_rels = dao_reader.get_relationships()
+        # 1) DaoAdapter.read_relationships_short_lived extracts FKs
+        #    (slice 7 of dao-first-linked-tables-properties: the
+        #    standalone DaoRelationshipReader class is gone; the
+        #    same contract lives on DaoAdapter as a static method.)
+        dao_rels = DaoAdapter.read_relationships_short_lived(
+            accdb_path, "", get_logger(__name__)
+        )
         assert len(dao_rels) == 4, f"Expected 4 DAO FKs, got {len(dao_rels)}"
 
         # 2) A separate pyodbc connection reads the same file

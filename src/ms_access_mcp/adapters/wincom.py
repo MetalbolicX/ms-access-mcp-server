@@ -22,6 +22,7 @@ from ..models.migration import (
     UnknownMetadata,
 )
 from .com_dispatcher import DAO_DB_FAIL_ON_ERROR, ComDispatcher
+from .dao import DaoAdapter
 from .db_operations import DbOperations
 from .interfaces import (
     IControlAdapter,
@@ -130,6 +131,20 @@ class WinComAdapter(
         self._ui = UiOperations(self._dispatcher, vba=self._vba)
         self._db_ops = DbOperations(self._dispatcher)
         self._schema = SchemaInspector(self._dispatcher)
+        # Slice 7: Compose a :class:`DaoAdapter` instance sharing the
+        # same dispatcher. The composed adapter's ``_connected`` flag
+        # is **not** driven by ``connect()`` here — instead, the
+        # shared dispatcher's ``is_connected()`` (which reflects
+        # ``_current_db`` being non-``None``) is the source of truth
+        # for "is the DAO handle open?", and that's what the
+        # composed adapter's linked-table methods read. This keeps
+        # ``WinComAdapter.connect()`` as the only place that opens the
+        # handle, while the linked-table logic in
+        # :class:`DaoAdapter` stays the single source of truth.
+        self._dao = DaoAdapter(
+            db_path=db_path or "",
+            dispatcher=self._dispatcher,
+        )
         self._versioning = VersioningIo(
             dispatcher=self._dispatcher,
             save_text=self._ui._save_object_to_text,
@@ -812,127 +827,36 @@ class WinComAdapter(
         return self._schema.get_object_metadata(object_name)
 
     # ========================================================================
-    # LINKED TABLES (DAO TableDefs)
+    # LINKED TABLES (DAO TableDefs) — delegated to composed DaoAdapter
     # ========================================================================
+    #
+    # Slice 7 of the dao-first-linked-tables-properties change: the
+    # five linked-table methods now delegate to the composed
+    # :class:`DaoAdapter` instance (``self._dao``) which shares this
+    # adapter's :class:`ComDispatcher`. ``DaoAdapter`` is the single
+    # source of truth for linked-table logic; ``WinComAdapter`` keeps
+    # these methods on its public surface for backward compatibility
+    # with the existing ``ISchemaAdapter`` / ``AccessAdapter`` callers
+    # and the linked-table MCP tools. The implementations below are
+    # 1:1 delegations so behavior parity is guaranteed by construction.
+    # See ``src/ms_access_mcp/adapters/dao.py`` for the canonical
+    # implementations.
 
     def get_linked_tables(self) -> dict:
-        """Get all linked tables from the database.
-
-        Linked tables are identified by the dbLinkAttachedTable attribute (0x80000000).
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        def _do() -> dict:
-            linked_tables: list[dict] = []
-            try:
-                db = self._dispatcher.current_db
-                for i in range(db.TableDefs.Count):
-                    tdef = db.TableDefs(i)
-                    if tdef.Attributes & 0x80000000:
-                        connect_str = tdef.Connect or ""
-                        if connect_str.startswith("ODBC"):
-                            table_type = "ODBC"
-                        elif connect_str.startswith("Access"):
-                            table_type = "Access"
-                        elif connect_str.startswith("Excel"):
-                            table_type = "Excel"
-                        else:
-                            table_type = "ODBC"
-                        linked_tables.append(
-                            {
-                                "name": tdef.Name,
-                                "source_table": tdef.SourceTableName,
-                                "connect_string": connect_str,
-                                "type": table_type,
-                                "attributes": tdef.Attributes,
-                            }
-                        )
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-            return {"success": True, "linked_tables": linked_tables}
-
-        return self._dispatcher.call(_do)
+        """Get all linked tables — delegates to the composed :class:`DaoAdapter`."""
+        return self._dao.get_linked_tables()
 
     def create_linked_table(self, name: str, source_table: str, connect_string: str) -> dict:
-        """Create a linked table definition.
-
-        Args:
-            name: Name for the linked table in the Access database
-            source_table: Name of the remote table
-            connect_string: ODBC or other connection string
-
-        Returns:
-            dict with success=True or success=False and error
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        def _do() -> dict:
-            try:
-                db = self._dispatcher.current_db
-                tdef = db.CreateTableDef(name)
-                tdef.SourceTableName = source_table
-                tdef.Connect = connect_string
-                tdef.Attributes = 0x80000000  # dbLinkAttachedTable
-                db.TableDefs.Append(tdef)
-                # Strip password immediately after link is established
-                tdef.Connect = self._strip_password(connect_string)
-                return {"success": True}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        return self._dispatcher.call(_do)
+        """Create a linked table — delegates to the composed :class:`DaoAdapter`."""
+        return self._dao.create_linked_table(name, source_table, connect_string)
 
     def refresh_linked_table(self, name: str, connect_string: str | None = None) -> dict:
-        """Refresh the link for a linked table.
-
-        Args:
-            name: Name of the linked table
-            connect_string: Optional connection string with password for re-authentication.
-                           If provided, temporarily set on TableDef before RefreshLink.
-
-        Returns:
-            dict with success=True or success=False and error
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        def _do() -> dict:
-            try:
-                tdef = self._dispatcher.current_db.TableDefs(name)
-                # If connect_string provided, temporarily inject password for refresh
-                if connect_string is not None:
-                    tdef.Connect = connect_string
-                tdef.RefreshLink()
-                # Strip password after refresh to prevent persistence
-                tdef.Connect = self._strip_password(tdef.Connect)
-                return {"success": True}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        return self._dispatcher.call(_do)
+        """Refresh a linked table — delegates to the composed :class:`DaoAdapter`."""
+        return self._dao.refresh_linked_table(name, connect_string)
 
     def unlink_table(self, name: str) -> dict:
-        """Unlink (delete) a linked table definition.
-
-        Args:
-            name: Name of the linked table to unlink
-
-        Returns:
-            dict with success=True or success=False and error
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        def _do() -> dict:
-            try:
-                self._dispatcher.current_db.TableDefs.Delete(name)
-                return {"success": True}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        return self._dispatcher.call(_do)
+        """Unlink (delete) a linked table — delegates to the composed :class:`DaoAdapter`."""
+        return self._dao.unlink_table(name)
 
     def recreate_linked_table(
         self,
@@ -941,58 +865,8 @@ class WinComAdapter(
         connect_string: str,
         attributes: int | None = None,
     ) -> dict:
-        """Recreate a linked table (delete + create atomically).
-
-        Preserves hidden state by restoring attributes after creation.
-        Strips password after link is established.
-
-        Args:
-            name: Name for the linked table in the Access database
-            source_table: Name of the remote table
-            connect_string: ODBC or other connection string (may include PWD=)
-            attributes: DAO attributes to restore after creation (e.g. dbHiddenObject).
-                       If None, defaults to dbLinkAttachedTable only.
-
-        Returns:
-            dict with success=True or success=False and error
-        """
-        if not self.is_connected():
-            return {"success": False, "error": "Not connected"}
-
-        def _do() -> dict:
-            try:
-                db = self._dispatcher.current_db
-                # Capture current attributes if not provided — use local var to avoid
-                # Python closure scoping issue (assignment makes name local to _do)
-                resolved_attrs = attributes
-                if resolved_attrs is None:
-                    try:
-                        old_tdef = db.TableDefs(name)
-                        resolved_attrs = old_tdef.Attributes
-                    except Exception:
-                        resolved_attrs = 0x80000000  # default: dbLinkAttachedTable
-
-                # Delete existing table
-                db.TableDefs.Delete(name)
-
-                # Create new table def
-                tdef = db.CreateTableDef(name)
-                tdef.SourceTableName = source_table
-                tdef.Connect = connect_string
-                tdef.Attributes = 0x80000000  # dbLinkAttachedTable
-                db.TableDefs.Append(tdef)
-
-                # Restore attributes (including hidden flag if present)
-                tdef.Attributes = resolved_attrs
-
-                # Strip password after link is established
-                tdef.Connect = self._strip_password(connect_string)
-
-                return {"success": True}
-            except Exception as e:
-                return {"success": False, "error": str(e)}
-
-        return self._dispatcher.call(_do)
+        """Recreate a linked table — delegates to the composed :class:`DaoAdapter`."""
+        return self._dao.recreate_linked_table(name, source_table, connect_string, attributes)
 
     # ========================================================================
     # COMPACT/REPAIR (DAO DBEngine)
