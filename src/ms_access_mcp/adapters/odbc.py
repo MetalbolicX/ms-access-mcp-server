@@ -1,9 +1,12 @@
 import os
+import sys
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
 import pyodbc
 
+from ..logging import get_logger
 from ..models.database import (
     IndexInfo,
     QueryInfo,
@@ -13,6 +16,8 @@ from ..models.database import (
 from ..models.migration import ColumnSchema, TableSchema, UnknownMetadata
 from .com_only_mixin import ComOnlyAdapterMixin
 from .interfaces import IDataAdapter, IDatabasePropertiesAdapter, ISchemaAdapter
+
+_logger = get_logger(__name__)
 
 # Connection string templates for Access databases
 ACCESS_DRIVER = "{Microsoft Access Driver (*.mdb, *.accdb)}"
@@ -60,6 +65,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePr
             os.environ.get("ACCESS_MCP_ODBC_DRIVER", self.DEFAULT_DRIVER).strip()
             or self.DEFAULT_DRIVER
         )
+        self._get_relationships_impl: Callable[[], list[RelationshipInfo]] | None = None
 
     def connect(self, db_path: str, password: str = "") -> bool:
         """Connect to an Access database via ODBC.
@@ -96,6 +102,11 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePr
             try:
                 self._conn = pyodbc.connect(conn_str, autocommit=True)
                 self._db_path = db_path
+                # Inject the optimal relationship reader for this platform —
+                # DAO on Windows when available, OdbcSchemaReader otherwise.
+                self._get_relationships_impl = self._build_relationship_reader(
+                    db_path, password
+                )
                 return True
             except Exception as e:
                 last_error = e
@@ -109,7 +120,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePr
         self._cleanup()
 
     def _cleanup(self) -> None:
-        """Close the ODBC connection."""
+        """Close the ODBC connection and tear down the schema reader."""
         if self._conn is not None:
             try:
                 self._conn.close()
@@ -117,6 +128,7 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePr
                 pass
             self._conn = None
         self._db_path = None
+        self._get_relationships_impl = None
 
     def is_connected(self) -> bool:
         """Check if connected to a database."""
@@ -396,8 +408,25 @@ class OdbcAdapter(ComOnlyAdapterMixin, IDataAdapter, ISchemaAdapter, IDatabasePr
         return {}
 
     def get_relationships(self) -> list[RelationshipInfo]:
-        """Get relationships — not available via ODBC."""
-        return []
+        """Get foreign-key relationships via the reader selected in connect()."""
+        if not self.is_connected() or self._get_relationships_impl is None:
+            return []
+        return self._get_relationships_impl()
+
+    def _build_relationship_reader(
+        self, db_path: str, password: str
+    ) -> Callable[[], list[RelationshipInfo]]:
+        """DAO reader on Windows when available; OdbcSchemaReader otherwise."""
+        from .odbc_schema_reader import OdbcSchemaReader
+
+        if sys.platform == "win32":
+            try:
+                from .dao_relationship_reader import DaoRelationshipReader
+
+                return DaoRelationshipReader(db_path, password, _logger).get_relationships
+            except Exception as e:
+                _logger.info("DAO reader unavailable (%s); using OdbcSchemaReader", e)
+        return OdbcSchemaReader(self._conn, _logger).get_relationships
 
     def get_table_schema_plan(self) -> tuple[list[TableSchema], UnknownMetadata]:
         """Build a best-effort table schema plan from ODBC metadata.
