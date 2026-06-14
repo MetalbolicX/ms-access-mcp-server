@@ -96,8 +96,23 @@ class ComDispatcher:
         return future.result(timeout=self.DISPATCH_TIMEOUT)
 
     def is_connected(self) -> bool:
-        """Check if the dispatcher has an active Access.Application connection."""
-        return self._access_app is not None and self._current_db is not None
+        """Check if the dispatcher has an active connection.
+
+        Returns True if a DAO ``Database`` handle is held — either
+        opened via ``Access.Application`` (Access/COM mode) or opened
+        directly via ``DAO.DBEngine.120`` (DAO-only mode, used by
+        :class:`DaoAdapter` in slice 2 of
+        ``dao-first-linked-tables-properties``). The DAO-only branch
+        was added so the dispatcher's connection probe reflects both
+        modes without callers having to know which is active.
+        """
+        if self._current_db is None:
+            return False
+        # Either DAO-only (no Access.Application) or Access mode
+        # (both Access.Application and Database present). A non-None
+        # _current_db is the canonical "we have a usable connection"
+        # signal in both modes.
+        return True
 
     # ------------------------------------------------------------------ #
     # Health tracking (slice 1 of dao-first-linked-tables-properties)

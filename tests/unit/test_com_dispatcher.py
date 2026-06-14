@@ -158,3 +158,70 @@ class TestComDispatcherHealthTracking:
         dispatcher.mark_unhealthy()
         dispatcher.shutdown()
         assert dispatcher.is_healthy() is True
+
+
+class TestComDispatcherIsConnectedDaoOnly:
+    """Slice 2 of dao-first-linked-tables-properties: is_connected() in DAO-only mode.
+
+    The dispatcher can hold either an Access.Application + Database
+    pair (Access/COM mode) or just a long-lived DAO ``Database``
+    handle (DAO-only mode, used by ``DaoAdapter``). ``is_connected()``
+    must return ``True`` in both modes when a usable handle is held.
+    """
+
+    def test_is_connected_false_when_nothing_open(self):
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        assert dispatcher.is_connected() is False
+
+    def test_is_connected_true_for_dao_only_mode(self):
+        """A long-lived DAO handle with no Access.Application is still a valid connection."""
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        # No Access.Application — this is the DAO-only branch.
+        dispatcher._access_app = None
+        dispatcher._current_db = MagicMock()  # DAO Database handle
+
+        assert dispatcher.is_connected() is True
+
+    def test_is_connected_true_for_access_mode(self):
+        """Access/COM mode: both Access.Application and Database must be present.
+
+        Backward-compat pin: this was the original behavior before
+        slice 2 of dao-first-linked-tables-properties, and WinCom
+        callers (wincom.py:237) depend on it.
+        """
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher._access_app = MagicMock()
+        dispatcher._current_db = MagicMock()
+
+        assert dispatcher.is_connected() is True
+
+    def test_is_connected_false_for_access_mode_with_missing_db(self):
+        """Access mode requires both — if Database is gone, no connection."""
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher._access_app = MagicMock()
+        dispatcher._current_db = None
+
+        assert dispatcher.is_connected() is False
+
+    def test_is_connected_false_after_dao_disconnect(self):
+        """After close_dao_database clears the handle, is_connected() is False.
+
+        This is the post-disconnect invariant the DaoAdapter relies on.
+        """
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        dispatcher = ComDispatcher()
+        dispatcher._access_app = None
+        dispatcher._current_db = MagicMock()
+        assert dispatcher.is_connected() is True
+
+        dispatcher._current_db = None  # simulates close_dao_database
+        assert dispatcher.is_connected() is False
