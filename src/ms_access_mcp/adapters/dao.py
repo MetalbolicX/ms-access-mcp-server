@@ -1,5 +1,5 @@
 """DaoAdapter lifecycle + DaoSession helper + schema/property read surface
-(slices 1—5 of dao-first-linked-tables-properties).
+(slices 1—6 of dao-first-linked-tables-properties).
 
 * :class:`DaoSession` — reusable DAO open/close context manager,
   extracted from :class:`DaoRelationshipReader`. Used for short-lived,
@@ -13,6 +13,9 @@
   :class:`DbOperations` over its dispatcher and delegates each
   ``ISchemaAdapter`` / ``IDatabasePropertiesAdapter`` method to those
   helpers. Slice 5 adds the row CRUD and table/index DDL surface.
+  Slice 6 adds the five linked-table methods operating on
+  ``db.TableDefs`` with password-stripping and hidden-attribute
+  preservation.
 """
 
 from __future__ import annotations
@@ -1092,3 +1095,273 @@ class DaoAdapter:
         field = tdef.Fields(old_name)
         field.Name = new_name
         return {"success": True}
+
+    # ------------------------------------------------------------------ #
+    # Linked tables (slice 6 of dao-first-linked-tables-properties)
+    # ------------------------------------------------------------------ #
+    #
+    # Spec §1 "Linked tables via DAO TableDefs": the five linked-table
+    # methods operate on ``db.TableDefs``. ``dbLinkAttachedTable``
+    # (0x80000000) marks a TableDef as a linked/attached table. The
+    # connect string prefix classifies the link source as
+    # ``ODBC``/``Access``/``Excel``. Passwords must be stripped from
+    # the persisted connect string after the link is established so
+    # credentials never land on disk.
+    #
+    # Spec scenarios covered:
+    #   * §1 "Get returns attached only" — ``get_linked_tables``
+    #     filters to Attributes & 0x80000000 and emits
+    #     ``{name, source_table, connect_string, type, attributes}``.
+    #   * §1 "Create persists without PWD" — ``create_linked_table``
+    #     sets Attributes=0x80000000 and runs ``ConnectPolicy.sanitize``
+    #     on the stored Connect.
+    #   * §1 "Refresh re-auths" — ``refresh_linked_table`` accepts an
+    #     optional new connect string, calls ``RefreshLink``, then
+    #     sanitizes the stored Connect.
+    #   * §1 "Recreate preserves hidden" — ``recreate_linked_table``
+    #     captures the original Attributes (which may include
+    #     ``dbHiddenObject``) and restores them on the rebuilt tdef.
+    #   * §1 "Unlink deletes" — ``unlink_table`` calls
+    #     ``TableDefs.Delete(name)``.
+
+    @staticmethod
+    def _strip_password(connect_string: str) -> str:
+        """Strip PWD=... from a DAO connect string.
+
+        Delegates to :class:`ConnectPolicy` — the canonical
+        single-source password-stripping helper that ``WinComAdapter``
+        also uses. Keeping the policy in one place means a future
+        change (e.g. escaping, additional sensitive keys) is applied
+        uniformly across both backends.
+        """
+        from ..orchestrators.connect_policy import ConnectPolicy
+
+        return ConnectPolicy().sanitize(connect_string)
+
+    def get_linked_tables(self) -> dict:
+        """Return the linked (attached) tables in the current database.
+
+        Mirrors the WinComAdapter contract: filters to TableDefs with
+        ``Attributes & 0x80000000`` (dbLinkAttachedTable), classifies
+        the connect-string prefix as ``ODBC``/``Access``/``Excel``
+        (defaulting to ``ODBC`` for unknown prefixes), and emits a
+        list of ``{name, source_table, connect_string, type,
+        attributes}`` dicts.
+
+        Returns:
+            dict with ``success`` and ``linked_tables`` (list of
+            dicts), or ``success=False`` + ``error`` when not
+            connected.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            linked_tables: list[dict] = []
+            try:
+                db = self._dispatcher.current_db
+                for i in range(db.TableDefs.Count):
+                    tdef = db.TableDefs(i)
+                    if tdef.Attributes & 0x80000000:
+                        connect_str = tdef.Connect or ""
+                        if connect_str.startswith("ODBC"):
+                            table_type = "ODBC"
+                        elif connect_str.startswith("Access"):
+                            table_type = "Access"
+                        elif connect_str.startswith("Excel"):
+                            table_type = "Excel"
+                        else:
+                            # Unknown prefix — WinComAdapter also falls
+                            # back to ODBC; preserves the existing
+                            # caller's contract.
+                            table_type = "ODBC"
+                        linked_tables.append(
+                            {
+                                "name": tdef.Name,
+                                "source_table": tdef.SourceTableName,
+                                "connect_string": connect_str,
+                                "type": table_type,
+                                "attributes": tdef.Attributes,
+                            }
+                        )
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+            return {"success": True, "linked_tables": linked_tables}
+
+        return self._dispatcher.call(_do)
+
+    def create_linked_table(self, name: str, source_table: str, connect_string: str) -> dict:
+        """Create a new linked (attached) table and strip the password.
+
+        Mirrors WinComAdapter: the TableDef is created with
+        ``Attributes=0x80000000`` (dbLinkAttachedTable) and
+        ``Connect`` is sanitized via :meth:`_strip_password` after
+        ``TableDefs.Append`` so credentials never land in the
+        database file.
+
+        Args:
+            name: Local name for the linked table.
+            source_table: Name of the remote table.
+            connect_string: ODBC/Access/Excel connect string (may
+                include ``PWD=...``).
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                tdef = db.CreateTableDef(name)
+                tdef.SourceTableName = source_table
+                tdef.Connect = connect_string
+                tdef.Attributes = 0x80000000  # dbLinkAttachedTable
+                db.TableDefs.Append(tdef)
+                # Strip password immediately after link is established
+                # so it does not persist in the .accdb file.
+                tdef.Connect = self._strip_password(connect_string)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def refresh_linked_table(self, name: str, connect_string: str | None = None) -> dict:
+        """Re-authenticate a linked table and strip the new password.
+
+        When ``connect_string`` is supplied, it is written to the
+        TableDef before ``RefreshLink`` so the link can re-authenticate
+        with fresh credentials. After the refresh, the stored
+        ``Connect`` is sanitized via :meth:`_strip_password` to
+        prevent the password from being persisted.
+
+        Args:
+            name: Name of the linked table.
+            connect_string: Optional new connect string (may include
+                ``PWD=...``). When ``None``, the existing connect
+                string is left in place and ``RefreshLink`` is
+                called.
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                tdef = self._dispatcher.current_db.TableDefs(name)
+                # If a new connect_string was provided, temporarily
+                # inject it for the refresh — DAO needs the credentials
+                # in memory to validate the link.
+                if connect_string is not None:
+                    tdef.Connect = connect_string
+                tdef.RefreshLink()
+                # After RefreshLink, tdef.Connect holds the now-resolved
+                # string (the one we just injected, or the existing
+                # one if no override was passed). Sanitize to keep the
+                # password out of the persisted file.
+                tdef.Connect = self._strip_password(tdef.Connect)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def recreate_linked_table(
+        self,
+        name: str,
+        source_table: str,
+        connect_string: str,
+        attributes: int | None = None,
+    ) -> dict:
+        """Delete and recreate a linked table, preserving the original Attributes.
+
+        Mirrors WinComAdapter: the original TableDef's Attributes are
+        captured (so a ``dbHiddenObject`` link stays hidden across the
+        rebuild) and restored after the new tdef is appended. The
+        ``connect_string`` is sanitized via :meth:`_strip_password`
+        after the rebuild.
+
+        Args:
+            name: Local name for the linked table.
+            source_table: Name of the remote table.
+            connect_string: Connect string for the new tdef (may
+                include ``PWD=...``).
+            attributes: Optional explicit Attributes to apply to the
+                new tdef. When ``None`` (default), the original
+                TableDef's Attributes are captured and restored. If
+                the original cannot be read, falls back to
+                ``dbLinkAttachedTable`` (0x80000000).
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                db = self._dispatcher.current_db
+                # Capture the original Attributes (which may include
+                # dbHiddenObject) so the rebuilt tdef keeps them. If
+                # the caller supplied an explicit value, that wins.
+                resolved_attrs = attributes
+                if resolved_attrs is None:
+                    try:
+                        old_tdef = db.TableDefs(name)
+                        resolved_attrs = old_tdef.Attributes
+                    except Exception:
+                        # The old tdef cannot be read (e.g. never
+                        # existed) — fall back to a plain linked
+                        # tdef.
+                        resolved_attrs = 0x80000000  # dbLinkAttachedTable
+
+                # Drop and recreate.
+                db.TableDefs.Delete(name)
+                tdef = db.CreateTableDef(name)
+                tdef.SourceTableName = source_table
+                tdef.Connect = connect_string
+                tdef.Attributes = 0x80000000  # dbLinkAttachedTable
+                db.TableDefs.Append(tdef)
+
+                # Restore the captured Attributes (e.g. the
+                # dbHiddenObject bit if the original tdef had it).
+                tdef.Attributes = resolved_attrs
+
+                # Strip the password from the persisted Connect so
+                # credentials never land on disk.
+                tdef.Connect = self._strip_password(connect_string)
+
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)
+
+    def unlink_table(self, name: str) -> dict:
+        """Delete a linked (attached) TableDef from the current database.
+
+        Mirrors WinComAdapter: calls ``TableDefs.Delete(name)``. Use
+        this to remove a link to a remote table; the remote table
+        itself is unaffected.
+
+        Args:
+            name: Name of the linked table to unlink.
+
+        Returns:
+            dict with ``success`` or ``success=False`` + ``error``.
+        """
+        if not self._dispatcher.is_connected():
+            return {"success": False, "error": "Not connected"}
+
+        def _do() -> dict:
+            try:
+                self._dispatcher.current_db.TableDefs.Delete(name)
+                return {"success": True}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        return self._dispatcher.call(_do)

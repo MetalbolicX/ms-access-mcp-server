@@ -2,8 +2,10 @@
 
 Slices 1—4 of dao-first-linked-tables-properties: pins the
 construction contract (slice 1), the connect / disconnect /
-is_connected lifecycle (slice 2), and the schema/property read
-surface (slice 4). CRUD and linked-table surfaces land in slices 5+.
+is_connected lifecycle (slice 2), the schema/property read
+surface (slice 4), the row CRUD + table/index DDL surface (slice 5),
+and the linked-table surface (slice 6). DAO backend wiring and
+selector cutover land in later slices.
 """
 
 from __future__ import annotations
@@ -417,6 +419,11 @@ class _MockDaoTableDefs:
     def __init__(self, table_defs: list[Any]) -> None:
         self._tdefs = list(table_defs)
         self.Count = len(self._tdefs)
+        # Append/Delete are surfaced as instance attributes so tests
+        # can attach ``side_effect`` to them in the same way as a
+        # plain MagicMock.
+        self.Append = MagicMock()
+        self.Delete = MagicMock()
 
     def __call__(self, key: int | str) -> Any:
         if isinstance(key, str):
@@ -1971,6 +1978,565 @@ class TestDaoAdapterAlterTable:
         adapter, _ = _make_disconnected_adapter()
 
         result = adapter.alter_table("T", [{"action": "add_column", "params": {"name": "X"}}])
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# ===================================================================== #
+# Slice 6 — DAO linked-table surface
+# ===================================================================== #
+#
+# DaoAdapter owns the five linked-table methods that WinComAdapter used
+# to expose. The DAO port preserves three behaviours from
+# WinComAdapter:
+#   1) get_linked_tables filters to Attributes & 0x80000000 (the
+#      dbLinkAttachedTable flag) and classifies the connect string as
+#      ODBC / Access / Excel from its prefix.
+#   2) create / refresh / recreate strip PWD= from the persisted
+#      connect string after the link is established.
+#   3) recreate_linked_table captures the original Attributes (which
+#      may include dbHiddenObject = 1) and restores them on the new
+#      tdef so hidden linked tables stay hidden across a rebuild.
+#
+# The mock TableDefs collection needs both index iteration (for
+# get_linked_tables) and name-keyed lookup (for refresh/recreate/
+# unlink). The existing _MockDaoTableDefs already provides both.
+
+
+# DAO attribute flag constants (mirroring the access constants used in
+# WinComAdapter). Exposed at module level so tests can reference them
+# without importing pywin32.
+DB_ATTACHED_TABLE = 0x80000000  # dbLinkAttachedTable — marks linked tdefs
+DB_HIDDEN_OBJECT = 0x1  # dbHiddenObject — the spec's hidden-preservation flag
+
+
+def _make_linked_tdef(
+    name: str,
+    source_table: str,
+    connect_string: str,
+    attributes: int = DB_ATTACHED_TABLE,
+) -> MagicMock:
+    """Build a mock DAO TableDef representing a linked (attached) table.
+
+    Defaults to ``dbLinkAttachedTable`` but accepts a custom
+    ``attributes`` so tests can simulate a hidden linked table
+    (``DB_ATTACHED_TABLE | DB_HIDDEN_OBJECT``).
+    """
+    tdef = MagicMock()
+    tdef.Name = name
+    tdef.SourceTableName = source_table
+    tdef.Connect = connect_string
+    tdef.Attributes = attributes
+    return tdef
+
+
+def _make_local_tdef(name: str) -> MagicMock:
+    """Build a mock DAO TableDef representing a non-linked (local) table."""
+    tdef = MagicMock()
+    tdef.Name = name
+    tdef.SourceTableName = name
+    tdef.Connect = ""  # local tables have no connect string
+    tdef.Attributes = 0  # no dbLinkAttachedTable flag
+    return tdef
+
+
+class _FakeTdef:
+    """Plain Python stand-in for a DAO TableDef.
+
+    Unlike :class:`MagicMock`, every attribute is a real attribute —
+    so tests that need to read or assign ``Connect`` or ``Attributes``
+    can do so without the MagicMock ``__getattr__`` indirection. Used
+    by linked-table tests that need to capture the post-Append
+    ``Connect`` value (which the adapter writes via
+    ``tdef.Connect = self._strip_password(...)``).
+    """
+
+    def __init__(
+        self,
+        name: str = "",
+        source_table: str = "",
+        connect_string: str = "",
+        attributes: int = 0,
+    ) -> None:
+        self.Name = name
+        self.SourceTableName = source_table
+        self.Connect = connect_string
+        self.Attributes = attributes
+
+    def RefreshLink(self) -> None:
+        """No-op by default; tests can monkey-patch or set side_effects."""
+
+
+# --------------------------------------------------------------------- #
+# get_linked_tables
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterGetLinkedTables:
+    """DaoAdapter.get_linked_tables() returns the linked (attached) tables only."""
+
+    def test_get_linked_tables_returns_attached_only(self):
+        """Spec scenario: 2 linked + 3 local tables → 2 linked entries."""
+        linked_odbc = _make_linked_tdef(
+            "Orders", "dbo.Orders", "ODBC;DSN=MyDSN;PWD=secret", DB_ATTACHED_TABLE
+        )
+        linked_access = _make_linked_tdef(
+            "Customers", "Customers", "Access;DATABASE=C:\\other.accdb", DB_ATTACHED_TABLE
+        )
+        local_a = _make_local_tdef("Products")
+        local_b = _make_local_tdef("Categories")
+        local_c = _make_local_tdef("Suppliers")
+
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([linked_odbc, local_a, linked_access, local_b, local_c])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.get_linked_tables()
+
+        assert result["success"] is True
+        assert len(result["linked_tables"]) == 2
+        names = {t["name"] for t in result["linked_tables"]}
+        assert names == {"Orders", "Customers"}
+
+    def test_get_linked_tables_classifies_type_from_connect_prefix(self):
+        """Type field is "ODBC" / "Access" / "Excel" based on the Connect prefix."""
+        linked_odbc = _make_linked_tdef("A", "srcA", "ODBC;DSN=X")
+        linked_access = _make_linked_tdef("B", "srcB", "Access;DATABASE=Y")
+        linked_excel = _make_linked_tdef("C", "srcC", "Excel 12.0;HDR=YES")
+        local = _make_local_tdef("D")
+
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([linked_odbc, linked_access, linked_excel, local])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.get_linked_tables()
+
+        type_by_name = {t["name"]: t["type"] for t in result["linked_tables"]}
+        assert type_by_name == {"A": "ODBC", "B": "Access", "C": "Excel"}
+
+    def test_get_linked_tables_includes_name_source_and_attributes(self):
+        """Each entry carries name, source_table, connect_string, type, attributes."""
+        linked = _make_linked_tdef(
+            "Orders",
+            "dbo.Orders",
+            "ODBC;DSN=MyDSN;PWD=secret",
+            DB_ATTACHED_TABLE,
+        )
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([linked])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.get_linked_tables()
+
+        assert len(result["linked_tables"]) == 1
+        entry = result["linked_tables"][0]
+        assert entry["name"] == "Orders"
+        assert entry["source_table"] == "dbo.Orders"
+        assert entry["connect_string"] == "ODBC;DSN=MyDSN;PWD=secret"
+        assert entry["type"] == "ODBC"
+        assert entry["attributes"] == DB_ATTACHED_TABLE
+
+    def test_get_linked_tables_empty_when_no_links(self):
+        """A database with only local tables returns an empty list."""
+        local_a = _make_local_tdef("A")
+        local_b = _make_local_tdef("B")
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([local_a, local_b])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.get_linked_tables()
+
+        assert result == {"success": True, "linked_tables": []}
+
+    def test_get_linked_tables_default_type_is_odbc_for_unknown_prefix(self):
+        """Unknown Connect prefixes fall back to 'ODBC' (matches WinComAdapter)."""
+        linked_unknown = _make_linked_tdef("Z", "srcZ", "WeirdProvider;FOO=bar")
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([linked_unknown])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.get_linked_tables()
+
+        assert result["linked_tables"][0]["type"] == "ODBC"
+
+    def test_get_linked_tables_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.get_linked_tables()
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# create_linked_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterCreateLinkedTable:
+    """DaoAdapter.create_linked_table() creates an attached tdef and strips PWD."""
+
+    def test_create_linked_table_appends_attached_tdef(self):
+        """A new linked tdef is created with Attributes=dbLinkAttachedTable."""
+        db = MagicMock()
+        created = _FakeTdef(name="L")
+        # Start as un-flagged; the adapter must set dbLinkAttachedTable.
+        created.Attributes = 0
+        db.CreateTableDef.return_value = created
+        db.TableDefs = _MockDaoTableDefs([])  # no existing tables
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_linked_table("L", "srcL", "ODBC;DSN=X;PWD=s")
+
+        assert result["success"] is True
+        # CreateTableDef called with the local name
+        db.CreateTableDef.assert_called_once_with("L")
+        # SourceTableName set on the tdef
+        assert created.SourceTableName == "srcL"
+        # Append was called once
+        db.TableDefs.Append.assert_called_once_with(created)
+        # Attributes set to dbLinkAttachedTable during the call
+        assert created.Attributes == DB_ATTACHED_TABLE
+        # After the call, the Connect string has been stripped of PWD=
+        assert "PWD" not in created.Connect
+        assert "DSN=X" in created.Connect
+
+    def test_create_linked_table_persists_without_pwd(self):
+        """Spec scenario: connect_string with PWD= → stored Connect has no PWD=."""
+        db = MagicMock()
+        created = _FakeTdef(name="L")
+        db.CreateTableDef.return_value = created
+        db.TableDefs = _MockDaoTableDefs([])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        adapter.create_linked_table("L", "RemoteR", "ODBC;DSN=X;PWD=secret")
+
+        # The final connect_string value written must not contain PWD=
+        final = created.Connect
+        assert "PWD" not in final
+        assert "secret" not in final
+        # DSN survives the strip
+        assert "DSN=X" in final
+
+    def test_create_linked_table_keeps_pwd_less_string_intact(self):
+        """A connect string without PWD= is preserved verbatim."""
+        db = MagicMock()
+        created = _FakeTdef(name="L")
+        db.CreateTableDef.return_value = created
+        db.TableDefs = _MockDaoTableDefs([])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_linked_table("L", "srcL", "ODBC;DSN=X")
+
+        assert result["success"] is True
+        # No PWD= → sanitized output equals the input verbatim
+        assert created.Connect == "ODBC;DSN=X"
+
+    def test_create_linked_table_dao_error_returns_error(self):
+        """CreateTableDef failure → success=False with the DAO error message."""
+        db = MagicMock()
+        db.CreateTableDef.side_effect = RuntimeError("name in use")
+        db.TableDefs = _MockDaoTableDefs([])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.create_linked_table("L", "src", "ODBC;DSN=X")
+
+        assert result["success"] is False
+        assert "name in use" in result["error"]
+
+    def test_create_linked_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.create_linked_table("L", "src", "ODBC;DSN=X")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# refresh_linked_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterRefreshLinkedTable:
+    """DaoAdapter.refresh_linked_table() re-auths and strips the new password."""
+
+    def test_refresh_linked_table_re_auths_with_new_connect_string(self):
+        """Spec scenario: stale creds → RefreshLink invoked with the new connect string."""
+        tdef = _FakeTdef(name="L", connect_string="ODBC;DSN=X;PWD=old")
+        refresh_calls = {"n": 0}
+
+        def _refresh() -> None:
+            refresh_calls["n"] += 1
+
+        tdef.RefreshLink = _refresh
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([tdef])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.refresh_linked_table("L", "ODBC;DSN=X;PWD=new")
+
+        assert result["success"] is True
+        # RefreshLink was called
+        assert refresh_calls["n"] == 1
+        # The post-refresh Connect was stripped of PWD=
+        assert "PWD" not in tdef.Connect
+        assert "new" not in tdef.Connect
+
+    def test_refresh_linked_table_without_connect_string_keeps_existing(self):
+        """When no connect_string is passed, RefreshLink is called and the
+        existing (already-stored, presumably sanitized) connect string
+        is preserved — no PWD to strip because it was never persisted.
+        """
+        tdef = _FakeTdef(name="L", connect_string="ODBC;DSN=X")
+        refresh_calls = {"n": 0}
+
+        def _refresh() -> None:
+            refresh_calls["n"] += 1
+
+        tdef.RefreshLink = _refresh
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([tdef])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.refresh_linked_table("L")
+
+        assert result["success"] is True
+        assert refresh_calls["n"] == 1
+        # Connect string was sanitized (unchanged because no PWD=)
+        assert tdef.Connect == "ODBC;DSN=X"
+
+    def test_refresh_linked_table_dao_error_returns_error(self):
+        """RefreshLink failure → success=False with the DAO error message."""
+        tdef = _FakeTdef(name="L", connect_string="ODBC;DSN=X")
+
+        def _refresh_boom() -> None:
+            raise RuntimeError("link not found")
+
+        tdef.RefreshLink = _refresh_boom
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([tdef])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.refresh_linked_table("L")
+
+        assert result["success"] is False
+        assert "link not found" in result["error"]
+
+    def test_refresh_linked_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.refresh_linked_table("L", "ODBC;DSN=X")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+# --------------------------------------------------------------------- #
+# recreate_linked_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterRecreateLinkedTable:
+    """DaoAdapter.recreate_linked_table() rebuilds a tdef and preserves hidden."""
+
+    def test_recreate_linked_table_preserves_hidden_attributes(self):
+        """Spec scenario: hidden linked 'L' → recreated 'L' has the same Attributes.
+
+        dbHiddenObject is 0x1. The dbLinkAttachedTable flag (0x80000000)
+        was already on the original tdef; the recreate path must keep
+        BOTH bits on the rebuilt tdef so a hidden linked table stays
+        hidden across the rebuild.
+        """
+        original_attrs = DB_ATTACHED_TABLE | DB_HIDDEN_OBJECT
+        old_tdef = _FakeTdef(name="L", attributes=original_attrs)
+        new_tdef = _FakeTdef(name="L")
+
+        db = _make_recreate_db(
+            existing={"L": old_tdef},
+            new_tdef=new_tdef,
+        )
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.recreate_linked_table("L", "srcL", "ODBC;DSN=X;PWD=secret")
+
+        assert result["success"] is True
+        # The recreated tdef's Attributes retains the original bits.
+        assert new_tdef.Attributes == original_attrs
+        # The Connect was stripped after Append.
+        assert "PWD" not in new_tdef.Connect
+        assert "secret" not in new_tdef.Connect
+
+    def test_recreate_linked_table_uses_provided_attributes(self):
+        """When attributes is supplied, it overrides the captured ones."""
+        old_tdef = _FakeTdef(name="L", attributes=DB_ATTACHED_TABLE)  # not hidden
+        new_tdef = _FakeTdef(name="L")
+
+        db = _make_recreate_db(
+            existing={"L": old_tdef},
+            new_tdef=new_tdef,
+        )
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        # Caller passes an explicit (non-hidden) attribute set.
+        result = adapter.recreate_linked_table(
+            "L", "srcL", "ODBC;DSN=X", attributes=DB_ATTACHED_TABLE
+        )
+
+        assert result["success"] is True
+        # Provider's value wins over the captured one.
+        assert new_tdef.Attributes == DB_ATTACHED_TABLE
+
+    def test_recreate_linked_table_defaults_attrs_when_old_missing(self):
+        """If the old tdef cannot be read (already gone), use dbLinkAttachedTable."""
+        new_tdef = _FakeTdef(name="L")
+
+        db = _make_recreate_db(
+            existing={},  # nothing pre-existing — name lookup will raise
+            new_tdef=new_tdef,
+        )
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.recreate_linked_table("L", "srcL", "ODBC;DSN=X")
+
+        assert result["success"] is True
+        assert new_tdef.Attributes == DB_ATTACHED_TABLE
+
+    def test_recreate_linked_table_dao_error_returns_error(self):
+        """A failure during delete or create → success=False with the error."""
+        old_tdef = _FakeTdef(name="L", attributes=DB_ATTACHED_TABLE)
+        new_tdef = _FakeTdef(name="L")
+
+        db = _make_recreate_db(
+            existing={"L": old_tdef},
+            new_tdef=new_tdef,
+            delete_error="cannot drop in use",
+        )
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.recreate_linked_table("L", "src", "ODBC;DSN=X")
+
+        assert result["success"] is False
+        assert "cannot drop in use" in result["error"]
+
+    def test_recreate_linked_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.recreate_linked_table("L", "src", "ODBC;DSN=X")
+
+        assert result["success"] is False
+        assert "Not connected" in result["error"]
+
+
+def _make_recreate_db(
+    existing: dict[str, _FakeTdef],
+    new_tdef: _FakeTdef,
+    delete_error: str | None = None,
+) -> MagicMock:
+    """Build a mock DAO Database for the recreate path.
+
+    The recreate path needs:
+      * ``db.CreateTableDef(name)`` → returns ``new_tdef``
+      * ``db.TableDefs(name)`` → looks up by name in ``existing``
+      * ``db.TableDefs.Delete(name)`` → removes from ``existing`` (or
+        raises ``delete_error`` if provided)
+      * ``db.TableDefs.Append(tdef)`` → adds to ``existing``
+
+    Returns a :class:`MagicMock` with the four slots wired up. The
+    helper exists so the four recreate tests share a single, focused
+    mock recipe — they only differ in their input data.
+    """
+
+    def _create_tdef(name: str) -> _FakeTdef:
+        new_tdef.Name = name
+        return new_tdef
+
+    def _delete(name: str) -> None:
+        if delete_error is not None:
+            raise RuntimeError(delete_error)
+        existing.pop(name, None)
+
+    def _append(tdef: _FakeTdef) -> None:
+        existing[tdef.Name] = tdef
+
+    db = MagicMock()
+    db.CreateTableDef.side_effect = _create_tdef
+    # db.TableDefs is a regular MagicMock so the call ``db.TableDefs(name)``
+    # returns whatever ``side_effect`` produces — that lets us model
+    # both the in-collection name lookup and the post-Delete KeyError
+    # with a single, transparent helper.
+    table_defs_mock = MagicMock()
+
+    def _name_lookup(name: str) -> _FakeTdef:
+        if name in existing:
+            return existing[name]
+        raise KeyError(name)
+
+    table_defs_mock.side_effect = _name_lookup
+    table_defs_mock.Delete.side_effect = _delete
+    table_defs_mock.Append.side_effect = _append
+    db.TableDefs = table_defs_mock
+    return db
+
+
+# --------------------------------------------------------------------- #
+# unlink_table
+# --------------------------------------------------------------------- #
+
+
+class TestDaoAdapterUnlinkTable:
+    """DaoAdapter.unlink_table() deletes the linked tdef from TableDefs."""
+
+    def test_unlink_table_deletes_tabledef(self):
+        """Spec scenario: linked 'L' → success=True and Delete is called."""
+        tdef = _FakeTdef(name="L")
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([tdef])
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.unlink_table("L")
+
+        assert result == {"success": True}
+        db.TableDefs.Delete.assert_called_once_with("L")
+
+    def test_unlink_table_missing_returns_error(self):
+        """Trying to unlink a name that doesn't exist → success=False."""
+        db = MagicMock()
+        db.TableDefs = _MockDaoTableDefs([])  # empty
+        # The empty _MockDaoTableDefs' Delete mock is permissive by
+        # default; force it to raise so the adapter's exception path
+        # is exercised the way DAO would on a real missing name.
+        db.TableDefs.Delete.side_effect = KeyError("Table 'Ghost' not found")
+        dispatcher = _make_dispatcher_with_db(db)
+        adapter = DaoAdapter(db_path=r"C:\fake\db.accdb", dispatcher=dispatcher)
+
+        result = adapter.unlink_table("Ghost")
+
+        assert result["success"] is False
+        assert result["error"]  # non-empty error string
+
+    def test_unlink_table_not_connected_returns_error(self):
+        adapter, _ = _make_disconnected_adapter()
+
+        result = adapter.unlink_table("L")
 
         assert result["success"] is False
         assert "Not connected" in result["error"]
