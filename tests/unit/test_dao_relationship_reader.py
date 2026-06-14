@@ -20,8 +20,6 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ms_access_mcp.adapters.dao_relationship_reader import DaoRelationshipReader
 
 

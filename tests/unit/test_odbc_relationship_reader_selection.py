@@ -22,8 +22,6 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ms_access_mcp.adapters.odbc import OdbcAdapter
 from ms_access_mcp.models.database import RelationshipInfo
 
