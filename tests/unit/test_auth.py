@@ -391,3 +391,46 @@ class TestSessionMiddleware:
                 result = middleware._validate_session_or_bearer(mock_context)
                 # Should return True via Bearer validation, not cookie
                 assert result is True
+
+
+# =============================================================================
+# DESTRUCTIVE_TOOLS registry — PR 2 (create_access_database)
+# =============================================================================
+
+
+class TestDestructiveToolsRegistry:
+    """The destructive-tools registry gates read-only mode.
+    ``create_access_database`` writes a new file to disk, so it must
+    be present so a server in ``ACCESS_MCP_READONLY=true`` mode blocks it.
+    """
+
+    def test_create_access_database_is_destructive(self):
+        """``create_access_database`` must be in DESTRUCTIVE_TOOLS."""
+        from ms_access_mcp.auth import DESTRUCTIVE_TOOLS
+
+        assert "create_access_database" in DESTRUCTIVE_TOOLS
+
+    def test_destructive_tools_is_frozenset(self):
+        """The registry is a frozenset — tests + middleware both rely on this."""
+        from ms_access_mcp.auth import DESTRUCTIVE_TOOLS
+
+        assert isinstance(DESTRUCTIVE_TOOLS, frozenset)
+
+    def test_readonly_middleware_blocks_create_access_database(self):
+        """ReadOnlyMiddleware with readonly=True must block create_access_database."""
+        import asyncio
+
+        from ms_access_mcp.auth import ReadOnlyMiddleware
+        from fastmcp.server.middleware import MiddlewareContext
+        from unittest.mock import AsyncMock
+
+        middleware = ReadOnlyMiddleware(readonly=True)
+        mock_context = MagicMock(spec=MiddlewareContext)
+        mock_context.message = MagicMock()
+        mock_context.message.name = "create_access_database"
+        mock_context.message.arguments = {}
+
+        call_next = AsyncMock()
+        with pytest.raises(Exception):
+            asyncio.run(middleware.on_call_tool(mock_context, call_next))
+        call_next.assert_not_called()

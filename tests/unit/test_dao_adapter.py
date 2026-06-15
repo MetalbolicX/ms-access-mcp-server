@@ -2963,3 +2963,86 @@ class TestDaoAdapterReadRelationshipsShortLived:
         assert callable(DaoAdapter.read_relationships_short_lived)
         # And the static helper used by the long-lived path too
         assert callable(DaoAdapter._read_relations_from_db)
+
+
+# ===================================================================== #
+# create-access-database-from-scratch — PR 1 (bootstrap core)
+# ===================================================================== #
+#
+# DaoAdapter.create_database() is the thin adapter-level wrapper around
+# ComDispatcher.create_dao_database(). It is the DAO-only entry point for
+# blank .accdb creation (REQ-1) — the MCP tool (PR 2) calls this after
+# PathGuard validation.
+
+
+class TestDaoAdapterCreateDatabase:
+    """DaoAdapter.create_database() drives a blank .accdb creation via the
+    shared ComDispatcher. Returns ``True`` on success and raises
+    :class:`DaoOperationError` on failure so the service layer can
+    translate to a typed :class:`DatabaseBootstrapResult`.
+    """
+
+    def test_create_database_returns_true_on_success(self):
+        adapter, dispatcher = _make_adapter_with_mock_dispatcher()
+
+        result = adapter.create_database(r"C:\new\new.accdb")
+
+        assert result is True
+        # Dispatcher must be started so the STA thread can run the closure.
+        dispatcher.start.assert_called_once()
+        # The dispatcher method is called with the target path only —
+        # the locale/version defaults are encapsulated inside the
+        # dispatcher (REQ-1: dbLangGeneral + dbVersion120).
+        dispatcher.create_dao_database.assert_called_once_with(r"C:\new\new.accdb")
+        # A clean success must NOT mark the dispatcher unhealthy.
+        dispatcher.mark_unhealthy.assert_not_called()
+
+    def test_create_database_wraps_failure_in_dao_operation_error(self):
+        """Any RuntimeError from the dispatcher becomes ``DaoOperationError``.
+
+        The service layer relies on this typed exception to translate
+        the failure into ``DatabaseBootstrapResult(success=False, ...)``.
+        """
+        adapter, dispatcher = _make_adapter_with_mock_dispatcher()
+        cause = RuntimeError("file in use")
+        dispatcher.create_dao_database.side_effect = cause
+
+        with pytest.raises(DaoOperationError) as exc_info:
+            adapter.create_database(r"C:\new\new.accdb")
+
+        assert "DAO create_database failed" in exc_info.value.message
+        assert "file in use" in exc_info.value.message
+        assert exc_info.value.cause is cause
+
+    def test_create_database_failure_marks_dispatcher_unhealthy(self):
+        """Failure path marks the dispatcher unhealthy, consistent with
+        :meth:`DaoAdapter.connect` (slice 2 of the prior change).
+        """
+        adapter, dispatcher = _make_adapter_with_mock_dispatcher()
+        dispatcher.create_dao_database.side_effect = OSError("boom")
+
+        with pytest.raises(DaoOperationError):
+            adapter.create_database(r"C:\new\new.accdb")
+
+        dispatcher.mark_unhealthy.assert_called_once()
+
+    def test_create_database_does_not_require_prior_connect(self):
+        """``create_database`` must work on a fresh, never-connected adapter.
+
+        Blank DB creation is the entry point — callers may not have
+        opened a connection yet. The adapter must drive the dispatcher
+        through ``start()`` itself rather than requiring a prior
+        ``connect()`` call.
+        """
+        adapter, dispatcher = _make_adapter_with_mock_dispatcher()
+        # is_connected() is False — fresh adapter.
+        assert adapter.is_connected() is False
+
+        adapter.create_database(r"C:\new\new.accdb")
+
+        # start() was called so the STA thread can run the create closure.
+        dispatcher.start.assert_called_once()
+        dispatcher.create_dao_database.assert_called_once_with(r"C:\new\new.accdb")
+        # Adapter is still not "connected" to a database — create is
+        # a one-shot, not a long-lived handle.
+        assert adapter.is_connected() is False

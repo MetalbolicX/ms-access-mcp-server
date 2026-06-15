@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import sys
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -36,7 +36,9 @@ class TestComDispatcherPidScopedTaskkill:
 
         with patch("ms_access_mcp.adapters.com_dispatcher.subprocess.run") as mock_run:
             # Patch the module-level reference so the inner import picks it up
-            with patch("ms_access_mcp.adapters.com_dispatcher.concurrent.futures.ThreadPoolExecutor") as mock_tpe_cls:
+            with patch(
+                "ms_access_mcp.adapters.com_dispatcher.concurrent.futures.ThreadPoolExecutor"
+            ) as mock_tpe_cls:
                 mock_tpe = MagicMock()
                 mock_future = MagicMock()
                 mock_future.result.side_effect = concurrent.futures.TimeoutError("Quit timed out")
@@ -52,8 +54,12 @@ class TestComDispatcherPidScopedTaskkill:
                     mock_run.assert_called_once()
                     call_args = mock_run.call_args[0][0]  # first positional arg
                     assert "/PID" in call_args, f"Expected /PID in taskkill args, got: {call_args}"
-                    assert "/IM" not in call_args, f"Expected NO /IM in taskkill args, got: {call_args}"
-                    assert "9876" in call_args, f"Expected PID 9876 in taskkill args, got: {call_args}"
+                    assert "/IM" not in call_args, (
+                        f"Expected NO /IM in taskkill args, got: {call_args}"
+                    )
+                    assert "9876" in call_args, (
+                        f"Expected PID 9876 in taskkill args, got: {call_args}"
+                    )
 
     def test_release_com_safe_falls_back_to_im_when_hwnd_fails(self):
         """When GetWindowThreadProcessId fails, _release_com_safe must fall back to /IM MSACCESS.EXE."""
@@ -67,7 +73,9 @@ class TestComDispatcherPidScopedTaskkill:
         dispatcher._current_db = MagicMock()
 
         with patch("ms_access_mcp.adapters.com_dispatcher.subprocess.run") as mock_run:
-            with patch("ms_access_mcp.adapters.com_dispatcher.concurrent.futures.ThreadPoolExecutor") as mock_tpe_cls:
+            with patch(
+                "ms_access_mcp.adapters.com_dispatcher.concurrent.futures.ThreadPoolExecutor"
+            ) as mock_tpe_cls:
                 mock_tpe = MagicMock()
                 mock_future = MagicMock()
                 mock_future.result.side_effect = concurrent.futures.TimeoutError("Quit timed out")
@@ -76,12 +84,17 @@ class TestComDispatcherPidScopedTaskkill:
                 mock_tpe.submit.return_value = mock_future
                 mock_tpe_cls.return_value = mock_tpe
 
-                with patch("win32process.GetWindowThreadProcessId", side_effect=Exception("HWND unavailable")):
+                with patch(
+                    "win32process.GetWindowThreadProcessId",
+                    side_effect=Exception("HWND unavailable"),
+                ):
                     dispatcher._release_com_safe()
 
                     call_args = mock_run.call_args[0][0]
                     assert "/IM" in call_args, f"Expected /IM fallback, got: {call_args}"
-                    assert "MSACCESS.EXE" in call_args, f"Expected MSACCESS.EXE in fallback, got: {call_args}"
+                    assert "MSACCESS.EXE" in call_args, (
+                        f"Expected MSACCESS.EXE in fallback, got: {call_args}"
+                    )
 
 
 class TestComDispatcherLogging:
@@ -225,3 +238,167 @@ class TestComDispatcherIsConnectedDaoOnly:
 
         dispatcher._current_db = None  # simulates close_dao_database
         assert dispatcher.is_connected() is False
+
+
+# ===================================================================== #
+# create-access-database-from-scratch — PR 1 (bootstrap core)
+# ===================================================================== #
+#
+# ComDispatcher.create_dao_database() is the STA-thread entry point for
+# blank .accdb creation. Contract (REQ-1 / REQ-2 / REQ-8):
+#   * Primary: ``DAO.DBEngine.120.CreateDatabase(path, locale, version)``.
+#   * Fallback: ``Access.Application.NewCurrentDatabase(path)``.
+#   * Cleanup: every handle is released in ``finally`` (REQ-2, S-4 / S-5).
+#   * Non-Windows: typed ``PlatformUnsupported`` error without win32 imports.
+#   * Locale/version constants exported as module attributes (REFACTOR).
+
+
+def _make_inline_dispatcher():
+    """Build a dispatcher that runs ``call()`` synchronously.
+
+    Mirrors ``_make_dispatcher_with_db`` from test_dao_adapter.py —
+    bypass the "not started" gate and replace ``call`` with an inline
+    runner so the inner _do closure executes on the test thread and
+    the test can inspect its win32com imports and side effects.
+    """
+    from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+    dispatcher = ComDispatcher()
+    dispatcher._started = True
+    dispatcher._thread = True
+
+    def _inline_call(fn, *args, **kwargs):
+        return fn(*args, **kwargs)
+
+    dispatcher.call = _inline_call  # type: ignore[method-assign]
+    return dispatcher
+
+
+class TestComDispatcherCreateDaoDatabase:
+    """ComDispatcher.create_dao_database() runs DAO CreateDatabase on the STA thread.
+
+    REQ-1: DAO is primary; Access.Application is the fallback.
+    REQ-2: every handle is released in finally.
+    REQ-8: non-Windows returns ``PlatformUnsupported`` without win32 imports.
+    """
+
+    def test_create_dao_database_dispatches_dao_primary(self):
+        """Primary: ``DAO.DBEngine.120.CreateDatabase(path, locale, version)``.
+
+        REQ-1: ``dbLangGeneral`` and ``dbVersion120`` (128) are the
+        default locale/version. REQ-2 / S-4: the returned Database
+        handle is closed in finally.
+        """
+        from ms_access_mcp.adapters.com_dispatcher import (
+            DEFAULT_DB_LOCALE,
+            DEFAULT_DB_VERSION,
+        )
+
+        dispatcher = _make_inline_dispatcher()
+        new_db = MagicMock()
+        engine = MagicMock()
+        engine.CreateDatabase.return_value = new_db
+        win32_module = MagicMock()
+        win32_module.client.Dispatch.return_value = engine
+
+        with patch.dict(
+            sys.modules, {"win32com": win32_module, "win32com.client": win32_module.client}
+        ):
+            dispatcher.create_dao_database(r"C:\new\new.accdb")
+
+        # DAO primary path was hit with the canonical locale/version.
+        engine.CreateDatabase.assert_called_once_with(
+            r"C:\new\new.accdb", DEFAULT_DB_LOCALE, DEFAULT_DB_VERSION
+        )
+        # Returned Database handle was closed in the finally block.
+        new_db.Close.assert_called_once()
+        # Access.Application fallback was NOT used.
+        assert win32_module.client.Dispatch.call_args_list == [call("DAO.DBEngine.120")]
+
+    def test_create_dao_database_falls_back_to_access_application(self):
+        """When DAO.CreateDatabase fails, fall back to Access.Application.
+
+        REQ-1 (fallback): ``Access.Application.NewCurrentDatabase(path)``
+        creates the file; ``CloseCurrentDatabase`` + ``Quit`` release
+        the handle in finally (REQ-2).
+        """
+        dispatcher = _make_inline_dispatcher()
+        application = MagicMock()
+
+        def _dispatch(prog_id: str):
+            if prog_id == "DAO.DBEngine.120":
+                raise OSError("DAO not registered")
+            return application
+
+        win32_module = MagicMock()
+        win32_module.client.Dispatch.side_effect = _dispatch
+
+        with patch.dict(
+            sys.modules, {"win32com": win32_module, "win32com.client": win32_module.client}
+        ):
+            dispatcher.create_dao_database(r"C:\new\new.accdb")
+
+        application.NewCurrentDatabase.assert_called_once_with(r"C:\new\new.accdb")
+        application.CloseCurrentDatabase.assert_called_once()
+        application.Quit.assert_called_once()
+
+    def test_create_dao_database_releases_handles_on_failure(self):
+        """REQ-2 / S-5: Access.Application handle is released in
+        ``finally`` even when the create itself raises.
+        """
+        dispatcher = _make_inline_dispatcher()
+        application = MagicMock()
+        application.NewCurrentDatabase.side_effect = RuntimeError("Access broken")
+
+        def _dispatch(prog_id: str):
+            if prog_id == "DAO.DBEngine.120":
+                raise OSError("DAO not registered")
+            return application
+
+        win32_module = MagicMock()
+        win32_module.client.Dispatch.side_effect = _dispatch
+
+        with patch.dict(
+            sys.modules, {"win32com": win32_module, "win32com.client": win32_module.client}
+        ):
+            with pytest.raises(RuntimeError, match="create_dao_database failed"):
+                dispatcher.create_dao_database(r"C:\new\new.accdb")
+
+        # Critical invariant: handle released even though create failed.
+        application.CloseCurrentDatabase.assert_called_once()
+        application.Quit.assert_called_once()
+
+    def test_create_dao_database_rejects_non_windows(self, monkeypatch):
+        """REQ-8: non-Windows hosts return ``PlatformUnsupported``
+        without importing ``win32com``. ``sys.modules`` is poisoned
+        so any import attempt would raise — reaching the assertion
+        proves the short-circuit fired first.
+        """
+        from ms_access_mcp.adapters.com_dispatcher import ComDispatcher
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        dispatcher = ComDispatcher()
+
+        with patch.dict(
+            sys.modules,
+            {"win32com": None, "win32com.client": None, "pythoncom": None},
+        ):
+            with pytest.raises(RuntimeError, match="PlatformUnsupported"):
+                dispatcher.create_dao_database(r"/tmp/x.accdb")
+
+
+class TestComDispatcherDbLocaleConstants:
+    """Pin the default locale/version constants — shared source of
+    truth that the service layer re-exports (REFACTOR).
+    """
+
+    def test_default_db_locale_value(self):
+        from ms_access_mcp.adapters.com_dispatcher import DEFAULT_DB_LOCALE
+
+        assert DEFAULT_DB_LOCALE == ";LANGID=0x0409;CP=1252;COUNTRY=0"
+
+    def test_default_db_version_value(self):
+        from ms_access_mcp.adapters.com_dispatcher import DEFAULT_DB_VERSION
+
+        # dbVersion120 == 128 (Access 2016+ .accdb format).
+        assert DEFAULT_DB_VERSION == 128

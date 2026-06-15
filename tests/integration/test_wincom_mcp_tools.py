@@ -20,6 +20,7 @@ import pytest
 from ms_access_mcp.adapters.wincom import WinComAdapter
 from ms_access_mcp.services.connection import ConnectionPool
 from ms_access_mcp import mcp as server_module
+from ms_access_mcp.mcp.connection import create_access_database
 from helpers import call_mcp_tool, skip_unless_windows, skip_unless_pywin32, skip_unless_db
 
 pytestmark = [
@@ -648,3 +649,91 @@ class TestMcpIndexTools:
 
         finally:
             self.pool.disconnect("test_db")
+
+
+# ============================================================================
+# MCP Tool Wrappers via WinComAdapter — Bootstrap (create_access_database)
+# ============================================================================
+
+
+class TestMcpBootstrapTool:
+    """create_access_database — end-to-end Windows happy path.
+
+    Creates a fresh ``.accdb`` from scratch, then verifies the
+    resulting connection can be used (get_tables returns empty,
+    create_table works). This is the real-world bootstrap flow.
+    """
+
+    def setup_method(self):
+        self.pool: ConnectionPool = ConnectionPool()
+        self.tmpdir = tempfile.mkdtemp(prefix="mcp_bootstrap_")
+        self.db_path = os.path.join(self.tmpdir, "fresh_from_scratch.accdb")
+
+    def teardown_method(self, request):
+        # Disconnect from the pool before deleting files
+        try:
+            self.pool.disconnect("bootstrap_test")
+        except Exception:
+            pass
+        # Best-effort cleanup
+        import time
+        time.sleep(0.25)
+        try:
+            import shutil
+            shutil.rmtree(self.tmpdir, ignore_errors=True)
+        except Exception:
+            pass
+
+    def test_create_access_database_windows_happy_path(self):
+        """create_access_database on Windows: file is created, connection
+        is registered, get_tables returns empty list, create_table works.
+        """
+        # Use a unique connection name so the test is hermetic
+        result = create_access_database(
+            database_path=self.db_path, name="bootstrap_test", connect=True
+        )
+
+        # Bootstrap + connect succeeded
+        assert result["success"] is True, f"create_access_database failed: {result}"
+        assert result["connected"] is True
+        assert result["database"] == self.db_path
+        assert result["name"] == "bootstrap_test"
+        assert os.path.exists(self.db_path), f"DB file not on disk: {self.db_path}"
+
+        # The pool now has the new connection — verify by listing tables
+        try:
+            tables_result = call_mcp_tool(
+                "get_tables",
+                connection_name="bootstrap_test",
+                connection_service=self.pool,
+            )
+            assert tables_result["success"] is True, f"get_tables failed: {tables_result}"
+            # A fresh database has no user tables
+            assert tables_result.get("tables") == [], (
+                f"Expected empty tables in fresh DB, got: {tables_result.get('tables')}"
+            )
+
+            # create_table on the fresh DB should work
+            create_tbl = call_mcp_tool(
+                "create_table",
+                "__bootstrap_smoke",
+                [{"name": "id", "type": "Long Integer"}, {"name": "name", "type": "Text", "size": 50}],
+                connection_name="bootstrap_test",
+                connection_service=self.pool,
+            )
+            assert create_tbl["success"] is True, f"create_table failed: {create_tbl}"
+
+            # Verify the table exists
+            tables_after = call_mcp_tool(
+                "get_tables",
+                connection_name="bootstrap_test",
+                connection_service=self.pool,
+            )
+            assert tables_after["success"] is True
+            table_names = {t.get("name") for t in tables_after.get("tables", [])}
+            assert "__bootstrap_smoke" in table_names, (
+                f"Table not found after create_table: {table_names}"
+            )
+
+        finally:
+            self.pool.disconnect("bootstrap_test")

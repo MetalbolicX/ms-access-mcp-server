@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 # DAO DBEngine.Execute option flags
 DAO_DB_FAIL_ON_ERROR = 128
 
+# Default locale / version for blank ``.accdb`` creation
+# (create-access-database-from-scratch, REQ-1).
+#   * ``dbLangGeneral`` — ``\";LANGID=0x0409;CP=1252;COUNTRY=0\"`` — the
+#     canonical US-English locale that DAO ships with; stable across
+#     hosts and matches what the rest of the project uses.
+#   * ``dbVersion120`` (128) — Access 2016+ ``.accdb`` format. The
+#     highest version DAO 3.6 / ACE supports for ``CreateDatabase``.
+DEFAULT_DB_LOCALE = ";LANGID=0x0409;CP=1252;COUNTRY=0"
+DEFAULT_DB_VERSION = 128  # dbVersion120
+
 from ..models.database import (
     TableInfo, FormInfo, ReportInfo, MacroInfo, ModuleInfo,
     ControlInfo, RelationshipInfo, QueryInfo, LinkedTableInfo,
@@ -199,6 +209,79 @@ class ComDispatcher:
             self._current_db = None
 
         self.call(_do)
+
+    def create_dao_database(self, db_path: str) -> Any:
+        """Create a blank ``.accdb`` at ``db_path`` on the STA thread.
+
+        REQ-1: primary path is ``DAO.DBEngine.120.CreateDatabase(path,
+        locale, version)``; fallback is ``Access.Application.
+        NewCurrentDatabase(path)`` for hosts without DAO.
+        REQ-2 / S-4 / S-5: every handle opened here is released in a
+        ``finally`` block (the DAO ``Database`` handle is closed
+        immediately after the file is created; the ``Access.Application``
+        handle is closed via ``CloseCurrentDatabase`` + ``Quit``).
+        REQ-8: returns ``PlatformUnsupported`` on non-Windows hosts
+        without ever importing ``win32com``.
+
+        Args:
+            db_path: Absolute path to the new ``.accdb`` file.
+
+        Raises:
+            RuntimeError: On non-Windows (carries
+                ``PlatformUnsupported``) or when both DAO and
+                Access.Application creation fail.
+        """
+        # REQ-8: short-circuit before any win32 import. The matching
+        # test poisons ``sys.modules`` to prove this branch never
+        # touches win32com.
+        if sys.platform != "win32":
+            raise RuntimeError(
+                "PlatformUnsupported: create_dao_database requires Windows (DAO/COM)"
+            )
+
+        def _do() -> Any:
+            import win32com.client  # type: ignore[import-not-found]  # lazy win32
+
+            application: Any = None
+            dao_error: BaseException | None = None
+            try:
+                # Primary: DAO.DBEngine.120.CreateDatabase
+                engine = win32com.client.Dispatch("DAO.DBEngine.120")
+                new_db = engine.CreateDatabase(
+                    db_path, DEFAULT_DB_LOCALE, DEFAULT_DB_VERSION
+                )
+                # File is on disk; close the handle.
+                try:
+                    new_db.Close()
+                except Exception:
+                    pass
+                return new_db
+            except Exception as e:
+                dao_error = e
+                # Fall through to Access.Application fallback below.
+
+            # Fallback: Access.Application.NewCurrentDatabase
+            try:
+                application = win32com.client.Dispatch("Access.Application")
+                application.NewCurrentDatabase(db_path)
+            except Exception as access_error:
+                raise RuntimeError(
+                    f"create_dao_database failed for {db_path}: "
+                    f"DAO={dao_error}; Access={access_error}"
+                ) from access_error
+            finally:
+                # Always release the Access.Application handle (REQ-2 / S-5).
+                if application is not None:
+                    try:
+                        application.CloseCurrentDatabase()
+                    except Exception:
+                        pass
+                    try:
+                        application.Quit()
+                    except Exception:
+                        pass
+
+        return self.call(_do)
 
     def set_db_path(self, db_path: str) -> None:
         """Set the database path (called by adapter.connect before opening)."""

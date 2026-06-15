@@ -143,6 +143,7 @@ from . import (
 # Re-export all tool functions for backward-compatible imports
 from .connection import (  # noqa: E402
     connect_access,
+    create_access_database,
     disconnect_access,
     is_connected,
     list_connections,
@@ -303,6 +304,7 @@ from .db_properties import get_database_properties, set_database_property  # noq
 # Tool registry for SSR browser-based tool proxy
 _TOOL_REGISTRY: dict[str, Any] = {
     "connect_access": connect_access,
+    "create_access_database": create_access_database,
     "disconnect_access": disconnect_access,
     "is_connected": is_connected,
     "get_tables": get_tables,

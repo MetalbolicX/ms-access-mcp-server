@@ -1,6 +1,7 @@
 """Tests for mcp/connection.py tool bindings."""
-import pytest
+import sys
 from unittest.mock import patch, MagicMock
+import pytest
 # Import server first to resolve circular dependency
 from ms_access_mcp.mcp import server  # noqa: F401
 from ms_access_mcp.mcp import connection as conn_module
@@ -270,3 +271,245 @@ class TestNewConnectionTools:
             result = conn_module.is_connected(connection_name="prod")
             mock_conn.is_connected.assert_called_once_with("prod")
             assert result["connected"] is True
+
+
+# =============================================================================
+# _format_connect_response — shared response helper (PR 2 refactor)
+# =============================================================================
+
+
+class TestFormatConnectResponseHelper:
+    """``_format_connect_response`` is the shared response builder used by
+    both ``connect_access`` and ``create_access_database``. Both success
+    and failure paths must be pinned to one shape.
+    """
+
+    def test_helper_success_returns_connected_true(self):
+        """Truthy state yields success=True, connected=True, with path/name."""
+        result = conn_module._format_connect_response(
+            state=MagicMock(), database_path="C:/x.accdb", name="prod"
+        )
+        assert result == {
+            "success": True,
+            "connected": True,
+            "database": "C:/x.accdb",
+            "name": "prod",
+        }
+
+    def test_helper_failure_returns_connected_false(self):
+        """Falsy state yields success=False, connected=False, plus an error."""
+        result = conn_module._format_connect_response(
+            state=None, database_path="C:/x.accdb", name="prod"
+        )
+        assert result["success"] is False
+        assert result["connected"] is False
+        assert result["database"] == "C:/x.accdb"
+        assert result["name"] == "prod"
+        assert "error" in result
+        assert "prod" in result["error"]
+
+
+# =============================================================================
+# create_access_database — PR 2 (tool wiring + safety)
+# =============================================================================
+
+
+class TestCreateAccessDatabaseHappyPath:
+    """``create_access_database`` happy path: file is bootstrapped and
+    (by default) connected via the COM adapter. The response is the
+    shared connect shape with ``connected=True``.
+    """
+
+    def test_create_access_database_returns_success_when_bootstrap_succeeds(self, monkeypatch):
+        """Happy path: bootstrap OK + connect OK → success=True, connected=True."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        mock_conn = MagicMock()
+        mock_conn.list.return_value = {}  # No name collisions
+        mock_conn.connect.return_value = MagicMock()  # Truthy state
+
+        mock_bootstrap = MagicMock()
+        mock_bootstrap.success = True
+        mock_bootstrap.path = r"C:\fake\new.accdb"
+        mock_bootstrap.error = None
+
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch("os.path.exists", return_value=False),
+            patch.object(conn_module, "create_blank_database", return_value=mock_bootstrap),
+        ):
+            result = conn_module.create_access_database(r"C:\fake\new.accdb")
+
+        assert result["success"] is True
+        assert result["connected"] is True
+        assert result["database"] == r"C:\fake\new.accdb"
+        assert result["name"] == "default"
+        mock_conn.connect.assert_called_once_with(
+            "default", r"C:\fake\new.accdb", "com", password=""
+        )
+
+    def test_create_access_database_uses_custom_name(self, monkeypatch):
+        """Custom ``name`` flows through to the pool connect call."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        mock_conn = MagicMock()
+        mock_conn.list.return_value = {}
+        mock_conn.connect.return_value = MagicMock()
+        mock_bootstrap = MagicMock(success=True, path=r"C:\fake\new.accdb", error=None)
+
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch("os.path.exists", return_value=False),
+            patch.object(conn_module, "create_blank_database", return_value=mock_bootstrap),
+        ):
+            result = conn_module.create_access_database(r"C:\fake\new.accdb", name="myapp")
+
+        assert result["name"] == "myapp"
+        mock_conn.connect.assert_called_once_with(
+            "myapp", r"C:\fake\new.accdb", "com", password=""
+        )
+
+
+class TestCreateAccessDatabaseConnectFalse:
+    """``create_access_database(connect=False)`` creates the file only
+    and does NOT register a connection. The response has
+    ``connected=False``.
+    """
+
+    def test_connect_false_does_not_call_pool_connect(self, monkeypatch):
+        """connect=False must skip the pool.connect() call entirely."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        mock_conn = MagicMock()
+        mock_bootstrap = MagicMock(success=True, path=r"C:\fake\new.accdb", error=None)
+
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch("os.path.exists", return_value=False),
+            patch.object(conn_module, "create_blank_database", return_value=mock_bootstrap),
+        ):
+            result = conn_module.create_access_database(
+                r"C:\fake\new.accdb", connect=False
+            )
+
+        assert result["success"] is True
+        assert result["connected"] is False
+        assert result["database"] == r"C:\fake\new.accdb"
+        assert result["name"] == "default"
+        mock_conn.connect.assert_not_called()
+
+
+class TestCreateAccessDatabasePathGuard:
+    """PathGuard rejection short-circuits the tool before any work
+    happens. Mirrors ``connect_access``'s path validation.
+    """
+
+    def test_path_guard_rejection_returns_error(self):
+        """PathGuard ValueError → success=False, error contains the message."""
+        mock_guard = MagicMock()
+        mock_guard.validate.side_effect = ValueError("path not allowed")
+
+        with patch.object(conn_module, "_get_path_guard", return_value=mock_guard):
+            result = conn_module.create_access_database(r"C:\outside\new.accdb")
+
+        assert result["success"] is False
+        assert "not allowed" in result["error"]
+
+
+class TestCreateAccessDatabaseFileExists:
+    """REQ-3: refuse to overwrite an existing file.
+    Short-circuits BEFORE the bootstrap runs.
+    """
+
+    def test_file_exists_returns_error_without_bootstrap(self, monkeypatch):
+        """If the file exists on disk, return error and do not call bootstrap."""
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        with (
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch("os.path.exists", return_value=True),
+            patch.object(conn_module, "create_blank_database") as mock_bootstrap,
+        ):
+            result = conn_module.create_access_database(r"C:\fake\exists.accdb")
+
+        assert result["success"] is False
+        assert "already exists" in result["error"]
+        assert result["database"] == r"C:\fake\exists.accdb"
+        mock_bootstrap.assert_not_called()
+
+
+class TestCreateAccessDatabaseNameCollision:
+    """Name-collision short-circuit: if a connection with the same
+    name is already in the pool, refuse and return a clean error
+    (avoids the bootstrap round-trip on a doomed call).
+    """
+
+    def test_existing_connection_name_returns_error(self, monkeypatch):
+        """Pre-existing name in pool → success=False, error mentions name."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        mock_conn = MagicMock()
+        # Pool already has a connection named "default"
+        mock_conn.list.return_value = {"default": MagicMock()}
+
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch("os.path.exists", return_value=False),
+            patch.object(conn_module, "create_blank_database") as mock_bootstrap,
+        ):
+            result = conn_module.create_access_database(r"C:\fake\new.accdb", name="default")
+
+        assert result["success"] is False
+        assert "default" in result["error"]
+        assert "already exists" in result["error"]
+        mock_bootstrap.assert_not_called()
+        mock_conn.connect.assert_not_called()
+
+
+class TestCreateAccessDatabaseBootstrapFailure:
+    """When the bootstrap service returns a failure, the tool propagates it."""
+
+    def test_bootstrap_failure_returns_error(self, monkeypatch):
+        """Bootstrap success=False → tool returns success=False with the error."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        mock_conn = MagicMock()
+        mock_conn.list.return_value = {}
+        mock_bootstrap = MagicMock(
+            success=False, path=r"C:\fake\new.accdb", error="DAO boom"
+        )
+
+        with (
+            patch.object(conn_module, "_pool", return_value=mock_conn),
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch("os.path.exists", return_value=False),
+            patch.object(conn_module, "create_blank_database", return_value=mock_bootstrap),
+        ):
+            result = conn_module.create_access_database(r"C:\fake\new.accdb")
+
+        assert result["success"] is False
+        assert result["error"] == "DAO boom"
+        assert result["database"] == r"C:\fake\new.accdb"
+        mock_conn.connect.assert_not_called()
+
+
+class TestCreateAccessDatabaseNonWindows:
+    """REQ-8: non-Windows hosts are refused BEFORE the bootstrap runs
+    (so we never touch pywin32 even through the service's guard).
+    """
+
+    @pytest.mark.parametrize("platform_name", ["linux", "darwin"])
+    def test_non_windows_returns_requires_windows_error(
+        self, monkeypatch, platform_name
+    ):
+        """Non-Windows host → success=False, error mentions Windows requirement."""
+        monkeypatch.setattr(sys, "platform", platform_name)
+
+        with (
+            patch.object(conn_module, "_get_path_guard", return_value=None),
+            patch.object(conn_module, "create_blank_database") as mock_bootstrap,
+        ):
+            result = conn_module.create_access_database("/tmp/x.accdb")
+
+        assert result["success"] is False
+        assert "Windows" in result["error"]
+        mock_bootstrap.assert_not_called()

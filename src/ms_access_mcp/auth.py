@@ -186,6 +186,7 @@ class ApiKeyMiddleware(Middleware):
 
 DESTRUCTIVE_TOOLS = frozenset([
     "delete_table",
+    "create_access_database",
     "create_query",
     "set_vba_code",
     "execute_raw_sql",

@@ -249,6 +249,46 @@ class DaoAdapter:
         finally:
             self._connected = False
 
+    def create_database(self, path: str) -> bool:
+        """Create a blank ``.accdb`` at ``path`` via the shared dispatcher.
+
+        Adapter-level entry point for REQ-1 of
+        ``create-access-database-from-scratch``. Drives the
+        dispatcher's STA thread (no prior :meth:`connect` required) and
+        returns ``True`` on success. On any failure, raises
+        :class:`DaoOperationError` so the service layer can translate
+        to a typed :class:`DatabaseBootstrapResult`.
+
+        The adapter's ``is_connected()`` stays ``False`` after a
+        successful ``create_database`` — creating a file is a
+        one-shot, not the start of a long-lived handle. The caller
+        must call :meth:`connect` separately if they want to use the
+        new file.
+
+        Args:
+            path: Absolute path to the new ``.accdb`` file.
+
+        Returns:
+            ``True`` on success. Raises :class:`DaoOperationError`
+            on any failure (DAO error, Access fallback error, etc.).
+        """
+        # Drive the STA thread — ``start()`` is idempotent. ``connect``
+        # is NOT a prerequisite; blank DB creation is the entry point.
+        self._dispatcher.start()
+        try:
+            self._dispatcher.create_dao_database(path)
+            return True
+        except Exception as e:
+            # Per spec §1 "Degradation and error surface" (mirrors
+            # :meth:`connect`): on a transient failure the dispatcher
+            # is marked unhealthy so callers can probe before reuse.
+            self._dispatcher.mark_unhealthy()
+            self._connected = False
+            raise DaoOperationError(
+                f"DAO create_database failed for {path}: {e}",
+                cause=e,
+            ) from e
+
     def is_connected(self) -> bool:
         """Return ``True`` if this adapter holds an open DAO handle.
 
