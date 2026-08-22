@@ -1,0 +1,8 @@
+node_modules/
+lib/
+.merlin/
+*.log
+
+# ReScript in-source compiled output (rescript.json sets "in-source": true)
+*.res.mjs
+*.resi.mjs
