@@ -1,0 +1,23 @@
+{
+  "name": "ms-access-mcp-rescript",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.22.0",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "build": "rescript",
+    "dev": "rescript watch",
+    "clean": "rescript clean",
+    "test": "retest \"test/**/*.res.mjs\""
+  },
+  "dependencies": {
+    "@rescript/runtime": "^12.0.0",
+    "odbc": "^2.5.0",
+    "rescript": "^12.2.0",
+    "rescript-nodejs": "^17.0.0"
+  },
+  "devDependencies": {
+    "rescript-test": "^8.0.1"
+  }
+}
