@@ -134,3 +134,97 @@ test("OdbcAdapter integration: executeQuery fails gracefully when disconnected",
     assertion(~operator="equal", (a, b) => a == b, false, true)
   }
 })
+
+// ---------------------------------------------------------------------------
+// Integration schema tests
+// ---------------------------------------------------------------------------
+
+test("OdbcAdapter integration: getTables returns user tables excluding MSys*", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: connect, call getTables, verify no MSys* tables
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getTables returns fields with correct type mapping", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: verify type names are mapped per REQ-S2 (e.g., INT→Long Integer)
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getTables record_count matches actual rows", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: getTables record_count should match SELECT COUNT(*) for each table
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getTableSchemaPlan returns UnknownMetadata all-true", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: call getTableSchemaPlan, verify all five UnknownMetadata flags=true
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getQueries queries INFORMATION_SCHEMA.VIEWS with dbo filter", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: call getQueries, verify SQL includes TABLE_SCHEMA='dbo' filter
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getQueries returns type='select' for all results", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: verify QueryInfo.type_ = "select" for all entries
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getSystemTables returns Ok([]) even when connected", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: connect, call getSystemTables, should return Ok([]) per contract
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getObjectMetadata returns Ok({}) always", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: call getObjectMetadata("anything") → Ok({})
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getIndexes returns Ok([]) even when connected", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: connect, call getIndexes("sometable") → Ok([]) per contract
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("OdbcAdapter integration: getRelationships returns FK relationships from MSysRelationships", () => {
+  if !isIntegrationConfigured() {
+    assertion(~operator="equal", (a, b) => a == b, true, true)
+  } else {
+    // RED stub: call getRelationships, verify RelationshipInfo structure
+    assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
