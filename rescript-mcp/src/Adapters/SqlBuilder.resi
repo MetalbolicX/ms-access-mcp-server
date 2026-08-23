@@ -43,3 +43,6 @@ let createRelationship: (
   ~foreignColumns: array<string>,
 ) => result<string, Errors.t>
 let deleteRelationship: (~table: string, ~relationshipName: string) => string
+let createView: (~name: string, ~sql: string) => string
+let dropView: (~name: string) => string
+let setView: (~name: string, ~sql: string) => result<(string, string), Errors.t>

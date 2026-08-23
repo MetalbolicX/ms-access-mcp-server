@@ -443,3 +443,29 @@ let createRelationship = (
 let deleteRelationship = (~table: string, ~relationshipName: string): string => {
   "ALTER TABLE [" ++ _bracketEscape(table) ++ "] DROP CONSTRAINT [" ++ _bracketEscape(relationshipName) ++ "]"
 }
+
+// ---------------------------------------------------------------------------
+// createView — CREATE VIEW [name] AS sql (REQ-S6)
+// sql is used verbatim; only the view name is bracket-escaped
+// ---------------------------------------------------------------------------
+
+let createView = (~name: string, ~sql: string): string => {
+  "CREATE VIEW " ++ bracket(name) ++ " AS " ++ sql
+}
+
+// ---------------------------------------------------------------------------
+// dropView — DROP VIEW [name] (REQ-S6)
+// ---------------------------------------------------------------------------
+
+let dropView = (~name: string): string => {
+  "DROP VIEW " ++ bracket(name)
+}
+
+// ---------------------------------------------------------------------------
+// setView — DROP VIEW + CREATE VIEW pair (REQ-S6)
+// Returns Ok((dropSql, createSql)) so caller can execute both statements
+// ---------------------------------------------------------------------------
+
+let setView = (~name: string, ~sql: string): result<(string, string), Errors.t> => {
+  Ok((dropView(~name), createView(~name, ~sql)))
+}

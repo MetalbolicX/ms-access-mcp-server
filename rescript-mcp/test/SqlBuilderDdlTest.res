@@ -440,3 +440,90 @@ test("deleteRelationship brackets embedded ]", () => {
     "ALTER TABLE [Table[1]]] DROP CONSTRAINT [FK_Table[1]]_Parent[2]]]",
   )
 })
+
+// ---------------------------------------------------------------------------
+// createView — CREATE VIEW [name] AS sql (REQ-S6)
+// ---------------------------------------------------------------------------
+
+test("createView basic", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createView(~name="qryActiveOrders", ~sql="SELECT * FROM Orders WHERE Status = 1"),
+    "CREATE VIEW [qryActiveOrders] AS SELECT * FROM Orders WHERE Status = 1",
+  )
+})
+
+test("createView brackets name with space", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createView(~name="qry Active Orders", ~sql="SELECT ID FROM Orders"),
+    "CREATE VIEW [qry Active Orders] AS SELECT ID FROM Orders",
+  )
+})
+
+test("createView brackets escape embedded ]", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createView(~name="qry[1]", ~sql="SELECT * FROM T"),
+    "CREATE VIEW [qry[1]]] AS SELECT * FROM T",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// dropView — DROP VIEW [name] (REQ-S6)
+// ---------------------------------------------------------------------------
+
+test("dropView basic", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    dropView(~name="qryOldView"),
+    "DROP VIEW [qryOldView]",
+  )
+})
+
+test("dropView brackets name with space", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    dropView(~name="qry My View"),
+    "DROP VIEW [qry My View]",
+  )
+})
+
+test("dropView brackets escape embedded ]", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    dropView(~name="qry[2]"),
+    "DROP VIEW [qry[2]]]",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// setView — DROP VIEW + CREATE VIEW pair (REQ-S6)
+// Returns Ok((dropSql, createSql)); sql is used verbatim (no re-bracketing)
+// ---------------------------------------------------------------------------
+
+test("setView returns drop then create pair", () => {
+  switch setView(~name="qryOrders", ~sql="SELECT ID FROM Orders") {
+  | Ok((dropSql, createSql)) => {
+      assertion(~operator="equal", (a, b) => a == b, dropSql, "DROP VIEW [qryOrders]")
+      assertion(~operator="equal", (a, b) => a == b, createSql, "CREATE VIEW [qryOrders] AS SELECT ID FROM Orders")
+    }
+  | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
+
+test("setView brackets and escapes in name", () => {
+  switch setView(~name="qry[Special]", ~sql="SELECT * FROM T") {
+  | Ok((dropSql, createSql)) => {
+      assertion(~operator="equal", (a, b) => a == b, dropSql, "DROP VIEW [qry[Special]]]")
+      assertion(~operator="equal", (a, b) => a == b, createSql, "CREATE VIEW [qry[Special]]] AS SELECT * FROM T")
+    }
+  | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+  }
+})
