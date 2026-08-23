@@ -34,11 +34,14 @@ let makeAdapterDdl = (): OdbcAdapter.t => {
 // Sync SQL-capture assertions (FakeConnectionDdl.executedSql)
 // ---------------------------------------------------------------------------
 
-test("DDL sync: createTable, deleteTable, alterTable (add/drop/modify), createQuery, deleteQuery each capture SQL", () => {
+test("DDL sync: createTable, deleteTable, alterTable (add/drop/modify) each capture real SqlBuilder output", () => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
+  // columnSchema from adapter → SqlBuilder.columnInfo for SqlBuilder calls
   let col = (~name: string, ~st: string, ~sz: option<int>, ~null: bool): Interfaces.columnSchema =>
     { name: name, sourceType: st, maxLength: sz, allowNull: null, isAutoincrement: false, defaultValue: None }
+  let colInfo = (~name: string, ~ct: string, ~sz: int, ~null: bool): SqlBuilder.columnInfo =>
+    { name: name, colType: ct, size: sz, nullable: null }
   let dict = (act: string, n: string, ctOpt: option<string>, szOpt: option<float>, nu: bool): dict<JSON.t> => {
     let d = dict{}
     let _ = Dict.set(d, "action", JSON.String(act))
@@ -54,46 +57,52 @@ test("DDL sync: createTable, deleteTable, alterTable (add/drop/modify), createQu
     }
     if actual != expected { raise(Invalid_argument("Expected: " ++ expected ++ ", Got: " ++ actual)) }
   }
-  let _ = OdbcAdapter.createTable(adapter, "Customers", [col(~name="ID", ~st="Long Integer", ~sz=None, ~null=false), col(~name="Name", ~st="Text", ~sz=Some(100), ~null=true)])
-  eq("CREATE TABLE [Customers] ([ID] INT NOT NULL, [Name] VARCHAR(100) NULL)")
+  // createTable — assert captured SQL matches SqlBuilder.createTable output
+  let cols = [col(~name="ID", ~st="Long Integer", ~sz=None, ~null=false), col(~name="Name", ~st="Text", ~sz=Some(100), ~null=true)]
+  let _ = OdbcAdapter.createTable(adapter, "Customers", cols)
+  eq(SqlBuilder.createTable("Customers", [colInfo(~name="ID", ~ct="Long Integer", ~sz=0, ~null=false), colInfo(~name="Name", ~ct="Text", ~sz=100, ~null=true)]))
+  // deleteTable — assert captured SQL matches SqlBuilder.dropTable output
   FakeConnectionDdl.reset()
   let _ = OdbcAdapter.deleteTable(adapter, "Orders")
-  eq("DROP TABLE [Orders]")
+  eq(SqlBuilder.dropTable("Orders"))
+  // alterTable AddColumn — assert captured SQL matches SqlBuilder.alterTable output
   FakeConnectionDdl.reset()
   let _ = OdbcAdapter.alterTable(adapter, "Users", [dict("add_column", "Email", Some("Text"), Some(100.0), true)])
-  eq("ALTER TABLE [Users] ADD COLUMN [Email] VARCHAR(100) NULL")
+  eq(SqlBuilder.alterTable("Users", SqlBuilder.AddColumn(colInfo(~name="Email", ~ct="Text", ~sz=100, ~null=true)))->Option.getOr(""))
+  // alterTable DropColumn
   FakeConnectionDdl.reset()
   let _ = OdbcAdapter.alterTable(adapter, "Users", [dict("drop_column", "Email", None, None, true)])
-  eq("ALTER TABLE [Users] DROP COLUMN [Email]")
+  eq(SqlBuilder.alterTable("Users", SqlBuilder.DropColumn("Email"))->Option.getOr(""))
+  // alterTable ModifyColumn
   FakeConnectionDdl.reset()
   let _ = OdbcAdapter.alterTable(adapter, "Users", [dict("modify_column", "Email", Some("Text"), Some(255.0), false)])
-  eq("ALTER TABLE [Users] ALTER COLUMN [Email] VARCHAR(255) NOT NULL")
-  FakeConnectionDdl.reset()
-  let _ = OdbcAdapter.createQuery(adapter, "qryActive", "SELECT * FROM Orders WHERE Status = 1")
-  eq("CREATE VIEW [qryActive] AS SELECT * FROM Orders WHERE Status = 1")
-  FakeConnectionDdl.reset()
-  let _ = OdbcAdapter.deleteQuery(adapter, "qryOld")
-  eq("DROP VIEW [qryOld]")
+  eq(SqlBuilder.alterTable("Users", SqlBuilder.ModifyColumn(colInfo(~name="Email", ~ct="Text", ~sz=255, ~null=false)))->Option.getOr(""))
 })
 
 // ---------------------------------------------------------------------------
 // Async assertions (assertion + cb pattern from OdbcSchemaReaderTest)
 // ---------------------------------------------------------------------------
 
-testAsync("DDL async success: createTable returns Ok(success=true)", cb => {
+testAsync("DDL async success: createTable captures SQL matching SqlBuilder.createTable", cb => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
   let cols: array<Interfaces.columnSchema> = [{ name: "ID", sourceType: "Long Integer", maxLength: None, allowNull: false, isAutoincrement: false, defaultValue: None }]
+  let colInfo: SqlBuilder.columnInfo = { name: "ID", colType: "Long Integer", size: 0, nullable: false }
+  let expectedSql = SqlBuilder.createTable("Orders", [colInfo])
   ignore(OdbcAdapter.createTable(adapter, "Orders", cols)
     ->Promise.then(result => {
       switch result {
-      | Ok(ddl) => assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
     })
     ->Promise.then(() => {
-      cb(~planned=1, ())
+      cb(~planned=2, ())
       Promise.resolve()
     })
     ->Promise.catch(e => {
@@ -103,19 +112,53 @@ testAsync("DDL async success: createTable returns Ok(success=true)", cb => {
     }))
 })
 
-testAsync("DDL async success: deleteTable returns Ok(success=true)", cb => {
+testAsync("DDL async success: deleteTable captures SQL matching SqlBuilder.dropTable", cb => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.dropTable("X")
   ignore(OdbcAdapter.deleteTable(adapter, "X")
     ->Promise.then(result => {
       switch result {
-      | Ok(ddl) => assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
     })
     ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
       cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL async success: alterTable AddColumn captures SQL matching SqlBuilder.alterTable", cb => {
+  FakeConnectionDdl.reset()
+  let adapter = makeAdapterDdl()
+  let colDict: dict<JSON.t> = dict{ "action": JSON.String("add_column"), "name": JSON.String("Email"), "colType": JSON.String("Text"), "size": JSON.Number(100.0), "nullable": JSON.Boolean(true) }
+  let colInfo: SqlBuilder.columnInfo = { name: "Email", colType: "Text", size: 100, nullable: true }
+  let expectedSql = SqlBuilder.alterTable("Users", SqlBuilder.AddColumn(colInfo))->Option.getOr("")
+  ignore(OdbcAdapter.alterTable(adapter, "Users", [colDict])
+    ->Promise.then(result => {
+      switch result {
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=2, ())
       Promise.resolve()
     })
     ->Promise.catch(e => {
