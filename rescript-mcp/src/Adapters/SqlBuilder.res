@@ -378,3 +378,61 @@ let alterTable = (table: string, action: alterTableAction): option<string> => {
   | RenameColumn(_, _) => None  // ODBC does not support rename_column
   }
 }
+
+// ---------------------------------------------------------------------------
+// createIndex — CREATE [UNIQUE] INDEX ... ON ... (col, ...) (REQ-S7)
+// unique=false → basic index; unique=true → CREATE UNIQUE INDEX
+// Columns are always bracket-escaped
+// ---------------------------------------------------------------------------
+
+let createIndex = (~name: string, ~table: string, ~columns: array<string>, ~unique: bool): string => {
+  let uniqueKw = if unique { "UNIQUE INDEX" } else { "INDEX" }
+  let colList = _strJoin(Belt.Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
+  "CREATE " ++ uniqueKw ++ " [" ++ _bracketEscape(name) ++ "] ON [" ++ _bracketEscape(table) ++ "] (" ++ colList ++ ")"
+}
+
+// ---------------------------------------------------------------------------
+// dropIndex — DROP INDEX ... ON ... (REQ-S7)
+// Required ON clause per Access/Jet DDL syntax
+// ---------------------------------------------------------------------------
+
+let dropIndex = (~name: string, ~table: string): string => {
+  "DROP INDEX [" ++ _bracketEscape(name) ++ "] ON [" ++ _bracketEscape(table) ++ "]"
+}
+
+// ---------------------------------------------------------------------------
+// createRelationship — ALTER TABLE ADD CONSTRAINT FK (REQ-S7)
+// Access/Jet stores relationships via ALTER TABLE ADD CONSTRAINT
+// Validates: relationship name ≤ 64 chars, child table ≤ 64 chars
+// ---------------------------------------------------------------------------
+
+let createRelationship = (
+  ~relationshipName: string,
+  ~table: string,
+  ~columns: array<string>,
+  ~foreignTable: string,
+  ~foreignColumns: array<string>,
+): result<string, Errors.t> => {
+  if String.length(relationshipName) > 64 {
+    Error(Errors.validationError("Relationship name exceeds 64 characters"))
+  } else if String.length(table) > 64 {
+    Error(Errors.validationError("Child table name exceeds 64 characters"))
+  } else {
+    let colList = _strJoin(Belt.Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
+    let foreignColList = _strJoin(Belt.Array.map(foreignColumns, fc => "[" ++ _bracketEscape(fc) ++ "]"), ", ")
+    Ok(
+      "ALTER TABLE [" ++ _bracketEscape(table) ++
+      "] ADD CONSTRAINT [" ++ _bracketEscape(relationshipName) ++
+      "] FOREIGN KEY (" ++ colList ++ ") REFERENCES [" ++
+      _bracketEscape(foreignTable) ++ "] (" ++ foreignColList ++ ")"
+    )
+  }
+}
+
+// ---------------------------------------------------------------------------
+// deleteRelationship — ALTER TABLE DROP CONSTRAINT (REQ-S7)
+// ---------------------------------------------------------------------------
+
+let deleteRelationship = (~table: string, ~relationshipName: string): string => {
+  "ALTER TABLE [" ++ _bracketEscape(table) ++ "] DROP CONSTRAINT [" ++ _bracketEscape(relationshipName) ++ "]"
+}

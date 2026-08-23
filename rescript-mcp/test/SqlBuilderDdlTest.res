@@ -210,3 +210,197 @@ test("alterTable add column brackets embedded ]", () => {
   | None => assertion(~operator="equal", (a, b) => a == b, false, true)
   }
 })
+
+// ---------------------------------------------------------------------------
+// createIndex — CREATE INDEX ... ON ... (col, ...) (REQ-S7)
+// ---------------------------------------------------------------------------
+
+test("createIndex basic", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="idxName", ~table="Orders", ~columns=["OrderID"], ~unique=false),
+    "CREATE INDEX [idxName] ON [Orders] ([OrderID])",
+  )
+})
+
+test("createIndex UNIQUE", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="uidxCode", ~table="Products", ~columns=["Code"], ~unique=true),
+    "CREATE UNIQUE INDEX [uidxCode] ON [Products] ([Code])",
+  )
+})
+
+test("createIndex multiple columns", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="idxOrderItem", ~table="OrderItems", ~columns=["OrderID", "ProductID"], ~unique=false),
+    "CREATE INDEX [idxOrderItem] ON [OrderItems] ([OrderID], [ProductID])",
+  )
+})
+
+test("createIndex brackets table and column names with spaces", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="idx My Index", ~table="My Table", ~columns=["My Column"], ~unique=false),
+    "CREATE INDEX [idx My Index] ON [My Table] ([My Column])",
+  )
+})
+
+test("createIndex UNIQUE with brackets", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="uidx [Special]", ~table="[My Table]", ~columns=["[Col]"], ~unique=true),
+    "CREATE UNIQUE INDEX [uidx [Special]]] ON [[My Table]]] ([[Col]]])",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// dropIndex — DROP INDEX ... ON ... (REQ-S7)
+// Required ON clause; Access DDL uses: DROP INDEX idx ON tbl
+// ---------------------------------------------------------------------------
+
+test("dropIndex basic", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    dropIndex(~name="idxName", ~table="Orders"),
+    "DROP INDEX [idxName] ON [Orders]",
+  )
+})
+
+test("dropIndex brackets both names with spaces", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    dropIndex(~name="idx My Index", ~table="My Table"),
+    "DROP INDEX [idx My Index] ON [My Table]",
+  )
+})
+
+test("dropIndex brackets embedded ]", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    dropIndex(~name="idx[1]", ~table="Table[2]"),
+    "DROP INDEX [idx[1]]] ON [Table[2]]]",
+  )
+})
+
+// ---------------------------------------------------------------------------
+// createRelationship — ALTER TABLE ADD CONSTRAINT FK (REQ-S7)
+// Access stores relationships via Jet/ACE DDL: ALTER TABLE ADD CONSTRAINT
+// Constraint name, child table, child columns, parent table, parent columns
+// Validates: relationship name ≤ 64 chars, child table ≤ 64 chars
+// ---------------------------------------------------------------------------
+
+test("createRelationship basic FK", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createRelationship(
+      ~relationshipName="FK_Orders_Customers",
+      ~table="Orders",
+      ~columns=["CustomerID"],
+      ~foreignTable="Customers",
+      ~foreignColumns=["CustomerID"],
+    ),
+    Ok("ALTER TABLE [Orders] ADD CONSTRAINT [FK_Orders_Customers] FOREIGN KEY ([CustomerID]) REFERENCES [Customers] ([CustomerID])"),
+  )
+})
+
+test("createRelationship multiple columns", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createRelationship(
+      ~relationshipName="FK_OrderItems_Orders",
+      ~table="OrderItems",
+      ~columns=["OrderID", "ProductID"],
+      ~foreignTable="Orders",
+      ~foreignColumns=["OrderID", "ProductID"],
+    ),
+    Ok("ALTER TABLE [OrderItems] ADD CONSTRAINT [FK_OrderItems_Orders] FOREIGN KEY ([OrderID], [ProductID]) REFERENCES [Orders] ([OrderID], [ProductID])"),
+  )
+})
+
+test("createRelationship brackets embedded ]", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createRelationship(
+      ~relationshipName="FK_Table[1]_Parent[2]",
+      ~table="Table[1]",
+      ~columns=["Col[3]"],
+      ~foreignTable="Parent[2]",
+      ~foreignColumns=["Col[3]"],
+    ),
+    Ok("ALTER TABLE [Table[1]]] ADD CONSTRAINT [FK_Table[1]]_Parent[2]]] FOREIGN KEY ([Col[3]]]) REFERENCES [Parent[2]]] ([Col[3]]])"),
+  )
+})
+
+test("createRelationship name exceeds 64 chars returns Error", () => {
+  // "FK_" + 62 X's = 3 + 62 = 65 chars (> 64)
+  let longName = "FK_" ++ Belt.Array.make(62, "X")->Belt.Array.reduce("", (acc, _) => acc ++ "X")
+  switch createRelationship(
+    ~relationshipName=longName,
+    ~table="Orders",
+    ~columns=["CustomerID"],
+    ~foreignTable="Customers",
+    ~foreignColumns=["CustomerID"],
+  ) {
+  | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+  | Error(e) => assertion(~operator="equal", (a, b) => a == b, String.includes(Errors.toDict(e).message, "64"), true)
+  }
+})
+
+test("createRelationship child table exceeds 64 chars returns Error", () => {
+  // "Table_" + 58 X's = 6 + 58 = 64 chars exactly; use 59 X's for > 64
+  let longTable = "Table_" ++ Belt.Array.make(59, "X")->Belt.Array.reduce("", (acc, _) => acc ++ "X")
+  switch createRelationship(
+    ~relationshipName="FK_Test",
+    ~table=longTable,
+    ~columns=["ColA"],
+    ~foreignTable="Parent",
+    ~foreignColumns=["ColA"],
+  ) {
+  | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+  | Error(e) => assertion(~operator="equal", (a, b) => a == b, String.includes(Errors.toDict(e).message, "64"), true)
+  }
+})
+
+// ---------------------------------------------------------------------------
+// deleteRelationship — ALTER TABLE DROP CONSTRAINT (REQ-S7)
+// ---------------------------------------------------------------------------
+
+test("deleteRelationship basic", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    deleteRelationship(~table="Orders", ~relationshipName="FK_Orders_Customers"),
+    "ALTER TABLE [Orders] DROP CONSTRAINT [FK_Orders_Customers]",
+  )
+})
+
+test("deleteRelationship brackets both names with spaces", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    deleteRelationship(~table="My Table", ~relationshipName="FK My Table_My Parent"),
+    "ALTER TABLE [My Table] DROP CONSTRAINT [FK My Table_My Parent]",
+  )
+})
+
+test("deleteRelationship brackets embedded ]", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    deleteRelationship(~table="Table[1]", ~relationshipName="FK_Table[1]_Parent[2]"),
+    "ALTER TABLE [Table[1]]] DROP CONSTRAINT [FK_Table[1]]_Parent[2]]]",
+  )
+})

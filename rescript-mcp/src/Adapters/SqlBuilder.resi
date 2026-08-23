@@ -33,3 +33,13 @@ let columnDef: columnInfo => string
 let createTable: (string, array<columnInfo>) => string
 let dropTable: string => string
 let alterTable: (string, alterTableAction) => option<string>
+let createIndex: (~name: string, ~table: string, ~columns: array<string>, ~unique: bool) => string
+let dropIndex: (~name: string, ~table: string) => string
+let createRelationship: (
+  ~relationshipName: string,
+  ~table: string,
+  ~columns: array<string>,
+  ~foreignTable: string,
+  ~foreignColumns: array<string>,
+) => result<string, Errors.t>
+let deleteRelationship: (~table: string, ~relationshipName: string) => string
