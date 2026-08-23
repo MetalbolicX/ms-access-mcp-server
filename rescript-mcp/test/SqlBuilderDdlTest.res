@@ -260,6 +260,24 @@ test("createIndex UNIQUE with brackets", () => {
   )
 })
 
+test("createIndex UNIQUE ignore_nulls true appends WITH IGNORE NULL", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="uidxCode", ~table="Products", ~columns=["Code"], ~unique=true, ~ignore_nulls=true),
+    "CREATE UNIQUE INDEX [uidxCode] ON [Products] ([Code]) WITH IGNORE NULL",
+  )
+})
+
+test("createIndex ignore_nulls true but not unique omits WITH IGNORE NULL", () => {
+  assertion(
+    ~operator="equal",
+    (a, b) => a == b,
+    createIndex(~name="idxCode", ~table="Products", ~columns=["Code"], ~unique=false, ~ignore_nulls=true),
+    "CREATE INDEX [idxCode] ON [Products] ([Code])",
+  )
+})
+
 // ---------------------------------------------------------------------------
 // dropIndex — DROP INDEX ... ON ... (REQ-S7)
 // Required ON clause; Access DDL uses: DROP INDEX idx ON tbl
@@ -371,6 +389,24 @@ test("createRelationship child table exceeds 64 chars returns Error", () => {
   ) {
   | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
   | Error(e) => assertion(~operator="equal", (a, b) => a == b, String.includes(Errors.toDict(e).message, "64"), true)
+  }
+})
+
+test("createRelationship columns and foreignColumns length mismatch returns Error", () => {
+  switch createRelationship(
+    ~relationshipName="FK_Test",
+    ~table="Orders",
+    ~columns=["CustomerID", "OrderID"],
+    ~foreignTable="Customers",
+    ~foreignColumns=["CustomerID"],
+  ) {
+  | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+  | Error(e) => assertion(
+      ~operator="equal",
+      (a, b) => a == b,
+      String.includes(Errors.toDict(e).message, "same length"),
+      true,
+    )
   }
 })
 

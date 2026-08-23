@@ -385,10 +385,15 @@ let alterTable = (table: string, action: alterTableAction): option<string> => {
 // Columns are always bracket-escaped
 // ---------------------------------------------------------------------------
 
-let createIndex = (~name: string, ~table: string, ~columns: array<string>, ~unique: bool): string => {
+let createIndex = (~name: string, ~table: string, ~columns: array<string>, ~unique: bool, ~ignore_nulls: bool=false): string => {
   let uniqueKw = if unique { "UNIQUE INDEX" } else { "INDEX" }
   let colList = _strJoin(Belt.Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
-  "CREATE " ++ uniqueKw ++ " [" ++ _bracketEscape(name) ++ "] ON [" ++ _bracketEscape(table) ++ "] (" ++ colList ++ ")"
+  let base = "CREATE " ++ uniqueKw ++ " [" ++ _bracketEscape(name) ++ "] ON [" ++ _bracketEscape(table) ++ "] (" ++ colList ++ ")"
+  if unique && ignore_nulls {
+    base ++ " WITH IGNORE NULL"
+  } else {
+    base
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -413,7 +418,9 @@ let createRelationship = (
   ~foreignTable: string,
   ~foreignColumns: array<string>,
 ): result<string, Errors.t> => {
-  if String.length(relationshipName) > 64 {
+  if Belt.Array.length(columns) != Belt.Array.length(foreignColumns) {
+    Error(Errors.validationError("columns and foreign_columns must have same length"))
+  } else if String.length(relationshipName) > 64 {
     Error(Errors.validationError("Relationship name exceeds 64 characters"))
   } else if String.length(table) > 64 {
     Error(Errors.validationError("Child table name exceeds 64 characters"))

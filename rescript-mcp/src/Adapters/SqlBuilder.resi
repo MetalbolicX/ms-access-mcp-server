@@ -33,7 +33,7 @@ let columnDef: columnInfo => string
 let createTable: (string, array<columnInfo>) => string
 let dropTable: string => string
 let alterTable: (string, alterTableAction) => option<string>
-let createIndex: (~name: string, ~table: string, ~columns: array<string>, ~unique: bool) => string
+let createIndex: (~name: string, ~table: string, ~columns: array<string>, ~unique: bool, ~ignore_nulls: bool=?) => string
 let dropIndex: (~name: string, ~table: string) => string
 let createRelationship: (
   ~relationshipName: string,
