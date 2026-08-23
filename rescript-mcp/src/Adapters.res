@@ -5,3 +5,4 @@ module Interfaces = Interfaces
 module SqlBuilder = SqlBuilder
 module OdbcAdapter = OdbcAdapter
 module OdbcSchemaReader = OdbcSchemaReader
+module CsvWriter = CsvWriter
