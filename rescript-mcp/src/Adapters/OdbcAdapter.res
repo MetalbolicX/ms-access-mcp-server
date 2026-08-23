@@ -1099,6 +1099,65 @@ let deleteTable = (adapter: t, name: string): Promise.t<result<Interfaces.ddlRes
 }
 
 // ---------------------------------------------------------------------------
+// createIndex — CREATE [UNIQUE] INDEX ... ON ... (col, ...) (REQ-S7)
+// ---------------------------------------------------------------------------
+
+let createIndex = (
+  adapter: t,
+  name: string,
+  table: string,
+  columns: array<string>,
+  ~unique: bool=false,
+  ~ignoreNulls: bool=false,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let sql = SqlBuilder.createIndex(~name, ~table, ~columns, ~unique, ~ignore_nulls=ignoreNulls)
+      conn.query(sql, [])
+        ->Promise.then(result => {
+          switch result {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// dropIndex — DROP INDEX ... ON ... (REQ-S7)
+// ---------------------------------------------------------------------------
+
+let dropIndex = (
+  adapter: t,
+  name: string,
+  table: string,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let sql = SqlBuilder.dropIndex(~name, ~table)
+      conn.query(sql, [])
+        ->Promise.then(result => {
+          switch result {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // _dictToColumnInfo — extract columnInfo from action dict
 // ---------------------------------------------------------------------------
 

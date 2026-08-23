@@ -168,19 +168,24 @@ testAsync("DDL async success: alterTable AddColumn captures SQL matching SqlBuil
     }))
 })
 
-testAsync("DDL async success: createQuery returns Ok(success=true)", cb => {
+testAsync("DDL async success: createQuery captures SQL matching SqlBuilder.createView", cb => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.createView(~name="qryTest", ~sql="SELECT ID FROM T")
   ignore(OdbcAdapter.createQuery(adapter, "qryTest", "SELECT ID FROM T")
     ->Promise.then(result => {
       switch result {
-      | Ok(ddl) => assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
     })
     ->Promise.then(() => {
-      cb(~planned=1, ())
+      cb(~planned=2, ())
       Promise.resolve()
     })
     ->Promise.catch(e => {
@@ -190,19 +195,24 @@ testAsync("DDL async success: createQuery returns Ok(success=true)", cb => {
     }))
 })
 
-testAsync("DDL async success: deleteQuery returns Ok(success=true)", cb => {
+testAsync("DDL async success: deleteQuery captures SQL matching SqlBuilder.dropView", cb => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.dropView(~name="qryX")
   ignore(OdbcAdapter.deleteQuery(adapter, "qryX")
     ->Promise.then(result => {
       switch result {
-      | Ok(ddl) => assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
     })
     ->Promise.then(() => {
-      cb(~planned=1, ())
+      cb(~planned=2, ())
       Promise.resolve()
     })
     ->Promise.catch(e => {
@@ -212,19 +222,28 @@ testAsync("DDL async success: deleteQuery returns Ok(success=true)", cb => {
     }))
 })
 
-testAsync("DDL async success: setQuerySql returns Ok(success=true) when both succeed", cb => {
+testAsync("DDL async success: setQuerySql captures [dropSql, createSql] in order", cb => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
+  let dropSql = SqlBuilder.dropView(~name="qryX")
+  let createSql = SqlBuilder.createView(~name="qryX", ~sql="SELECT 1")
   ignore(OdbcAdapter.setQuerySql(adapter, "qryX", "SELECT 1")
     ->Promise.then(result => {
       switch result {
-      | Ok(ddl) => assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let sqls = FakeConnectionDdl.executedSql.contents
+          let captured0 = switch Belt.Array.get(sqls, 0) { | Some(s) => s | None => "" }
+          let captured1 = switch Belt.Array.get(sqls, 1) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured0, dropSql)
+          assertion(~operator="equal", (a, b) => a == b, captured1, createSql)
+        }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
     })
     ->Promise.then(() => {
-      cb(~planned=1, ())
+      cb(~planned=3, ())
       Promise.resolve()
     })
     ->Promise.catch(e => {
@@ -418,16 +437,18 @@ testAsync("DDL error: deleteQuery returns Error(Driver error) when fake fails", 
     }))
 })
 
-testAsync("setQuerySql: executes DROP VIEW then CREATE VIEW in order", cb => {
+testAsync("setQuerySql: executes DROP VIEW then CREATE VIEW in order via SqlBuilder", cb => {
   FakeConnectionDdl.reset()
   let adapter = makeAdapterDdl()
+  let dropSql = SqlBuilder.dropView(~name="qryOrders")
+  let createSql = SqlBuilder.createView(~name="qryOrders", ~sql="SELECT ID FROM Orders")
   ignore(OdbcAdapter.setQuerySql(adapter, "qryOrders", "SELECT ID FROM Orders")
     ->Promise.then(_result => {
       let sqls = FakeConnectionDdl.executedSql.contents
-      let sql0 = switch Belt.Array.get(sqls, 0) { | Some(s) => s | None => "" }
-      let sql1 = switch Belt.Array.get(sqls, 1) { | Some(s) => s | None => "" }
-      assertion(~operator="equal", (a, b) => a == b, sql0, "DROP VIEW [qryOrders]")
-      assertion(~operator="equal", (a, b) => a == b, sql1, "CREATE VIEW [qryOrders] AS SELECT ID FROM Orders")
+      let captured0 = switch Belt.Array.get(sqls, 0) { | Some(s) => s | None => "" }
+      let captured1 = switch Belt.Array.get(sqls, 1) { | Some(s) => s | None => "" }
+      assertion(~operator="equal", (a, b) => a == b, captured0, dropSql)
+      assertion(~operator="equal", (a, b) => a == b, captured1, createSql)
       Promise.resolve()
     })
     ->Promise.then(() => {
@@ -522,6 +543,198 @@ testAsync("getIndexes: returns Ok([]) when disconnected (contract)", cb => {
       switch result {
       | Ok(indexes) => assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(indexes), 0)
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+// ---------------------------------------------------------------------------
+// Index DDL tests — SqlBuilder.createIndex / dropIndex assertions
+// ---------------------------------------------------------------------------
+
+testAsync("DDL async success: createIndex basic captures SQL matching SqlBuilder.createIndex", cb => {
+  FakeConnectionDdl.reset()
+  let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.createIndex(~name="idxOrderID", ~table="Orders", ~columns=["OrderID"], ~unique=false)
+  ignore(OdbcAdapter.createIndex(adapter, "idxOrderID", "Orders", ["OrderID"])
+    ->Promise.then(result => {
+      switch result {
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL async success: createIndex UNIQUE captures SQL matching SqlBuilder.createIndex", cb => {
+  FakeConnectionDdl.reset()
+  let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.createIndex(~name="uidxCode", ~table="Products", ~columns=["Code"], ~unique=true)
+  ignore(OdbcAdapter.createIndex(adapter, "uidxCode", "Products", ["Code"], ~unique=true)
+    ->Promise.then(result => {
+      switch result {
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL async success: createIndex UNIQUE+IGNORE NULL captures SQL with WITH IGNORE NULL", cb => {
+  FakeConnectionDdl.reset()
+  let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.createIndex(~name="uidxCode", ~table="Products", ~columns=["Code"], ~unique=true, ~ignore_nulls=true)
+  ignore(OdbcAdapter.createIndex(adapter, "uidxCode", "Products", ["Code"], ~unique=true, ~ignoreNulls=true)
+    ->Promise.then(result => {
+      switch result {
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL async success: createIndex ignoreNulls without UNIQUE omits WITH IGNORE NULL", cb => {
+  FakeConnectionDdl.reset()
+  let adapter = makeAdapterDdl()
+  // ignoreNulls=true but unique=false → no WITH IGNORE NULL
+  let expectedSql = SqlBuilder.createIndex(~name="idxCode", ~table="Products", ~columns=["Code"], ~unique=false, ~ignore_nulls=true)
+  ignore(OdbcAdapter.createIndex(adapter, "idxCode", "Products", ["Code"], ~unique=false, ~ignoreNulls=true)
+    ->Promise.then(result => {
+      switch result {
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL async success: dropIndex captures SQL matching SqlBuilder.dropIndex", cb => {
+  FakeConnectionDdl.reset()
+  let adapter = makeAdapterDdl()
+  let expectedSql = SqlBuilder.dropIndex(~name="idxOrderID", ~table="Orders")
+  ignore(OdbcAdapter.dropIndex(adapter, "idxOrderID", "Orders")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(ddl) => {
+          assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
+          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
+        }
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL error: createIndex returns Error(Driver error) when fake fails", cb => {
+  FakeConnectionDdl.reset()
+  FakeConnectionDdl.failOnSql.contents = Some("INDEX")
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.createIndex(adapter, "idxX", "T", ["Col"])
+    ->Promise.then(result => {
+      switch result {
+      | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      | Error(e) => {
+          let d = Errors.toDict(e)
+          assertion(~operator="equal", (a, b) => a == b, String.includes(d.message, "Driver error"), true)
+        }
+      }
+      Promise.resolve()
+    })
+    ->Promise.then(() => {
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("DDL error: dropIndex returns Error(Driver error) when fake fails", cb => {
+  FakeConnectionDdl.reset()
+  FakeConnectionDdl.failOnSql.contents = Some("DROP")
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.dropIndex(adapter, "idxX", "T")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      | Error(e) => {
+          let d = Errors.toDict(e)
+          assertion(~operator="equal", (a, b) => a == b, String.includes(d.message, "Driver error"), true)
+        }
       }
       Promise.resolve()
     })
