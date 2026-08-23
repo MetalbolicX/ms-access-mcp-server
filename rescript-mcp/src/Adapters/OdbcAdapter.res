@@ -738,3 +738,288 @@ let generateSql = (_adapter: t, _outputPath: string): Promise.t<result<Interface
 let getDatabaseStatistics = (_adapter: t): Promise.t<result<dict<JSON.t>, Errors.t>> => {
   Promise.resolve(Ok(Dict.make()))
 }
+
+// ---------------------------------------------------------------------------
+// _columnSchemaToColumnInfo — convert Interfaces.columnSchema to SqlBuilder.columnInfo
+// Used by createTable to build DDL SQL
+// ---------------------------------------------------------------------------
+
+let _columnSchemaToColumnInfo = (s: Interfaces.columnSchema): SqlBuilder.columnInfo => {
+  {
+    name: s.name,
+    colType: s.sourceType,
+    size: switch s.maxLength {
+    | Some(n) => n
+    | None => 0
+    },
+    nullable: s.allowNull,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// createTable — builds SQL via SqlBuilder.createTable, executes, returns Ok(()) on success
+// REQ-S7
+// ---------------------------------------------------------------------------
+
+let createTable = (
+  adapter: t,
+  name: string,
+  columns: array<Interfaces.columnSchema>,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let cols = Belt.Array.map(columns, _columnSchemaToColumnInfo)
+      let sql = SqlBuilder.createTable(name, cols)
+      conn.query(sql, [])
+        ->Promise.then(result => {
+          switch result {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// deleteTable — DROP TABLE [name]
+// REQ-S7
+// ---------------------------------------------------------------------------
+
+let deleteTable = (adapter: t, name: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let sql = SqlBuilder.dropTable(name)
+      conn.query(sql, [])
+        ->Promise.then(result => {
+          switch result {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _dictToColumnInfo — extract columnInfo from action dict
+// ---------------------------------------------------------------------------
+
+let _dictToColumnInfo = (d: dict<JSON.t>): SqlBuilder.columnInfo => {
+  let name = _jsonToString(Dict.get(d, "name"))
+  let colType = _jsonToString(Dict.get(d, "colType"))
+  let size = switch Dict.get(d, "size") {
+  | Some(JSON.Number(n)) => Float.toInt(n)
+  | _ => 0
+  }
+  let nullable = switch Dict.get(d, "nullable") {
+  | Some(JSON.Boolean(b)) => b
+  | _ => true
+  }
+  {name: name, colType: colType, size: size, nullable: nullable}
+}
+
+// ---------------------------------------------------------------------------
+// alterTable — handles AddColumn/DropColumn/ModifyColumn; RenameTable/RenameColumn
+// return Error(DatabaseError(...)) per REQ-S8
+// REQ-S8
+// ---------------------------------------------------------------------------
+
+let alterTable = (
+  adapter: t,
+  name: string,
+  actions: array<dict<JSON.t>>,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let rec processActions = (
+        actionDicts: array<dict<JSON.t>>,
+      ): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+        switch Belt.Array.get(actionDicts, 0) {
+        | None => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+        | Some(actionDict) => {
+            let actionName = switch Dict.get(actionDict, "action") {
+            | Some(JSON.String(s)) => s
+            | _ => ""
+            }
+            switch actionName {
+            | "add_column" => {
+                let colInfo = _dictToColumnInfo(actionDict)
+                switch SqlBuilder.alterTable(name, SqlBuilder.AddColumn(colInfo)) {
+                | Some(sql) => {
+                    conn.query(sql, [])
+                      ->Promise.then(result => {
+                        switch result {
+                        | Ok(_) => processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                        | Error(e) => Promise.resolve(Error(e))
+                        }
+                      })
+                      ->Promise.catch(e => {
+                        let msg = _exnMessage(e)
+                        Promise.resolve(Error(Errors.databaseError(msg)))
+                      })
+                  }
+                | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
+                }
+              }
+            | "drop_column" => {
+                let colName = _jsonToString(Dict.get(actionDict, "name"))
+                switch SqlBuilder.alterTable(name, SqlBuilder.DropColumn(colName)) {
+                | Some(sql) => {
+                    conn.query(sql, [])
+                      ->Promise.then(result => {
+                        switch result {
+                        | Ok(_) => processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                        | Error(e) => Promise.resolve(Error(e))
+                        }
+                      })
+                      ->Promise.catch(e => {
+                        let msg = _exnMessage(e)
+                        Promise.resolve(Error(Errors.databaseError(msg)))
+                      })
+                  }
+                | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
+                }
+              }
+            | "modify_column" => {
+                let colInfo = _dictToColumnInfo(actionDict)
+                switch SqlBuilder.alterTable(name, SqlBuilder.ModifyColumn(colInfo)) {
+                | Some(sql) => {
+                    conn.query(sql, [])
+                      ->Promise.then(result => {
+                        switch result {
+                        | Ok(_) => processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                        | Error(e) => Promise.resolve(Error(e))
+                        }
+                      })
+                      ->Promise.catch(e => {
+                        let msg = _exnMessage(e)
+                        Promise.resolve(Error(Errors.databaseError(msg)))
+                      })
+                  }
+                | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
+                }
+              }
+            | "rename_table" => {
+                Promise.resolve(Error(Errors.databaseError("rename_table is not supported via ODBC. Use WinComAdapter.")))
+              }
+            | "rename_column" => {
+                Promise.resolve(Error(Errors.databaseError("rename_column is not supported via ODBC. Use WinComAdapter.")))
+              }
+            | _ => {
+                // Unknown action — continue with remaining actions
+                processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+              }
+            }
+          }
+        }
+      }
+      processActions(actions)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// createQuery — CREATE VIEW [name] AS sql (REQ-S6)
+// ---------------------------------------------------------------------------
+
+let createQuery = (
+  adapter: t,
+  name: string,
+  sql: string,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let ddl = SqlBuilder.createView(~name, ~sql)
+      conn.query(ddl, [])
+        ->Promise.then(result => {
+          switch result {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// deleteQuery — DROP VIEW [name] (REQ-S6)
+// ---------------------------------------------------------------------------
+
+let deleteQuery = (adapter: t, name: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let ddl = SqlBuilder.dropView(~name)
+      conn.query(ddl, [])
+        ->Promise.then(result => {
+          switch result {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// setQuerySql — DROP VIEW then CREATE VIEW sequentially; surface first failure
+// REQ-S6
+// ---------------------------------------------------------------------------
+
+let setQuerySql = (
+  adapter: t,
+  name: string,
+  sql: string,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  switch _requireConnection(adapter) {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let dropSql = SqlBuilder.dropView(~name)
+      conn.query(dropSql, [])
+        ->Promise.then(result => {
+          switch result {
+          | Error(e) => Promise.resolve(Error(e))
+          | Ok(_) => {
+              let createSql = SqlBuilder.createView(~name, ~sql)
+              conn.query(createSql, [])
+                ->Promise.then(result2 => {
+                  switch result2 {
+          | Ok(_) => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+          | Error(e) => Promise.resolve(Error(e))
+                  }
+                })
+                ->Promise.catch(e => {
+                  let msg = _exnMessage(e)
+                  Promise.resolve(Error(Errors.databaseError(msg)))
+                })
+            }
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
+}
