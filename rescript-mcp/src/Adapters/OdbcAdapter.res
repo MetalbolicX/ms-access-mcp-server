@@ -30,6 +30,7 @@ type whereClause = SqlBuilder.whereClause
 
 type t = {
   mutable connection: option<Bindings.Odbc.connection>,
+  mutable dbPath: option<string>,
 }
 
 // ---------------------------------------------------------------------------
@@ -82,11 +83,16 @@ let connect = (
   | Some(pwd) => connectionString ++ ";PWD=" ++ pwd
   | None => connectionString
   }
+  // Extract DBQ=<path> from connection string for file metadata
+  let dbqMatch: option<string> = %raw(
+    "s => { const m = s.match(/DBQ=([^;]+)/i); return m ? m[1] : null }"
+  )(connectionString)
   Bindings.Odbc.connect(connStrWithPwd)
     ->Promise.then(result => {
       switch result {
       | Ok(conn) => {
           adapter.connection = Some(conn)
+          adapter.dbPath = dbqMatch
           Promise.resolve(Ok(true))
         }
       | Error(err) => Promise.resolve(Error(err))
@@ -109,10 +115,12 @@ let disconnect = (adapter: t): Promise.t<result<unit, Errors.t>> => {
       conn.close(())
         ->Promise.then(() => {
           adapter.connection = None
+          adapter.dbPath = None
           Promise.resolve(Ok(()))
         })
         ->Promise.catch(e => {
           adapter.connection = None
+          adapter.dbPath = None
           let msg = _exnMessage(e)
           Promise.resolve(Error(Errors.databaseError(msg)))
         })
@@ -320,18 +328,100 @@ let executeRawSql = (
 }
 
 // ---------------------------------------------------------------------------
-// exportData — export table data to a file (stub — returns not-implemented)
-// D3/D6: actual implementation delegates to ODBC driver capabilities
+// exportData — export query results to CSV or JSON file (REQ-D10)
+// executeQuery → format → write via node:fs → Ok(mutationResult)
+// Disconnected → Error | Unknown format → Error | Success → Ok with affected
 // ---------------------------------------------------------------------------
 
 let exportData = (
-  _adapter: t,
-  _table: string,
-  _filePath: string,
-  ~_format: option<string>=?,
+  adapter: t,
+  query: string,
+  filePath: string,
+  ~format: option<string>=?,
   ~_options: option<dict<JSON.t>>=?,
 ): Promise.t<result<Interfaces.mutationResult, Errors.t>> => {
-  Promise.resolve(Error(Errors.databaseError("exportData not yet implemented")))
+  switch adapter.connection {
+  | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
+  | Some(conn) => {
+      let fmt = switch format {
+      | Some(f) => f
+      | None => "csv"
+      }
+      conn.query(query, [])
+        ->Promise.then(result => {
+          switch result {
+          | Error(e) => Promise.resolve(Error(e))
+          | Ok(r) => {
+              let jsonRows = r.rows
+              let rowCount = Belt.Array.length(jsonRows)
+              let columns = r.columns
+              // Serialize based on format — unknown format returns Error
+              let contentOpt: option<string> = if fmt == "csv" {
+                Some(
+                  CsvWriter.serializeWithHeaders(
+                    columns,
+                    Belt.Array.map(jsonRows, row => {
+                      Belt.Array.map(columns, col => {
+                        let v: option<Bindings.Odbc.oDBcValue> = Dict.get(row, col)
+                        switch v {
+                        | Some(Bindings.Odbc.Str(s)) => s
+                        | Some(Bindings.Odbc.Int(i)) => Belt.Int.toString(i)
+                        | Some(Bindings.Odbc.Float(f)) => Belt.Float.toString(f)
+                        | Some(Bindings.Odbc.Null) => ""
+                        | Some(Bindings.Odbc.Bool(b)) => b ? "true" : "false"
+                        | Some(Bindings.Odbc.DateTime(d)) => Date.toISOString(d)
+                        | Some(Bindings.Odbc.Buffer(b)) => %raw("buf => buf.toString('base64')")(b)
+                        | None => ""
+                        }
+                      })
+                    }),
+                  ),
+                )
+              } else if fmt == "json" {
+                Some(
+                  JSON.stringify(
+                    JSON.Array(
+                      Belt.Array.map(jsonRows, row => {
+                        let obj: dict<JSON.t> = Belt.Array.reduce(columns, Dict.make(), (acc, col) => {
+                          let v: option<Bindings.Odbc.oDBcValue> = Dict.get(row, col)
+                          let jsonVal: JSON.t = switch v {
+                          | Some(Bindings.Odbc.Null) => JSON.Null
+                          | Some(Bindings.Odbc.Int(i)) => JSON.Number(Float.fromInt(i))
+                          | Some(Bindings.Odbc.Float(f)) => JSON.Number(f)
+                          | Some(Bindings.Odbc.Bool(b)) => JSON.Boolean(b)
+                          | Some(Bindings.Odbc.Str(s)) => JSON.String(s)
+                          | Some(Bindings.Odbc.DateTime(d)) => JSON.String(Date.toISOString(d))
+                          | Some(Bindings.Odbc.Buffer(b)) => JSON.String(%raw("buf => buf.toString('base64')")(b))
+                          | None => JSON.Null
+                          }
+                          Dict.set(acc, col, jsonVal)
+                          acc
+                        })
+                        JSON.Object(obj)
+                      }),
+                    ),
+                  ),
+                )
+              } else {
+                None
+              }
+              switch contentOpt {
+              | None => Promise.resolve(Error(Errors.validationError("unsupported export format: " ++ fmt)))
+              | Some(content) => {
+                  let _written: unit = %raw("(path, content) => require('node:fs').writeFileSync(path, Buffer.from(content))")(filePath, content)
+                  let result: Interfaces.mutationResult = {success: true, affected: rowCount, error: None}
+                  Promise.resolve(Ok(result))
+                }
+              }
+            }
+          }
+        })
+        ->Promise.catch(e => {
+          let msg = _exnMessage(e)
+          Promise.resolve(Error(Errors.databaseError(msg)))
+        })
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -732,11 +822,208 @@ let generateSql = (_adapter: t, _outputPath: string): Promise.t<result<Interface
 }
 
 // ---------------------------------------------------------------------------
-// getDatabaseStatistics — degraded stub (statistics not yet implemented)
+// _lstatFile — get file size and mtime via node:fs lstatSync
+// Returns (size_bytes, modified_iso) — (0, "") on error
 // ---------------------------------------------------------------------------
 
-let getDatabaseStatistics = (_adapter: t): Promise.t<result<dict<JSON.t>, Errors.t>> => {
-  Promise.resolve(Ok(Dict.make()))
+let _lstatFile = (path: string): (int, string) => {
+  try {
+    let stats: NodeJs.Fs.Stats.t = %raw("p => require('node:fs').lstatSync(p)")(path)
+    let size: int = %raw("s => s.size")(stats)
+    let mtimeMs: float = %raw("s => s.mtimeMs")(stats)
+    let modified: string = Date.toISOString(Date.fromTime(mtimeMs))
+    (size, modified)
+  } catch {
+  | _ => (0, "")
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _mapMsysType — map MSysObjects Type code to statistics key
+// Returns Some(("tables"|"queries"|"forms"|"reports"|"macros"|"modules", count))
+// or None for unmapped types
+// ---------------------------------------------------------------------------
+
+let _mapMsysType = (typeCode: int, count: int): option<(string, int)> => {
+  switch typeCode {
+  | 1 | 4 | 6 => Some(("tables", count))
+  | 5 => Some(("queries", count))
+  | -32768 => Some(("forms", count))
+  | -32764 => Some(("reports", count))
+  | -32766 => Some(("macros", count))
+  | -32761 => Some(("modules", count))
+  | _ => None
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getDatabaseStatistics — REQ-S11
+// Connected: query MSysObjects GROUP BY Type → map codes to counts
+// MSys denied: fall back to getTables() count, log warning
+// Disconnected: empty counts, empty file, no warning
+// ---------------------------------------------------------------------------
+
+let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.t>> => {
+  switch adapter.connection {
+  | None => {
+      // Disconnected: zero counts, empty file, no warning
+      let stats: dict<JSON.t> = Dict.fromArray([
+        ("success", JSON.Boolean(true)),
+        ("tables", JSON.Number(0.0)),
+        ("queries", JSON.Number(0.0)),
+        ("forms", JSON.Number(0.0)),
+        ("reports", JSON.Number(0.0)),
+        ("macros", JSON.Number(0.0)),
+        ("modules", JSON.Number(0.0)),
+        ("file_name", JSON.String("")),
+        ("file_size_bytes", JSON.Number(0.0)),
+        ("file_modified", JSON.String("")),
+        ("access_version", JSON.Null),
+        ("com_available", JSON.Boolean(false)),
+        ("warning", JSON.Null),
+      ])
+      Promise.resolve(Ok(stats))
+    }
+  | Some(conn) => {
+      let sql = "SELECT Type, Count(*) AS Count FROM MSysObjects GROUP BY Type"
+      conn.query(sql, [])
+        ->Promise.then(result => {
+          switch result {
+          | Error(_) => {
+              // MSysObjects denied — fall back to getTables count
+              conn.tables(~tableType=Some("TABLE"))
+                ->Promise.then(tableResult => {
+                  let tableCount = switch tableResult {
+                  | Ok(rows) => Belt.Array.length(rows)
+                  | Error(_) => 0
+                  }
+                  let (size, modified) = switch adapter.dbPath {
+                  | Some(path) => _lstatFile(path)
+                  | None => (0, "")
+                  }
+                  let stats: dict<JSON.t> = Dict.fromArray([
+                    ("success", JSON.Boolean(true)),
+                    ("tables", JSON.Number(Float.fromInt(tableCount))),
+                    ("queries", JSON.Number(0.0)),
+                    ("forms", JSON.Number(0.0)),
+                    ("reports", JSON.Number(0.0)),
+                    ("macros", JSON.Number(0.0)),
+                    ("modules", JSON.Number(0.0)),
+                    ("file_name", JSON.String(switch adapter.dbPath {
+                      | Some(p) => %raw("s => s.split(/[\\\\/]/).pop()")(p)
+                      | None => ""
+                    })),
+                    ("file_size_bytes", JSON.Number(Float.fromInt(size))),
+                    ("file_modified", JSON.String(modified)),
+                    ("access_version", JSON.Null),
+                    ("com_available", JSON.Boolean(false)),
+                    ("warning", JSON.String("MSysObjects access denied — table count from cursor.tables(), other counts unavailable")),
+                  ])
+                  Promise.resolve(Ok(stats))
+                })
+                ->Promise.catch(_e => {
+                  let emptyStats: dict<JSON.t> = Dict.fromArray([
+                    ("success", JSON.Boolean(true)),
+                    ("tables", JSON.Number(0.0)),
+                    ("queries", JSON.Number(0.0)),
+                    ("forms", JSON.Number(0.0)),
+                    ("reports", JSON.Number(0.0)),
+                    ("macros", JSON.Number(0.0)),
+                    ("modules", JSON.Number(0.0)),
+                    ("file_name", JSON.String("")),
+                    ("file_size_bytes", JSON.Number(0.0)),
+                    ("file_modified", JSON.String("")),
+                    ("access_version", JSON.Null),
+                    ("com_available", JSON.Boolean(false)),
+                    ("warning", JSON.String("MSysObjects access denied — table count from cursor.tables(), other counts unavailable")),
+                  ])
+                  Promise.resolve(Ok(emptyStats))
+                })
+            }
+          | Ok(r) => {
+              // Aggregate from MSysObjects
+              let tables = ref(0)
+              let queries = ref(0)
+              let forms = ref(0)
+              let reports = ref(0)
+              let macros = ref(0)
+              let modules = ref(0)
+              let _procRows = Belt.Array.map(r.rows, row => {
+                let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
+                let typeCode = ref(0)
+                let count = ref(0)
+                let _ = Belt.Array.map(entries, ((k, v)) => {
+                  switch k {
+                  | "Type" => switch v {
+                    | Bindings.Odbc.Int(i) => typeCode := i
+                    | Bindings.Odbc.Float(f) => typeCode := Float.toInt(f)
+                    | _ => ()
+                    }
+                  | "Count" => switch v {
+                    | Bindings.Odbc.Int(i) => count := i
+                    | Bindings.Odbc.Float(f) => count := Float.toInt(f)
+                    | _ => ()
+                    }
+                  | _ => ()
+                  }
+                })
+                switch _mapMsysType(typeCode.contents, count.contents) {
+                | Some(("tables", n)) => tables := n
+                | Some(("queries", n)) => queries := n
+                | Some(("forms", n)) => forms := n
+                | Some(("reports", n)) => reports := n
+                | Some(("macros", n)) => macros := n
+                | Some(("modules", n)) => modules := n
+                | Some(_) | None => ()
+                }
+              })
+              let (size, modified) = switch adapter.dbPath {
+              | Some(path) => _lstatFile(path)
+              | None => (0, "")
+              }
+              let stats: dict<JSON.t> = Dict.fromArray([
+                ("success", JSON.Boolean(true)),
+                ("tables", JSON.Number(Float.fromInt(tables.contents))),
+                ("queries", JSON.Number(Float.fromInt(queries.contents))),
+                ("forms", JSON.Number(Float.fromInt(forms.contents))),
+                ("reports", JSON.Number(Float.fromInt(reports.contents))),
+                ("macros", JSON.Number(Float.fromInt(macros.contents))),
+                ("modules", JSON.Number(Float.fromInt(modules.contents))),
+                ("file_name", JSON.String(switch adapter.dbPath {
+                  | Some(p) => %raw("s => s.split(/[\\\\/]/).pop()")(p)
+                  | None => ""
+                })),
+                ("file_size_bytes", JSON.Number(Float.fromInt(size))),
+                ("file_modified", JSON.String(modified)),
+                ("access_version", JSON.Null),
+                ("com_available", JSON.Boolean(false)),
+                ("warning", JSON.Null),
+              ])
+              Promise.resolve(Ok(stats))
+            }
+          }
+        })
+        ->Promise.catch(_e => {
+          // Unexpected error during MSysObjects query — degrade gracefully
+          let emptyStats: dict<JSON.t> = Dict.fromArray([
+            ("success", JSON.Boolean(true)),
+            ("tables", JSON.Number(0.0)),
+            ("queries", JSON.Number(0.0)),
+            ("forms", JSON.Number(0.0)),
+            ("reports", JSON.Number(0.0)),
+            ("macros", JSON.Number(0.0)),
+            ("modules", JSON.Number(0.0)),
+            ("file_name", JSON.String("")),
+            ("file_size_bytes", JSON.Number(0.0)),
+            ("file_modified", JSON.String("")),
+            ("access_version", JSON.Null),
+            ("com_available", JSON.Boolean(false)),
+            ("warning", JSON.String("MSysObjects access denied — table count from cursor.tables(), other counts unavailable")),
+          ])
+          Promise.resolve(Ok(emptyStats))
+        })
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
