@@ -1,5 +1,5 @@
 // SqlBuilder.res — pure SQL + param builders
-// REQ-D4/D5/D6/D9
+// REQ-D4/D5/D6/D9 + REQ-S7/S8
 
 // ---------------------------------------------------------------------------
 // Types
@@ -248,5 +248,133 @@ let delete = (table: string, whereClause: option<whereClause>): (string, array<J
       | Ok(whereFull) => (base ++ " " ++ whereFull, [])
       }
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DDL types — column info and alter-table actions (REQ-S7/S8)
+// ---------------------------------------------------------------------------
+
+// columnInfo describes a column for DDL generation
+type columnInfo = {
+  name: string,
+  colType: string,  // Access type name (e.g. "Text", "Long Integer")
+  size: int,        // 0 means "use default"
+  nullable: bool,
+}
+
+// alterTableAction represents a single ALTER TABLE sub-operation
+type alterTableAction =
+  | AddColumn(columnInfo)
+  | DropColumn(string)
+  | ModifyColumn(columnInfo)
+  | RenameTable(string)   // returns None (ODBC unsupported)
+  | RenameColumn(string, string)  // old, new — returns None (ODBC unsupported)
+
+// ---------------------------------------------------------------------------
+// odbcTypeMap — Access type → ODBC SQL type name (REQ-S7)
+// Case-insensitive; empty/unknown → passthrough
+// ---------------------------------------------------------------------------
+
+let odbcTypeMap = (accessType: string): string => {
+  // Handle "INTEGER" (SQL standard, all-caps) before case-insensitive pass
+  switch accessType {
+  | "INTEGER" => "INT"
+  | _ => {
+      let t: string = %raw("(s) => (s ?? '').toLowerCase()")(accessType)
+      switch t {
+      | "" => ""
+      | "text" => "VARCHAR"
+      | "varchar" => "VARCHAR"
+      | "char" => "VARCHAR"
+      | "memo" => "TEXT"
+      | "long integer" => "INT"
+      | "integer" => "SMALLINT"  // Access "Integer" type (2-byte)
+      | "int" => "INT"
+      | "bigint" => "BIGINT"
+      | "smallint" => "SMALLINT"
+      | "tinyint" => "TINYINT"
+      | "bit" => "BIT"
+      | "boolean" => "BIT"
+      | "date/time" => "DATETIME"
+      | "datetime" => "DATETIME"
+      | "date" => "DATETIME"
+      | "time" => "DATETIME"
+      | "timestamp" => "DATETIME"
+      | "decimal" => "DECIMAL"
+      | "numeric" => "DECIMAL"
+      | "money" => "MONEY"
+      | "currency" => "MONEY"
+      | "float" => "FLOAT"
+      | "double" => "FLOAT"
+      | "real" => "REAL"
+      | "single" => "REAL"
+      | "binary" => "VARBINARY"
+      | "varbinary" => "VARBINARY"
+      | "image" => "VARBINARY"
+      | "guid" => "GUID"
+      | _ => "VARCHAR"  // unknown types default to VARCHAR
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// _columnDefInternal — build a single column def string (private helper)
+// Returns "[name] TYPE[size] [NOT] NULL"
+// ---------------------------------------------------------------------------
+
+let _columnDefInternal = (col: columnInfo): string => {
+  let odbcType = odbcTypeMap(col.colType)
+  let size = if col.size > 0 { col.size } else { 255 }
+  let typed = if odbcType == "" {
+    ""
+  } else if odbcType == "VARCHAR" || odbcType == "CHAR" {
+    // VARCHAR/CHAR: append size (default 255)
+    odbcType ++ "(" ++ Belt.Int.toString(size) ++ ")"
+  } else {
+    // TEXT (MEMO) and all other types: no size suffix
+    odbcType
+  }
+  let nullable = if col.nullable { "NULL" } else { "NOT NULL" }
+  bracket(col.name) ++ " " ++ typed ++ " " ++ nullable
+}
+
+// ---------------------------------------------------------------------------
+// columnDef — public column definition (exports same logic as _columnDefInternal)
+// ---------------------------------------------------------------------------
+
+let columnDef = _columnDefInternal
+
+// ---------------------------------------------------------------------------
+// createTable — CREATE TABLE [...] (...) (REQ-S7)
+// ---------------------------------------------------------------------------
+
+let createTable = (table: string, columns: array<columnInfo>): string => {
+  let colDefs = Belt.Array.map(columns, _columnDefInternal)
+  let colsStr = _strJoin(colDefs, ", ")
+  "CREATE TABLE " ++ bracket(table) ++ " (" ++ colsStr ++ ")"
+}
+
+// ---------------------------------------------------------------------------
+// dropTable — DROP TABLE [...] (REQ-S7)
+// ---------------------------------------------------------------------------
+
+let dropTable = (table: string): string => {
+  "DROP TABLE " ++ bracket(table)
+}
+
+// ---------------------------------------------------------------------------
+// alterTable — ALTER TABLE [...] action (REQ-S8)
+// Returns Some(sql) for supported ops; None for rename ops (ODBC unsupported)
+// ---------------------------------------------------------------------------
+
+let alterTable = (table: string, action: alterTableAction): option<string> => {
+  switch action {
+  | AddColumn(col) => Some("ALTER TABLE " ++ bracket(table) ++ " ADD COLUMN " ++ _columnDefInternal(col))
+  | DropColumn(colName) => Some("ALTER TABLE " ++ bracket(table) ++ " DROP COLUMN " ++ bracket(colName))
+  | ModifyColumn(col) => Some("ALTER TABLE " ++ bracket(table) ++ " ALTER COLUMN " ++ _columnDefInternal(col))
+  | RenameTable(_) => None  // ODBC does not support rename_table
+  | RenameColumn(_, _) => None  // ODBC does not support rename_column
   }
 }
