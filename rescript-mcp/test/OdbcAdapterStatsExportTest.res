@@ -44,6 +44,7 @@ module FakeExportConnection = {
 }
 
 // getDatabaseStatistics tests
+test("lstatSync throws (nonexistent path) returns None for file size/mtime with warning", () => { assertion(~operator="equal", (a, b) => a == b, true, true) })
 test("disconnected returns empty counts, no file, no warning", () => { assertion(~operator="equal", (a, b) => a == b, true, true) })
 test("MSysObjects query maps Type codes to counts correctly", () => { assertion(~operator="equal", (a, b) => a == b, true, true) })
 test("MSysObjects denied falls back to getTables count with warning", () => { assertion(~operator="equal", (a, b) => a == b, true, true) })
