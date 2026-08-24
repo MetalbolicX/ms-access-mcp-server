@@ -2,11 +2,7 @@
 // Mounted by the SSR template at jobs.html via<script src="/dist/assets/jobs.js">
 import type { Job } from '../api/types'
 
-/**
- * Returns mock jobs for the jobs page.
- * Per spec: "will continue using mock data" — no real API polling in PR 2.
- */
-export function getMockJobs(): Job[] {
+export const getMockJobs = (): Job[] => {
   return [
     {
       id: 'job-1',
@@ -34,10 +30,7 @@ export function getMockJobs(): Job[] {
   ]
 }
 
-/**
- * Format an ISO date string to a locale datetime string.
- */
-export function formatDate(dateString: string): string {
+export const formatDate = (dateString: string): string => {
   return new Date(dateString).toLocaleString()
 }
 

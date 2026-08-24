@@ -15,15 +15,11 @@ const API_BASE = ''
 
 // --- Error handling ---
 
-function isUnauthorized(response: Response): boolean {
-  return response.status === 401
-}
+const isUnauthorized = (response: Response): boolean => response.status === 401
 
-function isForbidden(response: Response): boolean {
-  return response.status === 403
-}
+const isForbidden = (response: Response): boolean => response.status === 403
 
-async function handleResponse<T>(response: Response): Promise<T> {
+const handleResponse = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
     let message = `HTTP ${response.status}`
     try {
@@ -50,7 +46,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 // --- Core request helper ---
 // Does NOT read or write localStorage. Uses session cookie via credentials: include.
 
-async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+const apiRequest = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   }

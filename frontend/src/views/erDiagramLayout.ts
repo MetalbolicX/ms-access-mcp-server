@@ -26,17 +26,11 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
 
 type LayoutNode = Omit<Node, 'position'>& { position?: XYPosition }
 
-/**
- * Compute deterministic (x, y) positions for Vue Flow nodes using dagre.
- * Preserves node `data` and `style` and returns edges untouched. The
- * resulting `position` is the TOP-LEFT corner of the node (Vue Flow's
- * contract) — dagre returns the CENTER, so we shift by half the node size.
- */
-export function applyDagreLayout(
+export const applyDagreLayout = (
   nodes: LayoutNode[],
   edges: Edge[],
   options: LayoutOptions = {},
-): { nodes: Node[]; edges: Edge[] } {
+): { nodes: Node[]; edges: Edge[] } => {
   const opts = { ...DEFAULT_OPTIONS, ...options }
 
   // Empty input fast path: dagre.graphlib.Graph() does not like being

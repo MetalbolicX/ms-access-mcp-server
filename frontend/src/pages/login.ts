@@ -2,11 +2,7 @@
 // Mounted by the SSR template at login.html via<script src="/dist/assets/login.js">
 import { loginApi } from '../api/apiClient'
 
-/**
- * Attempt to log in with the given API key.
- * @returns error message string on failure, or throws on network failure.
- */
-export async function login(apiKey: string): Promise<string | never> {
+export const login = async (apiKey: string): Promise<string | never> => {
   try {
     const response = await loginApi.login(apiKey)
     if (response.success) {
@@ -30,10 +26,7 @@ export async function login(apiKey: string): Promise<string | never> {
   }
 }
 
-/**
- * Clear any error state (called on input change).
- */
-export function clearError(): void {
+export const clearError = (): void => {
   // Alpine data layer handles this via x-model
 }
 

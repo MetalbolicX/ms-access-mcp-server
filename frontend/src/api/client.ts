@@ -6,16 +6,14 @@ const API_BASE = ''
 // --- API Key State ---
 let apiKey: string = localStorage.getItem('mcp_api_key') ?? ''
 
-export function getApiKey(): string {
-  return apiKey
-}
+export const getApiKey = (): string => apiKey
 
-export function setApiKey(key: string): void {
+export const setApiKey = (key: string): void => {
   apiKey = key
   localStorage.setItem('mcp_api_key', key)
 }
 
-export function clearApiKey(): void {
+export const clearApiKey = (): void => {
   apiKey = ''
   localStorage.removeItem('mcp_api_key')
 }
@@ -26,7 +24,7 @@ interface RequestOptions {
   signal?: AbortSignal
 }
 
-async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+const apiRequest = async <T>(endpoint: string, options: RequestOptions = {}): Promise<T> => {
   const { method = 'GET', body, signal } = options
 
   const headers: Record<string, string> = {}

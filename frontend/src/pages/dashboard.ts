@@ -3,65 +3,39 @@
 import { connectionApi, schemaApi } from '../api/apiClient'
 import type { DatabaseStatistics, TablesResponse, RelationshipsResponse } from '../api/types'
 
-/**
- * Load current connection status.
- * @throws Error on 401 (redirects to /login via apiClient).
- */
-export async function loadConnectionStatus(): Promise<{ connected: boolean; database?: string }> {
+export const loadConnectionStatus = async (): Promise<{ connected: boolean; database?: string }> => {
   return connectionApi.isConnected()
 }
 
-/**
- * Load database aggregate statistics.
- * @throws Error on 401 (redirects to /login via apiClient).
- */
-export async function loadStats(): Promise<DatabaseStatistics> {
+export const loadStats = async (): Promise<DatabaseStatistics> => {
   return schemaApi.getDatabaseStatistics()
 }
 
-/**
- * Connect to a database.
- */
-export async function connectDatabase(
+export const connectDatabase = async (
   databasePath: string,
   useCom = false,
   password = '',
-): Promise<{ success: boolean; connected: boolean; database: string }> {
+): Promise<{ success: boolean; connected: boolean; database: string }> => {
   return connectionApi.connect(databasePath, useCom, password)
 }
 
-/**
- * Disconnect from the current database.
- */
-export async function disconnectDatabase(): Promise<{ success: boolean; message: string }> {
+export const disconnectDatabase = async (): Promise<{ success: boolean; message: string }> => {
   return connectionApi.disconnect()
 }
 
-/**
- * Load relationships for the relationships panel.
- */
-export async function loadRelationships(): Promise<RelationshipsResponse> {
+export const loadRelationships = async (): Promise<RelationshipsResponse> => {
   return schemaApi.getRelationships()
 }
 
-/**
- * Load all tables (for lazy-loaded object list).
- */
-export async function loadTables(): Promise<TablesResponse> {
+export const loadTables = async (): Promise<TablesResponse> => {
   return schemaApi.getTables()
 }
 
-/**
- * Load all queries (for lazy-loaded object list).
- */
-export async function loadQueries(): Promise<{ success: boolean; queries: any[]; count: number }> {
+export const loadQueries = async (): Promise<{ success: boolean; queries: any[]; count: number }> => {
   return schemaApi.getQueries()
 }
 
-/**
- * Format bytes to human-readable size string.
- */
-export function formatSize(bytes: number): string {
+export const formatSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
   const k = 1024
   const sizes = ['B', 'KB', 'MB', 'GB']

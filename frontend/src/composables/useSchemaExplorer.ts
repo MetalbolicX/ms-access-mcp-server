@@ -11,8 +11,8 @@ import { ref } from 'vue'
 
 const selectedTable = ref<string | null>(null)
 
-export function useSchemaExplorer() {
-  function select(table: string | null) {
+export const useSchemaExplorer = () => {
+  const select = (table: string | null) => {
     selectedTable.value = table
   }
   return { selectedTable, select }
