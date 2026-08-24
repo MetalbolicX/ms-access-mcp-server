@@ -408,7 +408,7 @@ let exportData = (
               switch contentOpt {
               | None => Promise.resolve(Error(Errors.validationError("unsupported export format: " ++ fmt)))
               | Some(content) => {
-                  let _written: unit = %raw("(path, content) => require('node:fs').writeFileSync(path, Buffer.from(content))")(filePath, content)
+                  let _written: unit = NodeJs.Fs.writeFileSync(filePath, NodeJs.Buffer.fromString(content))
                   let result: Interfaces.mutationResult = {success: true, affected: rowCount, error: None}
                   Promise.resolve(Ok(result))
                 }
@@ -828,11 +828,9 @@ let generateSql = (_adapter: t, _outputPath: string): Promise.t<result<Interface
 
 let _lstatFile = (path: string): (int, string) => {
   try {
-    let stats: NodeJs.Fs.Stats.t = %raw("p => require('node:fs').lstatSync(p)")(path)
-    let size: int = %raw("s => s.size")(stats)
-    let mtimeMs: float = %raw("s => s.mtimeMs")(stats)
-    let modified: string = Date.toISOString(Date.fromTime(mtimeMs))
-    (size, modified)
+    let stats: NodeJs.Fs.Stats.t = NodeJs.Fs.lstatSync(#String(path))
+    let modified: string = Date.toISOString(Date.fromTime(stats.mtimeMs))
+    (stats.size, modified)
   } catch {
   | _ => (0, "")
   }

@@ -178,15 +178,13 @@ testAsync("exportData: CSV executes query, captures lastQuery, attempts write", 
           fsUnlinkSafe(tmpPath)
         }
       | Error(_) => {
-          // Production uses raw require() for fs.writeFileSync — fails in ESM.
-          // Key assertion: query reached and was captured.
-          assertion(~operator="equal", (a, b) => a == b, FakeExportConnection.lastQuery.contents, "SELECT * FROM Items")
+          // No longer reachable — production uses NodeJs.Fs.writeFileSync (ESM-safe).
+          assertion(~operator="equal", (a, b) => a == b, false, true)
         }
       }
       Promise.resolve()
     })
-    ->Promise.then(() => { cb(~planned=1, ()); Promise.resolve() })
-    ->Promise.catch(_e => { fsUnlinkSafe(tmpPath); assertion(~operator="equal", (a, b) => a == b, false, true); cb(~planned=1, ()); Promise.resolve() }))
+    ->Promise.then(() => { cb(~planned=7, ()); Promise.resolve() }))
 })
 
 // exportData: JSON executes query, captures lastQuery, attempts write
@@ -208,14 +206,13 @@ testAsync("exportData: JSON executes query, captures lastQuery, attempts write",
           fsUnlinkSafe(tmpPath)
         }
       | Error(_) => {
-          // Production uses raw require() for fs.writeFileSync — fails in ESM.
-          assertion(~operator="equal", (a, b) => a == b, FakeExportConnection.lastQuery.contents, "SELECT * FROM Items")
+          // No longer reachable — production uses NodeJs.Fs.writeFileSync (ESM-safe).
+          assertion(~operator="equal", (a, b) => a == b, false, true)
         }
       }
       Promise.resolve()
     })
-    ->Promise.then(() => { cb(~planned=1, ()); Promise.resolve() })
-    ->Promise.catch(_e => { fsUnlinkSafe(tmpPath); assertion(~operator="equal", (a, b) => a == b, false, true); cb(~planned=1, ()); Promise.resolve() }))
+    ->Promise.then(() => { cb(~planned=6, ()); Promise.resolve() }))
 })
 
 // exportData: unknown format returns Error without writing file
