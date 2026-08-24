@@ -120,7 +120,7 @@ module type DATA_ADAPTER = {
   let updateData: (t, string, dict<JSON.t>, ~where: option<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>
   let deleteData: (t, string, ~where: option<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>
   let executeRawSql: (t, string) => Promise.t<result<int, Errors.t>>
-  let exportData: (t, string, string, ~format: string=?, ~options: dict<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>
+  let exportData: (t, string, string, ~format: option<string>=?, ~options: dict<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>
 }
 
 // SCHEMA_ADAPTER: schema introspection and DDL
