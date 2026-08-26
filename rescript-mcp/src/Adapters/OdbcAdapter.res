@@ -49,7 +49,7 @@ let _normalizeQueryResult = (result: Bindings.Odbc.oDBcResult): Interfaces.query
   {
     success: true,
     rows: jsonRows,
-    count: result.count,
+    count: Belt.Array.length(jsonRows),
     columns: result.columns,
     error: None,
   }
@@ -315,7 +315,7 @@ let executeRawSql = (
       conn.query(sql, [])
         ->Promise.then(result => {
           switch result {
-          | Ok(r) => Promise.resolve(Ok(r.count))
+          | Ok(r) => Promise.resolve(Ok(r.count >= 0 ? r.count : 0))
           | Error(e) => Promise.resolve(Error(e))
           }
         })

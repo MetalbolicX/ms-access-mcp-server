@@ -100,10 +100,14 @@ type odbcModule = {
 // Lazy dynamic import (D11/REQ-D11) — side-effect-free at module load time
 // ---------------------------------------------------------------------------
 
-@module("odbc")
-// The import returns a CJS module namespace object.
-// We treat it as dict<odbcModule> to access 'connect' and 'default'.
-external _importOdbc: unit => Promise.t<dict<odbcModule>> = "import"
+// _importOdbc — dynamic-import the odbc package as a JS Promise.
+// Was previously `external ... = "import"` which compiled to
+// `Odbc.import()` (a method call that does not exist on the odbc CJS
+// namespace). Replaced with a typed %raw wrapper that uses real JS
+// `import("odbc")`.
+let _importOdbc: unit => Promise.t<dict<odbcModule>> = () => {
+  %raw("(p) => import(p)")("odbc")->Promise.resolve
+}
 
 // ---------------------------------------------------------------------------
 // Error mapping (D4) — fold code/state into message
