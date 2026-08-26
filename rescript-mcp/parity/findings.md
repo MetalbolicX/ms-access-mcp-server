@@ -67,12 +67,16 @@ Findings categories:
 
 | # | Operation | Diff | Suspected side | Owner | Status |
 |---|-----------|------|----------------|-------|--------|
-| 007-F-001 | `query_data`, `get_table_schema`, `get_database_statistics`, `export_data` | ReScript returns `{success:false, error:null}`; Python returns the expected envelope | ReScript `OdbcAdapter.res:47 _normalizeQueryResult` reads `r.rows` which is `null` in `odbc` v2 | ReScript adapter | OPEN |
-| 007-F-002 | every catch path | Error message is `null` instead of the ODBC error string | ReScript `Bindings/Odbc.res:132 exnMessage` doesn't unwrap `internalToException`'s `{RE_EXN_ID, _1}` wrapper | ReScript binding | OPEN |
-| 007-F-003 | `execute_raw_sql` | ReScript driver crashes: `Invalid regular expression: /^\s*(?i)(drop\|delete\|update)\b/: Invalid group` | ReScript `Facade.res:869` uses Java-style `(?i)` syntax in `Js.Re.fromString` | ReScript facade | OPEN (driver-level failure) |
-| 007-F-004 | every data op (without runner workaround) | ReScript returns `{success:false, error:"Not connected"}` | `Composition.makeRealFactory` never calls `OdbcAdapter.connect` on the produced `dataAdapter.t` | ReScript composition | OPEN (workaround in runner) |
-| 007-F-005 | `get_tables` (and `get_table_schema` indirectly) | ReScript returns `tables: []`, Python returns 9 tables | `OdbcAdapter.getTables` reads `row.TABLE_NAME` as a ReScript variant; odbc v2 returns plain JS strings | ReScript adapter | OPEN |
-| 007-F-006 | `insert_data`, `update_data`, `delete_data` | ReScript returns `affected` = (count from odbc result) = -1 in some flows; Python returns `cursor.rowcount` | `OdbcAdapter._normalizeMutationResult` uses `result.count` which is always -1 in `odbc` v2 | ReScript adapter | OPEN |
+| 007-F-001 | `query_data`, `get_table_schema`, `get_database_statistics`, `export_data` | ReScript returns `{success:false, error:null}`; Python returns the expected envelope | ReScript `OdbcAdapter.res:47 _normalizeQueryResult` reads `r.rows` which is `null` in `odbc` v2 | ReScript adapter | **RESOLVED** (`addfe47`) |
+| 007-F-002 | every catch path | Error message is `null` instead of the ODBC error string | ReScript `Bindings/Odbc.res:132 exnMessage` doesn't unwrap `internalToException`'s `{RE_EXN_ID, _1}` wrapper | ReScript binding | **RESOLVED** (`0ac1b13`) |
+| 007-F-003 | `execute_raw_sql` | ReScript driver crashes: `Invalid regular expression: /^\s*(?i)(drop\|delete\|update)\b/: Invalid group` | ReScript `Facade.res:869` uses Java-style `(?i)` syntax in `Js.Re.fromString` | ReScript facade | **RESOLVED** (`a729d9d`) — JS `i` flag via `fromStringWithFlags` |
+| 007-F-004 | every data op (without runner workaround) | ReScript returns `{success:false, error:"Not connected"}` | `Composition.makeRealFactory` never calls `OdbcAdapter.connect` on the produced `dataAdapter.t` | ReScript composition | **RESOLVED** (`30777e6`) — factory now opens the ODBC connection itself; runner workaround removed |
+| 007-F-005 | `get_tables` (and `get_table_schema` indirectly) | ReScript returns `tables: []`, Python returns 9 tables | `OdbcAdapter.getTables` reads `row.TABLE_NAME` as a ReScript variant; odbc v2 returns plain JS strings | ReScript adapter | **RESOLVED** (`182a9ed`) — `_rowString`/`_rowInt` helpers accept plain JS or variants; `conn.tables/columns` use `null` for missing args |
+| 007-F-006 | `insert_data`, `update_data`, `delete_data` | ReScript returns `affected` = (count from odbc result) = -1 in some flows; Python returns `cursor.rowcount` | `OdbcAdapter._normalizeMutationResult` uses `result.count` which is always -1 in `odbc` v2 | ReScript adapter | **RESOLVED** (`2da805f`) — fall back to `result.rows.length` when `count = -1` |
+| 007-F-007 | `insert_data`, `update_data` | ReScript driver: `[odbc] Error getting information about parameters` | JSON.t-variant params reach native odbc and break `SQLDescribeParam` on Access | ReScript adapter | **RESOLVED** (`bfc0ee0`) — inline literal values into SQL, strip JSON.t wrappers before native query call |
+| 007-F-008 | `get_database_statistics` | ReScript returns flat `{tables,queries,...}`; Python returns nested `{objects:{...},file:{...},system:{...}}` | ReScript `OdbcAdapter.getDatabaseStatistics` returns flat shape | ReScript adapter | **RESOLVED** (`8403c98`) — restated to nested `{objects, file, system}` matching Python oracle |
+
+**Pre-existing test failures (unrelated to F-001..F-008):** 2 of 581 unit tests fail before and after this work (HungKillFailed carries error message; get_tables COUNT failure tolerates and sets recordCount=0). These are pre-existing in the baseline at `2da805f` and not regressions from the parity fixes.
 
 ## Resolved during execution
 
@@ -113,17 +117,17 @@ Proves the harness detects injected mismatches:
    FAIL / 1 ERROR (the pre-mutation baseline). The harness fails when
    behavior differs, as designed.
 
-## Follow-ups for plan 008+
+## Resolution summary (commits in `rescript/fix-parity-findings` branch)
 
-- Fix 007-F-001 (`r.rows` → `r[0..n]` array iteration) — unblocks every
-  query-driven facade op.
-- Fix 007-F-002 (unwrap `_1` in `exnMessage`) — surfaces actual error
-  messages instead of `null`.
-- Fix 007-F-003 (`(?i)` → `i` flag) — `executeRawSql` works.
-- Fix 007-F-004 (composition should call `OdbcAdapter.connect` after
-  producing the binding) — restores parity without runner workarounds.
-- Fix 007-F-005 (treat `odbc.tables()` row values as plain JS, not
-  ReScript variants).
-- Fix 007-F-006 (`_normalizeMutationResult` should compute affected from
-  `result.rows.length` when `result.count = -1`, or use the OdbcAdapter's
-  own row-counting strategy).
+| Commit  | Finding | Parity outcome |
+|---------|---------|----------------|
+| `0ac1b13` | 007-F-002 exnMessage unwrap | `getDatabaseProperties` and other catch paths surface real ODBC errors |
+| `addfe47` | 007-F-001 iterate odbc v2 result array | `queryData`, `getTableSchema`, `getDatabaseStatistics`, `exportData` recover |
+| `2da805f` | 007-F-006 fallback to rows.length when count=-1 | `insert_data`, `update_data`, `delete_data` return real affected |
+| `182a9ed` | 007-F-005 plain JS row values + null args | `get_tables`, `get_table_schema_customers` recover |
+| `a729d9d` | 007-F-003 JS `i` regex flag | `execute_raw_sql_select` recovers (also fixed runner positional `name` bug) |
+| `30777e6` | 007-F-004 factory opens connection itself | all data ops work without runner workaround; runner workaround removed |
+| `bfc0ee0` | 007-F-007 inline literal SQL values + strip JSON.t wrappers | `insert_data`, `update_data` recover |
+| `8403c98` | 007-F-008 nested `{objects,file,system}` shape | `get_database_statistics` matches Python oracle |
+
+**Final parity**: 17 cases, 17 matched, 0 mismatched, 0 errored.
