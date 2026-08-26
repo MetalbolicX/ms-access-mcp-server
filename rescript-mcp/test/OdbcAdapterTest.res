@@ -284,7 +284,7 @@ testAsync("insert disconnected: Error DatabaseError Not connected", cb => {
   )
 })
 
-testAsync("insert native count=-1: preserves native rowcount (matches Python: cursor.rowcount without clamp)", cb => {
+testAsync("insert native count=-1: falls back to rows.length when native count is -1", cb => {
   let _ = Fake.reset()
   Fake.overrides.contents = [
     Ok({rows: [], columns: [], count: -1, statement: None}),
@@ -297,7 +297,8 @@ testAsync("insert native count=-1: preserves native rowcount (matches Python: cu
         Promise.resolve(
           switch r {
           | Ok(result) => {
-              assertion(~operator="equal", (a, b) => a == b, result.affected, -1)
+              // count=-1 with empty rows → affected falls back to rows.length (0)
+              assertion(~operator="equal", (a, b) => a == b, result.affected, 0)
               assertion(~operator="equal", (a, b) => a == b, result.success, true)
               cb(~planned=2, ())
             }

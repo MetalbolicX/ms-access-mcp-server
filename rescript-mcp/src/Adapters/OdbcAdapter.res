@@ -75,13 +75,21 @@ let _normalizeQueryResult = (result: Bindings.Odbc.oDBcResult): Interfaces.query
 
 // ---------------------------------------------------------------------------
 // _normalizeMutationResult — oDBcResult → Interfaces.mutationResult
-// Returns affected row count from oDBcResult.count
+// odbc v2 returns count=-1 for INSERT/UPDATE/DELETE on some drivers
+// (notably the MS Access ACE driver) where SQLRowCount is not populated.
+// Fall back to result.rows.length when count is non-positive.
 // ---------------------------------------------------------------------------
 
 let _normalizeMutationResult = (result: Bindings.Odbc.oDBcResult): Interfaces.mutationResult => {
+  let rowsArr: array<dict<JSON.t>> = %raw("r => Array.isArray(r) ? r : (r && Array.isArray(r.rows) ? r.rows : [])")(result)
+  let affected = if result.count >= 0 {
+    result.count
+  } else {
+    Belt.Array.length(rowsArr)
+  }
   {
     success: true,
-    affected: result.count,
+    affected: affected,
     error: None,
   }
 }
