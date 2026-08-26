@@ -2,8 +2,8 @@
 // Field order is a FROZEN SEAM CONTRACT (REQ-CROSS-2).
 // These types are derived from the live DATA_ADAPTER (9 ops) and
 // SCHEMA_ADAPTER (22 ops) module types in Interfaces.res.
-// NOTE: insertData takes JSON.t per live OdbcAdapter (NOT dict<JSON.t>
-// per the stale Interfaces declaration — interface drift tracked separately).
+// NOTE: insertData takes dict<JSON.t> per live OdbcAdapter (matches
+// Interfaces.res line 116 — drift reconciled in plan 022/025).
 
 open Interfaces
 
@@ -31,7 +31,7 @@ type dataAdapterInstance = {
   disconnect: unit => Promise.t<result<unit, Errors.t>>,
   isConnected: unit => Promise.t<result<bool, Errors.t>>,
   executeQuery: (string, ~params: array<JSON.t>=?) => Promise.t<result<queryResult, Errors.t>>,
-  insertData: (string, JSON.t) => Promise.t<result<mutationResult, Errors.t>>,
+  insertData: (string, dict<JSON.t>) => Promise.t<result<mutationResult, Errors.t>>,
   updateData: (string, dict<JSON.t>, ~where: option<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>,
   deleteData: (string, ~where: option<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>,
   executeRawSql: string => Promise.t<result<int, Errors.t>>,
