@@ -9,7 +9,8 @@
     "build": "rescript",
     "dev": "rescript watch",
     "clean": "rescript clean",
-    "test": "retest \"test/**/*.res.mjs\""
+    "test": "retest \"test/**/*.res.mjs\"",
+    "parity": "node parity/run.mjs"
   },
   "dependencies": {
     "@rescript/runtime": "^12.0.0",

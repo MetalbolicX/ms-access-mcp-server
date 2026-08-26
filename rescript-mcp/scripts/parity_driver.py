@@ -354,12 +354,24 @@ def _is_connected_op(args: dict) -> dict:
 
 
 def _set_active_op(args: dict) -> dict:
-    """Mirror ReScript's setActiveConnection envelope."""
+    """Mirror ReScript's setActiveConnection envelope.
+
+    Each parity driver invocation runs in a fresh Python process with an
+    empty connection pool. setActiveConnection requires the named
+    connection to already be registered, so we prime the pool with a
+    connect first (mirroring how the runner primes the ReScript side via
+    Facade.connectAccess).
+    """
     from ms_access_mcp.mcp.container import get_container
 
     name = args["name"]
+    pool = get_container().connection_pool
+    db_path = os.environ["ACCESS_TEST_DB"]
     try:
-        get_container().connection_pool.set_active(name)
+        # Prime the pool with a connect if the name isn't already there.
+        if name not in pool.list():
+            pool.connect(name, db_path, "odbc", password="")
+        pool.set_active(name)
         return {"success": True, "active": name}
     except Exception as exc:
         return {"success": False, "error": str(exc)}

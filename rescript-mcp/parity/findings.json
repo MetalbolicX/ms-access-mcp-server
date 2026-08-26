@@ -1,0 +1,104 @@
+[
+  {
+    "operation": "execute_raw_sql",
+    "case": "execute_raw_sql_select.json",
+    "diff": {
+      "path": "DRIVER",
+      "expected": "ok",
+      "actual": "rescript: rescript exit 1"
+    },
+    "stderr": "runRescript: Invalid regular expression: /^\\s*(?i)(drop|delete|update)\\b/: Invalid group\nSyntaxError: Invalid regular expression: /^\\s*(?i)(drop|delete|update)\\b/: Invalid group\n    at new RegExp (<anonymous>)\n    at Module.executeRawSql (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:653:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/runRescript.mjs:137:27)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/runRescript.mjs:238:26)\n"
+  },
+  {
+    "operation": "export_data",
+    "case": "export_data_csv.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "format",
+        "rows_exported"
+      ],
+      "actual": "missing"
+    }
+  },
+  {
+    "operation": "get_database_statistics",
+    "case": "get_database_statistics.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "file",
+        "objects",
+        "system"
+      ],
+      "actual": "missing"
+    }
+  },
+  {
+    "operation": "get_table_schema",
+    "case": "get_table_schema_customers.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "table"
+      ],
+      "actual": "missing"
+    }
+  },
+  {
+    "operation": "get_tables",
+    "case": "get_tables.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "count",
+        "tables"
+      ],
+      "actual": "missing"
+    }
+  },
+  {
+    "operation": "insert_data",
+    "case": "insert_data.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "affected"
+      ],
+      "actual": "missing"
+    }
+  },
+  {
+    "operation": "query_data",
+    "case": "query_data_customers.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "columns",
+        "count",
+        "rows"
+      ],
+      "actual": "missing"
+    }
+  },
+  {
+    "operation": "set_active_connection",
+    "case": "set_active_connection.json",
+    "diff": {
+      "path": "DRIVER",
+      "expected": null,
+      "actual": "python: \"Connection 'default' not found\""
+    }
+  },
+  {
+    "operation": "update_data",
+    "case": "update_data.json",
+    "diff": {
+      "path": "$",
+      "expected": [
+        "affected"
+      ],
+      "actual": "missing"
+    }
+  }
+]
