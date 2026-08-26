@@ -986,7 +986,6 @@ let exportData = (
                             q.columns,
                             rows,
                             ~delimiter=csvDelimiter,
-                            ~header=csvHeader
                           )
                         } else {
                           // JSON format
