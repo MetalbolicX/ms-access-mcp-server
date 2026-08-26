@@ -61,6 +61,15 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
    `.res` source rewrite) silently crash the test runner. Any plan that
    rewrites test source shape must either delete the stale `.mjs` files
    or document the gap. Plan 025 enforces this for the current orphans.
+7. **Fresh-build from empty `lib/bs` is the ONLY trustworthy gate.**
+   Incremental builds with cached `.bs.js` artifacts mask latent type
+   errors that would otherwise fail a true clean compile. Plan 025
+   shipped a "green" suite that was actually passing on cached state;
+   plan 024's fresh build exposed `Instances.res:34` declaring
+   `insertData: (string, JSON.t)` instead of `dict<JSON.t>` (the live
+   `OdbcAdapter.insertData` signature). Every plan's "suite is green"
+   claim MUST come from `rescript clean` + full rebuild + test, full
+   stop. Cached `lib/bs` is not evidence.
 
 
   work where test-first cannot apply (nothing to drive out) and there is
@@ -92,7 +101,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | - | DONE |
 | 022 | Reconcile insertData/exportData drift (dict<JSON.t> + mutationResult) | 22 | STRICT TDD | P1 | XS | 021 | PARTIAL (edits in tree; blocked on plan 023's CsvWriter fix) |
 | 023 | Finish plan 022 — CsvWriter ~header fix + commit + fresh-build verify | 23 | STRICT TDD | P1 | XS | 021 | DONE |
-| 024 | Repo hygiene — commit plans/tooling/artifacts + consolidate branch chain to main | 24 | NEITHER | P1 | S | 023, 025 | TODO |
+| 024 | Repo hygiene — commit plans/tooling/artifacts + consolidate branch chain to main | 24 | NEITHER | P1 | S | 023, 025 | DONE |
 | 025 | Fix the test suite (stale test/.mjs cleanup + count-clamping fix) — pre-024 gate | 25 | NEITHER | P1 | S | 023 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
@@ -125,9 +134,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   drift reconciled (022+023), a clean committed tree (024), and a
   non-crashing test suite (025). Recommended order:
   **016 ✅**, **017 ✅**, **021 ✅**, **022+023 ✅** (drift close-out
-  committed at `1672743`), then **025** (stale `.mjs` + count-clamp),
-  then **024** (consolidate to main), then **015 T2-T6** (resume from
-  post-024 main), then **018** (amend plan 007 text), then **007**.
+  committed at `1672743`), **025 ✅** (stale `.mjs` + count-clamp +
+  Instances.res type fix), **024 ✅** (consolidated to main at
+  `bf8f9d0` merge + `96afc2d` Instances fix), then **015 T2-T6** (resume
+  from post-024 main), then **018** (amend plan 007 text), then **007**.
   Plans 015-018 were written against the UNCOMMITTED plans-003-006
   working tree at `2bbff3a`; plans 024 + 025 resolve that debt and the
   pre-existing test-suite drift from plan 015 T1.
