@@ -70,6 +70,95 @@ let _rowFirstInt = (row: dict<JSON.t>): int => {
   %raw("(row) => { for (const k of Object.keys(row)) { const v = row[k]; if (typeof v === 'number') return Math.trunc(v); if (v && typeof v === 'object' && (v.TAG === 'Int' || v.TAG === 'Float') && typeof v._0 === 'number') return Math.trunc(v._0); } return 0; }")(row)
 }
 
+// _formatSqlValue — convert a JSON.t value to a literal SQL fragment.
+// Used by INSERT/UPDATE/DELETE to inline values into the SQL string.
+// Access ACE ODBC driver fails SQLDescribeParam for prepared INSERT/UPDATE
+// statements (see parity F-007); inline literals avoid that path.
+let _formatSqlValue = (j: JSON.t): string => {
+  %raw(`
+    (function() {
+      function fmt(v) {
+        if (v == null) return 'NULL';
+        if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+        if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+        if (typeof v === 'string') return "'" + v.replace(/'/g, "''") + "'";
+        if (typeof v === 'object') {
+          switch (v.TAG) {
+            case 'String': return "'" + String(v._0).replace(/'/g, "''") + "'";
+            case 'Number': return Number.isFinite(v._0) ? String(v._0) : 'NULL';
+            case 'Bool':   return v._0 ? 'TRUE' : 'FALSE';
+            case 'Null':   return 'NULL';
+            default: return 'NULL';
+          }
+        }
+        return 'NULL';
+      }
+      return fmt(j);
+    })()
+  `)
+}
+
+// _formatParamArray — inline all params into a single SQL fragment string.
+let _formatParamArray = (params: array<JSON.t>): string => {
+  %raw(`
+    (function() {
+      function fmt(v) {
+        if (v == null) return 'NULL';
+        if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+        if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+        if (typeof v === 'string') return "'" + v.replace(/'/g, "''") + "'";
+        if (typeof v === 'object') {
+          switch (v.TAG) {
+            case 'String': return "'" + String(v._0).replace(/'/g, "''") + "'";
+            case 'Number': return Number.isFinite(v._0) ? String(v._0) : 'NULL';
+            case 'Bool':   return v._0 ? 'TRUE' : 'FALSE';
+            case 'Null':   return 'NULL';
+            default: return 'NULL';
+          }
+        }
+        return 'NULL';
+      }
+      return Array.isArray(params) ? params.map(fmt).join(', ') : '';
+    })()
+  `)
+}
+
+// _replaceQuestionMarks — replace each `?` placeholder in `sql` with the
+// corresponding formatted param from `params`.
+let _replaceQuestionMarks = (sql: string, params: array<JSON.t>): string => {
+  %raw(`
+    (function() {
+      function fmt(v) {
+        if (v == null) return 'NULL';
+        if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+        if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+        if (typeof v === 'string') return "'" + v.replace(/'/g, "''") + "'";
+        if (typeof v === 'object') {
+          switch (v.TAG) {
+            case 'String': return "'" + String(v._0).replace(/'/g, "''") + "'";
+            case 'Number': return Number.isFinite(v._0) ? String(v._0) : 'NULL';
+            case 'Bool':   return v._0 ? 'TRUE' : 'FALSE';
+            case 'Null':   return 'NULL';
+            default: return 'NULL';
+          }
+        }
+        return 'NULL';
+      }
+      let out = '';
+      let pi = 0;
+      const ps = Array.isArray(params) ? params : [];
+      for (let i = 0; i < sql.length; i++) {
+        if (sql[i] === '?' && pi < ps.length) {
+          out += fmt(ps[pi++]);
+        } else {
+          out += sql[i];
+        }
+      }
+      return out;
+    })()
+  `)
+}
+
 // ---------------------------------------------------------------------------
 // _buildWhereClause — parse JSON.t where clause into SqlBuilder.whereClause
 // JSON Object with "Dict" key → Dict variant
@@ -294,7 +383,11 @@ let insertData = (
   | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
   | Some(conn) => {
       let (sql, params) = SqlBuilder.insert(table, record)
-      conn.query(sql, params)
+      // Inline values to avoid the prepared-statement path on Access ACE
+      // (which fails SQLDescribeParam — see parity F-007). Pass no params so
+      // odbc uses SQLExecDirect directly.
+      let sqlInline = _replaceQuestionMarks(sql, params)
+      conn.query(sqlInline, [])
         ->Promise.then(result => {
           switch result {
           | Ok(r) => Promise.resolve(Ok(_normalizeMutationResult(r)))
@@ -327,7 +420,10 @@ let updateData = (
   | Some(conn) => {
       let whereOpt = _buildWhereClause(where)
       let (sql, params) = SqlBuilder.update(table, setDict, whereOpt)
-      conn.query(sql, params)
+      // Inline values to avoid the prepared-statement path on Access ACE
+      // (which fails SQLDescribeParam — see parity F-007).
+      let sqlInline = _replaceQuestionMarks(sql, params)
+      conn.query(sqlInline, [])
         ->Promise.then(result => {
           switch result {
           | Ok(r) => Promise.resolve(Ok(_normalizeMutationResult(r)))
@@ -358,7 +454,10 @@ let deleteData = (
   | Some(conn) => {
       let whereOpt = _buildWhereClause(where)
       let (sql, params) = SqlBuilder.delete(table, whereOpt)
-      conn.query(sql, params)
+      // Inline values to avoid the prepared-statement path on Access ACE
+      // (which fails SQLDescribeParam — see parity F-007).
+      let sqlInline = _replaceQuestionMarks(sql, params)
+      conn.query(sqlInline, [])
         ->Promise.then(result => {
           switch result {
           | Ok(r) => Promise.resolve(Ok(_normalizeMutationResult(r)))

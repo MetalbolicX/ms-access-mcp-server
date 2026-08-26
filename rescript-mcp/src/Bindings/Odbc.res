@@ -146,6 +146,35 @@ let exnMessage: exn => string = e => {
 // connect — creates a typed connection wrapper
 // ---------------------------------------------------------------------------
 
+// _plainParams — unwrap a JSON.t-variant array into plain JS values the
+// odbc v2 native binding can introspect. Without this, params like
+// {TAG:"String",_0:"x"} reach SQLDescribeParam and fail with
+// "[odbc] Error getting information about parameters".
+let _plainParams = (params: array<JSON.t>): array<JSON.t> => {
+  %raw(`
+    (function() {
+      function unv(v) {
+        if (v == null) return null;
+        if (typeof v !== 'object') return v;
+        switch (v.TAG) {
+          case 'String': return v._0;
+          case 'Number': return v._0;
+          case 'Bool':   return v._0 ? 1 : 0;
+          case 'Null':   return null;
+          case 'Array':  return v._0.map(unv);
+          case 'Object': {
+            const o = {};
+            for (const k of Object.keys(v._0)) o[k] = unv(v._0[k]);
+            return o;
+          }
+          default: return v;
+        }
+      }
+      return Array.isArray(params) ? params.map(unv) : [];
+    })()
+  `)
+}
+
 let connect: string => Promise.t<result<connection, Errors.t>> = (
   (connectionString: string) => {
     _importOdbc(())
@@ -162,7 +191,9 @@ let connect: string => Promise.t<result<connection, Errors.t>> = (
             // Wrap native connection in our typed interface
             let c: connection = {
               query: ((sql, params) => {
-                conn.query(sql, params)
+                // Strip ReScript JSON.t variant wrappers (closes parity F-007).
+                let plainParams = _plainParams(params)
+                conn.query(sql, plainParams)
                   ->Promise.then(r => Promise.resolve(Ok(r)))
                   ->Promise.catch(e => {
                     let msg = exnMessage(e)

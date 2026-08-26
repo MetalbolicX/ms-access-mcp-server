@@ -113,7 +113,11 @@ async function runOperation(facade, operation, args) {
       return await Facade.getDatabaseStatistics(facade);
 
     case "insert_data":
-      return await Facade.insertData(facade, args.table, jsToJsonT(args.data));
+      // ReScript's JSON.t at the FFI boundary is treated as a plain JS value
+      // (the compiler emits typeof/object checks instead of {TAG,_0} pattern
+      // matches), so pass the plain dict directly — jsToJsonT wrapping breaks
+      // insertData's switch into Object|Array|_.
+      return await Facade.insertData(facade, args.table, jsToJsonDict(args.data));
 
     case "update_data": {
       const setDict = jsToJsonDict(args.setDict);
