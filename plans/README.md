@@ -54,7 +54,7 @@ Each phase is labeled with how it is built:
 | 016 | Prove real ODBC stack + inventory fixture DB | 16 | NEITHER | P1 | S | 003, 006 | DONE |
 | 017 | Fix two pre-existing OdbcAdapterTest failures | 17 | STRICT TDD | P2 | S | — | DONE |
 | 018 | Amend plan 007 for six parity-harness design holes | 18 | NEITHER | P1 | S | 015, 016 | TODO |
-| 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | — | TODO |
+| 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | — | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
