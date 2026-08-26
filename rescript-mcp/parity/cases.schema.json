@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ms-access-mcp-server/parity/cases.schema.json",
+  "title": "Parity case file",
+  "description": "Schema for a single parity case JSON file under rescript-mcp/parity/cases/. Catches top-level drift (operation/variant/mutating/volatileFields) without constraining per-op args shapes (those are validated at runtime by the runner).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation", "args", "variant", "mutating"],
+  "properties": {
+    "operation": {
+      "description": "The facade operation to invoke. One of the 17 v1 facade ops (plan 006's list).",
+      "type": "string",
+      "enum": [
+        "connect_access",
+        "disconnect_access",
+        "is_connected",
+        "list_connections",
+        "get_active_connection",
+        "set_active_connection",
+        "get_tables",
+        "get_table_schema",
+        "get_queries",
+        "get_relationships",
+        "get_database_statistics",
+        "query_data",
+        "execute_raw_sql",
+        "insert_data",
+        "update_data",
+        "delete_data",
+        "export_data"
+      ]
+    },
+    "args": {
+      "description": "Operation-specific arguments. Shape varies per operation; validated at runtime by the runner against the live facade signature.",
+      "type": "object"
+    },
+    "variant": {
+      "description": "Adapter variant. v1 is ODBC-only; COM variants arrive with future facade phases.",
+      "type": "string",
+      "enum": ["odbc"]
+    },
+    "mutating": {
+      "description": "True iff the case mutates database state. The 5-op mutating registry (insert_data, update_data, delete_data, execute_raw_sql, export_data) covers the MUTATING operations; per-case `mutating: false` is allowed for non-mutating invocations (e.g. SELECT) of nominally-mutating ops. The runner uses this to decide between per-side fixture copies (mutating) and shared pristine fixture (non-mutating).",
+      "type": "boolean"
+    },
+    "description": {
+      "description": "Human-readable description of what the case asserts.",
+      "type": "string"
+    },
+    "volatileFields": {
+      "description": "Field paths dropped from the normalizer before comparison (e.g. timestamps, temp paths, primary-key inference).",
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

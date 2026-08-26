@@ -10,6 +10,7 @@
     "dev": "rescript watch",
     "clean": "rescript clean",
     "test": "retest \"test/**/*.res.mjs\"",
+    "lint:cases": "node parity/lint-cases.mjs",
     "parity": "node parity/run.mjs"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "rescript-nodejs": "^17.0.0"
   },
   "devDependencies": {
+    "ajv": "^8.17.1",
     "rescript-test": "^8.0.1"
   }
 }
