@@ -214,26 +214,6 @@ async function main() {
       process.stdout.write(JSON.stringify(connectResult));
       return;
     }
-    // Composition.realFactory creates the dataAdapter with
-    // {connection: None, dbPath: None} and never opens the underlying
-    // ODBC handle (parity harness finding 007-F-001). The facade's
-    // connectAccess only registers the binding — it does not call
-    // dataAdapter.connect(). Reach into the binding here and wire the
-    // ODBC connection so the subsequent data op has a live cursor.
-    const connStr = `Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=${dbPath};`;
-    const binding = facade.bindings.find(([name]) => name === "default");
-    if (binding) {
-      const connectOutcome = await binding[1].dataAdapter.connect(connStr);
-      if (connectOutcome.TAG !== "Ok") {
-        process.stdout.write(
-          JSON.stringify({
-            success: false,
-            error: `dataAdapter.connect failed: ${connectOutcome._0?.message ?? "unknown"}`,
-          }),
-        );
-        return;
-      }
-    }
   }
 
   const envelope = await runOperation(facade, caseObj.operation, caseObj.args ?? {});
@@ -242,15 +222,6 @@ async function main() {
   // child process. Errors here are non-fatal (the child is exiting anyway).
   if (!lifecycle.has(caseObj.operation)) {
     try {
-      // First close the underlying ODBC connection we opened.
-      const binding = facade.bindings.find(([name]) => name === "default");
-      if (binding) {
-        try {
-          await binding[1].dataAdapter.disconnect();
-        } catch {
-          // ignore
-        }
-      }
       await Facade.disconnectAccess(facade);
     } catch {
       // ignore

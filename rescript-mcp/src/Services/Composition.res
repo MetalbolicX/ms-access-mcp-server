@@ -120,14 +120,25 @@ let makeRealFactory = (~comAvailable: bool): Facade.bindingFactory => {
     let dataT: OdbcAdapter.t = {connection: None, dbPath: None}
     let dataAdapter = OdbcAdapter.asInstance(dataT)
     let schemaAdapter = asSchemaInstance(dataT)
-    Promise.resolve(Ok({
-      dataAdapter: dataAdapter,
-      schemaAdapter: schemaAdapter,
-      _rawDataAdapter: None,  // production: no fake adapter needed
-      _rawSchemaAdapter: None,  // production: no fake adapter needed
-      dbPath: dbPath,
-      adapterType: adapterType,
-    }: Facade.binding))
+    // Build the ODBC connection string for the Access driver and open the
+    // connection eagerly so callers can immediately use the binding without
+    // having to wire the ODBC handle themselves (closes parity F-004).
+    let connStr = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=" ++ dbPath ++ ";"
+    dataAdapter.connect(connStr)
+      ->Promise.then(connectResult => {
+        switch connectResult {
+        | Ok(_) =>
+          Promise.resolve(Ok({
+            dataAdapter: dataAdapter,
+            schemaAdapter: schemaAdapter,
+            _rawDataAdapter: None,  // production: no fake adapter needed
+            _rawSchemaAdapter: None,  // production: no fake adapter needed
+            dbPath: dbPath,
+            adapterType: adapterType,
+          }: Facade.binding))
+        | Error(err) => Promise.resolve(Error(err))
+        }
+      })
   }
 }
 
