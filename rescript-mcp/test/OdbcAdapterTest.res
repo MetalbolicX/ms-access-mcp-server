@@ -326,22 +326,22 @@ testAsync("duplicate JSON keys: last value wins (JS dict semantics)", cb => {
         Promise.resolve(
           switch r {
           | Ok(_result) => {
-              // The name param should be "Second" (last occurrence)
-              let p = Belt.Array.get(Fake.lastParams.contents, 0)
-              switch p {
-              | Some(JSON.String(s)) => {
-                  assertion(~operator="equal", (a, b) => a == b, s, "Second")
-                  cb(~planned=1, ())
-                }
-              | _ => cb(~planned=1, ())
-              }
+              // ACE cannot describe prepared parameters, so F-007 inlines the last dict value.
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "'Second'"),
+                true,
+              )
+              assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(Fake.lastParams.contents), 0)
+              cb(~planned=2, ())
             }
-          | _ => cb(~planned=1, ())
+          | _ => cb(~planned=2, ())
           }
         )
       })
       ->Promise.catch(_e => {
-        cb(~planned=1, ())
+        cb(~planned=2, ())
         Promise.resolve()
       })
   )
@@ -708,25 +708,19 @@ testAsync("updateData no-WHERE: builds UPDATE SQL and passes params", cb => {
         Promise.resolve(
           switch r {
           | Ok({success: true, affected: 1}) => {
-              // UPDATE [Products] SET [status] = ?
+              // ACE cannot describe prepared parameters, so F-007 inlines the value.
               assertion(~operator="equal", (a, b) => a == b, String.includes(Fake.lastSql.contents, "UPDATE [Products]"), true)
               assertion(~operator="equal", (a, b) => a == b, String.includes(Fake.lastSql.contents, "[status]"), true)
-              // Param: SET value
-              let p0 = Belt.Array.get(Fake.lastParams.contents, 0)
-              switch p0 {
-              | Some(JSON.String(s)) => {
-                  assertion(~operator="equal", (a, b) => a == b, s, "shipped")
-                  cb(~planned=3, ())
-                }
-              | _ => cb(~planned=0, ())
-              }
+              assertion(~operator="equal", (a, b) => a == b, String.includes(Fake.lastSql.contents, "'shipped'"), true)
+              assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(Fake.lastParams.contents), 0)
+              cb(~planned=4, ())
             }
-          | _ => cb(~planned=0, ())
+          | _ => cb(~planned=4, ())
           }
         )
       })
       ->Promise.catch(_e => {
-        cb(~planned=0, ())
+        cb(~planned=4, ())
         Promise.resolve()
       })
   )
