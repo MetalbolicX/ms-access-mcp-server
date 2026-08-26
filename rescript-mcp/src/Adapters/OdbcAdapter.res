@@ -12,7 +12,11 @@ module Instances = Instances
 // ---------------------------------------------------------------------------
 
 let _exnMessage = (e: exn): string => {
-  let raw: option<string> = %raw("e => e && typeof e.message === 'string' ? e.message : null")(e)
+  // Mirror Bindings/Odbc.res exnMessage — unwrap ReScript's {RE_EXN_ID, _1}
+  // wrapper so the underlying JS error's .message is reachable.
+  let raw: option<string> = %raw(
+    "e => { const inner = e && typeof e === 'object' && e._1 != null ? e._1 : e; return inner && typeof inner.message === 'string' ? inner.message : null }"
+  )(e)
   switch raw {
   | Some(m) => m
   | None => "Unknown error"

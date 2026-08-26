@@ -130,7 +130,12 @@ let mapNativeError: (string, option<string>, option<string>) => Errors.t = (
 // ---------------------------------------------------------------------------
 
 let exnMessage: exn => string = e => {
-  let raw: option<string> = %raw("e => e && typeof e.message === 'string' ? e.message : null")(e)
+  // ReScript wraps caught JS exceptions in {RE_EXN_ID, _1} via
+  // Primitive_exceptions.internalToException. The original JS error
+  // (with .message) lives at e._1. Unwrap before reading .message.
+  let raw: option<string> = %raw(
+    "e => { const inner = e && typeof e === 'object' && e._1 != null ? e._1 : e; return inner && typeof inner.message === 'string' ? inner.message : null }"
+  )(e)
   switch raw {
   | Some(m) => m
   | None => "Unknown error"
