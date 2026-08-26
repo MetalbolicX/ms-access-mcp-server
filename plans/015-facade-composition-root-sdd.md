@@ -87,32 +87,79 @@
 > the design artifact's verbatim snippets are the contract. Any deviation
 > is a STOP condition, not an improvisation opportunity.**
 
+> **Resume amendment (2026-08-26, post-024/025 consolidation)**:
+> Plan 015 is now **resume-only**. The five SDD planning phases
+> (explore → propose → spec → design → tasks) are already COMPLETE with
+> Engram artifacts that the apply phase must use as ground truth:
+>
+> | Phase | Engram observation id | Topic key |
+> |---|---|---|
+> | Explore | #1048 | `sdd/facade-composition-root/explore` |
+> | Drift reconciliation | #1050 | `sdd/facade-composition-root/drift` |
+> | Explore verification | #1051 | `sdd/facade-composition-root/verify` |
+> | Proposal + spec | #1053 | `sdd/facade-composition-root/proposal-spec` |
+> | Spec (deep) | #1054 | `sdd/facade-composition-root/spec` |
+> | Design | #1055 | `sdd/facade-composition-root/design` |
+> | Tasks | #1056 | `sdd/facade-composition-root/tasks` |
+>
+> **Apply phase executes ONLY T2–T6** (T1 is already committed at
+> `8b190f1` and amended by `96afc2d`). The drift reconciliation items
+> 1–5 above are RESOLVED. The design corrections 6–7 are RESOLVED in the
+> live `rescript-mcp/src/Adapters/Instances.res` on `main`.
+>
+> **Critical pre-apply note for the executor**: design artifact #1055's
+> §1.1 was authored BEFORE plans 022/024/025 reconciled the drift. Two
+> type signatures in §1.1 are STALE; the live `Instances.res` on `main`
+> is the authority:
+>
+> 1. `insertData` field type: design §1.1 declares `(string, JSON.t)`;
+>    live `Instances.res:34` declares `(string, dict<JSON.t>)`. Use the
+>    live shape. The producer closure `(table, data) => insertData(t,
+>    table, data)` infers `data: dict<JSON.t>` from the LIVE
+>    `OdbcAdapter.insertData` signature; this is correct.
+> 2. `exportData` return type: design §1.1 declares `exportResult`;
+>    live `Instances.res:38` (and `Interfaces.res:120`) declare
+>    `mutationResult`. Use the live shape.
+>
+> All other field signatures in §1.1 are still authoritative. The
+> producer closures in §1.2/§1.4/§1.6 are still authoritative. The
+> migration order in §4 (6 commits) is still authoritative for T2–T6.
+>
+> **Environment (MANDATORY)**: `cmd.exe /c` wrappers for pnpm; fresh
+> build requires `rescript clean` + full rebuild. Cached `lib/bs` is not
+> evidence. Plan 025's "green" gate was a false positive from cached
+> artifacts; plan 024's fresh build exposed `Instances.res:34` drift
+> (fixed at `96afc2d`).
+
 ## Status
 
 - **Priority**: P1 (hard blocker for plan 007's ReScript parity driver)
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: plans/003, 004, 005, 006 (all DONE), 021, 022, 023
-  (drift reconciliation; T1 is already committed at `8b190f1` and
-  carries plan 022's corrected shapes). Soft-depends on plan 016 for the
-  final real-DB smoke step (unit work is independent). Plan 024 lands the
-  consolidated state on main.
-- **Status note (2026-08-25)**: SDD phases 1–5 (explore→propose→spec→
-  design→tasks) are COMPLETE with Engram artifacts #1048/#1051/#1053/
-  #1054/#1055/#1056. Apply phase T1 committed; T2–T6 pending. Resume
-  after plan 023 commits the drift-reconcile close-out and plan 024
-  consolidates branches to main. The task list (Engram #1056) remains
-  the apply playbook — with the two design corrections above applied.
+- **Depends on**: plans/003, 004, 005, 006 (DONE), 021, 022, 023 (drift
+  reconciliation DONE), 024 (consolidation DONE; main is at `5fbe4ed`),
+  025 (stale `.mjs` + count-clamp + Instances.res type fix DONE).
+  Soft-depends on plan 016 for the final real-DB smoke step (unit work
+  is independent).
+- **Status note (2026-08-26, post-consolidation)**: SDD phases 1–5
+  (explore→propose→spec→design→tasks) are COMPLETE with Engram artifacts
+  #1048/#1051/#1053/#1054/#1055/#1056. Apply phase T1 is COMMITTED at
+  `8b190f1` (Instances.res added) and amended by `96afc2d` (insertData
+  corrected to `dict<JSON.t>`). Apply phases T2–T6 remain pending;
+  resume on `main` at `5fbe4ed`. Fresh-build green baseline: **572/572/0
+  on main, build 92/92** (verified after plan 024). Plan 015's apply
+  phase must preserve that baseline; any new failure is a STOP.
 - **Category**: migration
-- **Methodology**: SDD (compact). Justification: this introduces a NEW typed
-  binding surface — value-level adapter instance records — consumed by plan
-  007's parity driver and plan 008's MCP composition root. That seam decision
-  must be pinned before implementation (repo classification rule: "FFI
-  binding surfaces, async models, public API contracts" are SDD). The 17
-  public facade operation signatures DO NOT change; behavior is already
-  pinned by the 553-test suite, so apply runs strict TDD under a green suite.
-- **Planned at**: commit `2bbff3a` + uncommitted plans-003–006 working tree,
-  2026-08-25
+- **Methodology**: SDD (compact, resume-only). Justification: this
+  introduces a NEW typed binding surface — value-level adapter instance
+  records — consumed by plan 007's parity driver and plan 008's MCP
+  composition root. That seam decision is already pinned in Engram
+  artifacts #1053–#1056. The 17 public facade operation signatures DO
+  NOT change; behavior is already pinned by the 572-test baseline, so
+  apply runs strict TDD under a green suite.
+- **Planned at**: commit `5fbe4ed` on `main`, 2026-08-26
+  (originally planned at `2bbff3a` on 2026-08-25; resumed after
+  plans 022/023/025/024 closed the pre-007 gate).
 
 ## Why this matters
 
@@ -165,11 +212,8 @@ type bindingFactory = (
   option<Bindings.Odbc.connection>, mutable dbPath: option<string>}` (near
   lines 40–44). No `.resi`. Has a default `Driver={Microsoft Access Driver
   (*.mdb, *.accdb)}` overridable via `ACCESS_MCP_ODBC_DRIVER` and a
-  `password` arg.
-  **Drift:** `OdbcAdapter.insertData` takes `JSON.t` (not
-  `dict<JSON.t>` as `Interfaces.DATA_ADAPTER.insertData` declares).
-  Plan 015 keeps the existing product signature; interface reconciliation
-  is a follow-up.
+  `password` arg. `insertData: (adapter, table, record: dict<JSON.t>)`
+  matches `Interfaces.res:116`.
 - `rescript-mcp/src/Adapters/OdbcSchemaReader.res` — REAL schema helpers.
   **Not** a self-taking adapter module. Has `issueQuery` (a query seam)
   and connection-based relationship helpers
@@ -190,16 +234,19 @@ type bindingFactory = (
   (this plan) is the ONE new src module allowed to import
   `Adapters.OdbcAdapter` / `Adapters.OdbcSchemaReader` (transitively
   Bindings) — that is what a composition root is.
-- Suite baseline: 553 tests / 551 pass / 2 known failures (see plan 017 —
-  they are fixed there; this plan must not add new failures).
+- Suite baseline: **572/572/0 on `main` at `5fbe4ed`** (post-plan-024
+  fresh-build gate, post-plan-025 stale-`.mjs` + count-clamp fix, and
+  post-`96afc2d` Instances.res type correction). Plan 015 must NOT
+  introduce new failures or change this baseline downward.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Build | `pnpm -C rescript-mcp build` | exit 0 |
-| Unit tests | `pnpm -C rescript-mcp test` | 553 tests, 551 pass, 2 known failures (unchanged) |
-| ODBC integration smoke | `pnpm -C rescript-mcp test:integration:odbc` | skip-clean without env; real run with `ACCESS_TEST_DB` + `ACCESS_TEST_ASSUME_ACE=1` |
+| Clean | `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server\rescript-mcp && node_modules\.bin\rescript clean"` | exit 0 |
+| Build | `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp build > rescript-mcp\parity\build-015.log 2>&1"` | exit 0 |
+| Unit tests | `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp test > rescript-mcp\parity\test-015.log 2>&1"` | exit 0, 572/572/0 (no change from main baseline) |
+| ODBC integration smoke | `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp test:integration:odbc"` | skip-clean without env; real run with `ACCESS_TEST_DB` + `ACCESS_TEST_ASSUME_ACE=1` |
 
 ## Scope
 
@@ -225,12 +272,13 @@ type bindingFactory = (
 - Any change to the 17 public facade operation signatures or output shapes.
 - Any change to adapter behavior (adapters keep their module functions; only
   ADD `asInstance` wrappers).
-- `Interfaces.DATA_ADAPTER.insertData` signature reconciliation (real fix is
-  `dict<JSON.t>` vs current `JSON.t`; preserved as a follow-up plan; this
-  plan derives the instance record from the LIVE `OdbcAdapter.insertData`
-  signature, NOT the interface declaration).
+- The `insertData` signature reconciliation between `Interfaces.res` and
+  `OdbcAdapter.res` (already aligned at `dict<JSON.t>` after `96afc2d`; this
+  plan derives the instance record from `Interfaces.res` verbatim, which now
+  matches the live `OdbcAdapter.insertData`).
 - Plan 007 harness code; plan 008 MCP wiring.
-- The 2 known test failures (plan 017 owns them).
+- Any pre-existing test changes (the 572/572/0 baseline on `main` is
+  frozen; plan 015 must not introduce or fix unrelated failures).
 - Python source.
 
 ## Git workflow
@@ -238,111 +286,109 @@ type bindingFactory = (
 - Branch: `rescript/015-facade-composition-root`.
 - Conventional commits, e.g. `feat(rescript): add adapter instance types and composition root`.
 
-## Steps (SDD stages, compact)
+## Steps (SDD stages, compact — RESUME ONLY)
 
-### Stage 1: Propose + Spec (ONE merged Engram artifact)
+### Stages 1–3: COMPLETE (use existing Engram artifacts)
 
-`sdd/facade-composition-root/proposal-spec`. Must pin:
-1. **Instance types** (illustrative seed — design finalizes signatures,
-   derived VERBATIM from the live `DATA_ADAPTER` (9 operation methods) and
-   `SCHEMA_ADAPTER` (22 operation methods) module types in
-   `Adapters/Interfaces.res`):
+| Phase | Artifact | Status |
+|---|---|---|
+| Explore | Engram #1048 (`sdd/facade-composition-root/explore`) | DONE |
+| Drift reconciliation | Engram #1050 (`sdd/facade-composition-root/drift`) | DONE |
+| Explore verification | Engram #1051 (`sdd/facade-composition-root/verify`) | DONE |
+| Proposal + spec (merged) | Engram #1053 (`sdd/facade-composition-root/proposal-spec`) | DONE |
+| Spec (deep) | Engram #1054 (`sdd/facade-composition-root/spec`) | DONE |
+| Design | Engram #1055 (`sdd/facade-composition-root/design`) | DONE (with two stale type claims superseded by live `Instances.res`; see amendment above) |
+| Tasks | Engram #1056 (`sdd/facade-composition-root/tasks`) | DONE (apply playbook for T2–T6) |
 
-```rescript
-// Illustrative — do not copy blindly; derive each field signature from
-// Interfaces.res module types. Schema instance has 22 fields.
-// (Plan 022 correction: insertData is dict<JSON.t>, NOT JSON.t.)
-type dataAdapterInstance = {
-  connect: (string, ~password: string=?) => Promise.t<result<bool, Errors.t>>,
-  disconnect: unit => Promise.t<result<unit, Errors.t>>,
-  isConnected: unit => Promise.t<result<bool, Errors.t>>,
-  executeQuery: (string, ~params: array<JSON.t>=?) => Promise.t<result<queryResult, Errors.t>>,
-  insertData: (string, dict<JSON.t>) => Promise.t<result<mutationResult, Errors.t>>,
-  updateData: (string, dict<JSON.t>, ~where: option<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>,
-  deleteData: (string, ~where: option<JSON.t>=?) => Promise.t<result<mutationResult, Errors.t>>,
-  executeRawSql: string => Promise.t<result<int, Errors.t>>,
-  exportData: (string, string, ~format: option<string>=?, ~options: option<dict<JSON.t>>=?) => Promise.t<result<mutationResult, Errors.t>>,
-}
-type schemaAdapterInstance = {
-  // 22 methods — see live SCHEMA_ADAPTER in Interfaces.res
-  connect, disconnect, isConnected: ...,
-  getTables, getSystemTables, getObjectMetadata, getRelationships,
-  getTableSchemaPlan, generateSql, getDatabaseStatistics, getQueries,
-  createQuery, setQuerySql, deleteQuery,
-  createTable, deleteTable, alterTable,
-  getIndexes, createIndex, dropIndex,
-  createRelationship, deleteRelationship: ...,
-}
-```
+The executor MUST read #1055 and #1056 before starting any code change.
+The 6-commit migration order in #1055 §4 is authoritative.
 
-2. **Producers**: `OdbcAdapter.asInstance(t)` (data), schema instance is
-   derived as a wrapper around `OdbcAdapter.t` (default per drift
-   reconciliation item 3) that delegates relationship ops to
-   `OdbcSchemaReader` using the adapter's current connection,
-   `Fakes.FakeOdbcAdapter.asInstance(t)`,
-   `Fakes.FakeSchemaAdapter.asInstance(t)` — each wraps the module's
-   self-taking functions as closures over `t`.
-3. **Facade re-typing**: `binding` uses the instance types; `bindingFactory`
-   signature otherwise unchanged. ALL `Fakes.*` references in
-   `Facade.res` are removed (not only at lines 17–22 — see drift
-   reconciliation item 2 and "Scope" above for the full site list).
-4. **Composition root**: a src module (e.g. `Services/Composition.res`)
-   exposing `realFactory: Facade.bindingFactory` that resolves the backend via
-   `BackendSelector`, constructs real adapter `t` values, wraps via
-   `asInstance`. It is the only new src module permitted to import adapter
-   modules (and transitively Bindings). The connection string passed to
-   `OdbcAdapter.connect` MUST be `DBQ=<path>` ONLY — `OdbcAdapter`
-   appends the `;DRIVER=<value>` clause itself and an optional
-   `;PWD=<password>` (see drift reconciliation item 5). Passing a
-   pre-built `Driver=...;DBQ=...;` string would double-append the driver.
-5. **Smoke gate**: an env-gated end-to-end check (facade + realFactory +
-  fixture DB) that skip-cleans like `test/odbc-integration/run.mjs`.
+### Stage 4: Apply (T2–T6, strict TDD, fresh-build gate)
 
-### Stage 2: Design (Engram `sdd/facade-composition-root/design`)
+**Branch**: `rescript/015-facade-composition-root-resume` cut from
+`main` at `5fbe4ed`. Branch top after T2–T6 lands at the apply commit;
+plan 024's other branches (017/015-T1/021/022/025) are already deleted.
 
-Decide:
-- Home of instance types (extend `Interfaces.res` vs new
-  `Adapters/Instances.res`).
-- Exact field signatures (verbatim from live `DATA_ADAPTER` / `SCHEMA_ADAPTER`,
-  with `insertData` using `JSON.t` per the live product, not `dict<JSON.t>`
-  per the interface declaration).
-- Error/edge semantics of `asInstance` (none expected — pure wrapping).
-- Schema adapter shape (default: wrapper around `OdbcAdapter.t` that delegates
-  relationship ops to `OdbcSchemaReader` using the adapter's current
-  connection; alternative: separate schema state type).
-- Connection string contract: `realFactory` passes `DBQ=<path>` to
-  `OdbcAdapter.connect`; `OdbcAdapter` is the connection-string boundary
-  (it appends `;DRIVER=<value>` and optional `;PWD=<password>`).
-- Composition module name and public surface (default:
-  `Services/Composition.res` exposing `realFactory: Facade.bindingFactory`).
-- How the smoke gate is invoked (a `.mjs` script under
-  `test/odbc-integration/` extending the existing runner, vs a new script).
-- Document why: record-of-closures per plan-006 design decision E.
+**Six commits in this order** (from #1055 §4):
 
-### Stage 3: Tasks (Engram `sdd/facade-composition/tasks`)
+1. **T2 — instance types + `Adapters.res` registration**:
+   `chore(rescript): add Instances.res module with data + schema record types`
+   - NOTE: this is the work that was committed at `8b190f1` and amended
+     by `96afc2d`. **Verify T1's commit is on `main`**; if yes, this
+     commit is **SKIPPED** and T2 starts at step 2 below. The apply
+     phase's pre-flight check must confirm: `git log --oneline
+     rescript-mcp/src/Adapters/Instances.res | head -2` shows both
+     `8b190f1` AND `96afc2d`.
 
-Two strict-TDD slices suggested:
-- **Slice 1**: instance types + `asInstance` producers (real + fakes) + migrate
-  `Facade.res` binding + migrate `FacadeTest.res` injection. Red: a test that
-  constructs an instance from a fake and asserts a call passes through;
-  instance-producer tests for all four producers. Suite stays green
-  throughout (refactor under green — migrate tests in the same slice).
-- **Slice 2**: `Composition.res` real factory (unit-tested with injected
-  backend resolution) + env-gated real-DB smoke through the FACADE
-  (connect → getTables → queryData → disconnect).
+2. **T3 — `asInstance` producers**:
+   `feat(rescript): add asInstance producers to OdbcAdapter + Fakes`
+   - 4 producers: `OdbcAdapter.asInstance`, `OdbcSchemaReader` is NOT
+     modified (consumed only by Composition), `Fakes.FakeOdbcAdapter.asInstance`,
+     `Fakes.FakeSchemaAdapter.asInstance` (22 fields).
+   - Producer closures use `data: dict<JSON.t>` for `insertData` (matches
+     live OdbcAdapter); return `mutationResult` for `exportData` (matches
+     live Interfaces.res:120).
+   - RED-first: `test/InstancesTest.res` (already exists at 8b190f1 path)
+     gets 4 producer-passthrough tests; schema producer test asserts all
+     22 fields. The stale `InstancesTest.res.mjs` artifact is already
+     deleted (plan 025).
 
-### Stage 4: Apply (strict TDD)
+3. **T4 — migrate `FacadeTest.res` injection**:
+   `test(rescript): migrate FacadeTest to use instance injection`
+   - `makeFakeFactory` (and `badFactory`, readonly facades) construct fakes
+     and wrap with `asInstance`. No assertion changes.
+   - RED-first: existing facade tests stay green throughout the wrap.
 
-Tests first, always. Runner: `pnpm -C rescript-mcp test`.
+4. **T5 — re-type `Facade.binding` + remove 17 `Fakes.*` references**:
+   `refactor(rescript): re-type Facade.binding to instance types; remove Fakes references`
+   - Single atomic commit per REQ-CROSS-3 (#1056 atomicity rule):
+     `Facade.res` + `FacadeTest.res` change together so suite stays green.
+   - Sites: lines 18, 19, 90, 102, 406, 461, 473, 526, 541, 597, 630, 685,
+     740, 780, 817, 872, 968 — verify each by re-reading `Facade.res` before
+     editing (line numbers drift between sessions).
+   - `connectAccess` and the disconnect path drive
+     `binding.dataAdapter.connect("DBQ=" ++ dbPath, ~password)` /
+     `disconnect()` ONCE per lifecycle (not twice — schema shares the same
+     `OdbcAdapter.t` connection).
+
+5. **T6 — `Services/Composition.res`**:
+   `feat(rescript): add Services/Composition.res with realFactory + asSchemaInstance`
+   - Sole new src module importing adapters + transitively `Bindings`.
+   - `asSchemaInstance(dataT: OdbcAdapter.t)` wraps the same `dataT` with
+     22 fields; relationship ops (`createRelationship`, `deleteRelationship`)
+     delegate to `OdbcSchemaReader` using `dataT.connection` read AT CALL TIME.
+   - `realFactory` is `makeRealFactory(~comAvailable=false)`. Connection
+     string is `DBQ=<path>` only — `OdbcAdapter.connect` owns the
+     `;DRIVER=`/`;PWD=` append.
+
+6. **T7 — env-gated smoke** (renamed T6 in original #1056; sequential):
+   `test(rescript): add env-gated smoke for Composition.res`
+   - `test/CompositionSmokeTest.res` env-gated via `TsBridge.getEnv`.
+   - With `ACCESS_TEST_DB` + `ACCESS_TEST_ASSUME_ACE=1`: connect → getTables
+     → queryData → disconnect round-trip asserts all Ok.
+   - Without env: skip-clean exit 0.
 
 ### Stage 5: Verify
 
-Build 0; suite = 553+/551+ (2 known failures unchanged, no new); greps below;
-smoke passes with env set (or skip-cleans without it).
+- Fresh build (`rescript clean` + full rebuild) exits 0, 92/92 modules.
+- Fresh suite exits 0, **572/572/0** (no change from `main` baseline).
+- Grep gates after T5:
+  - `grep -n Fakes rescript-mcp/src/Services/Facade.res` → 0 matches
+  - `grep -rn Bindings rescript-mcp/src/Services/Facade.res
+    rescript-mcp/src/Config.res rescript-mcp/src/PathGuard.res` → 0 matches
+    (Composition.res is exempt — it IS the root)
+- Smoke: with env, round-trip succeeds; without env, skip-clean exit 0.
+- Any new test failure or count regression → STOP, do NOT mark DONE.
 
 ### Stage 6: Archive
 
-Engram `sdd/facade-composition/archive-report`; flip `plans/README.md` row.
+- Engram `sdd/facade-composition-root/archive-report` (obs 1064's
+  follow-up); flip `plans/README.md` row 015 to DONE.
+- Final-state handoff to orchestrator: commit hashes, fresh-build gate
+  result, grep-gate result, smoke result, any deviations from #1055 (the
+  two stale type claims corrected to live Instances.res shapes).
+- Delete the resume branch after merge (or leave for chain strategy in
+  plan 018's pre-007 wiring).
 
 ## Test plan
 
@@ -365,19 +411,22 @@ Engram `sdd/facade-composition/archive-report`; flip `plans/README.md` row.
 
 Machine-checkable. ALL must hold:
 
-- [ ] `pnpm -C rescript-mcp build` exits 0
-- [ ] `pnpm -C rescript-mcp test` — 553+ tests, 551+ pass, exactly the 2 known
-      failures (no new failures)
+- [ ] Fresh `rescript clean` + full rebuild → `pnpm -C rescript-mcp build` exits 0
+- [ ] Fresh `pnpm -C rescript-mcp test` — **572/572/0**, no regressions from `main`
+      baseline (`5fbe4ed`); capture actual count if it differs
 - [ ] `grep -n "Fakes" rescript-mcp/src/Services/Facade.res` → no matches
 - [ ] `grep -rn "Bindings" rescript-mcp/src/Services/Facade.res
       rescript-mcp/src/Config.res rescript-mcp/src/PathGuard.res` → no matches
       (the composition module is exempt — it IS the root)
-- [ ] `rescript-mcp/src/Services/Composition.res` (or design-pinned name)
-      exists and exports `realFactory: Facade.bindingFactory`
+- [ ] `rescript-mcp/src/Services/Composition.res` exists and exports
+      `realFactory: Facade.bindingFactory`
+- [ ] T1 already-committed check passes: `git log --oneline
+      rescript-mcp/src/Adapters/Instances.res | head -2` shows `8b190f1` AND
+      `96afc2d`
 - [ ] Smoke: with `ACCESS_TEST_DB` + `ACCESS_TEST_ASSUME_ACE=1` set, facade
       round-trip succeeds; without env, skip-clean exit 0
-- [ ] SDD artifacts persisted in Engram under `sdd/facade-composition/*`
-- [ ] `plans/README.md` status row updated
+- [ ] Six commits land in the #1055 §4 order (skip T1 if already on main)
+- [ ] SDD archive-report persisted in Engram; `plans/README.md` row 015 → DONE
 
 ## STOP conditions
 
