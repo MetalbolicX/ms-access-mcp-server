@@ -1,0 +1,13 @@
+{
+  "name": "ms-access-mcp-rescript",
+  "sources": [
+    { "dir": "src", "subdirs": true },
+    { "dir": "test", "subdirs": true, "type": "dev" }
+  ],
+  "package-specs": [
+    { "module": "esmodule", "in-source": true }
+  ],
+  "suffix": ".res.mjs",
+  "dependencies": ["rescript-nodejs"],
+  "dev-dependencies": ["rescript-test"]
+}

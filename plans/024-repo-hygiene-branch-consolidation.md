@@ -9,9 +9,9 @@
 > wrappers for pnpm; `--ignore-scripts` if install fails on winax; green
 > claims require `rescript clean` + full rebuild.
 >
-> **Drift check (run first)**: HEAD of `rescript/022-insertdata-drift`
-> must contain plan 023's commit (the drift-reconcile close-out). Suite
-> must be 554/554/0 on a fresh build. On mismatch, STOP.
+> **Drift check (run first)**: HEAD of `rescript/025-fix-test-suite`
+> must contain plan 023's commit and plan 025's fixes. Suite
+> must be 572/572/0 on a fresh build. On mismatch, STOP.
 
 ## Status
 
@@ -45,11 +45,12 @@ Verified 2026-08-25:
 
 - `main` = `6613e89`. Linear chain on top:
   `b060457` (017) → `8b190f1` (015 T1) → `9af4a78`, `de6e176`, `f55e50a`
-  (021) → plan-023 commit (022+023 close-out).
+  (021) → `728c368` (022+023 close-out) → `6f2004a` (plan 025 fix+docs).
 - Branches: `rescript/017-odbc-test-fixes` (b060457),
   `rescript/015-instance-types-and-producers` (8b190f1),
   `rescript/021-housekeeping` (f55e50a),
-  `rescript/022-insertdata-drift` (f55e50a + plan 023 commit).
+  `rescript/022-insertdata-drift` (f55e50a + plan 023 commit),
+  `rescript/025-fix-test-suite` (6f2004a, plan 025).
 - Untracked-but-critical: `plans/*.md` (20 files),
   `rescript-mcp/rescript.json`, `rescript-mcp/tsconfig.mjs.json`,
   `rescript-mcp/pnpm-workspace.yaml`, `rescript-mcp/.nvmrc`,
@@ -68,7 +69,7 @@ Verified 2026-08-25:
 |---|---|---|
 | Fresh build | `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server\rescript-mcp && node_modules\.bin\rescript clean"` then `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp build > rescript-mcp\parity\build-024.log 2>&1"` | exit 0 |
 | Suite | `cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp test > rescript-mcp\parity\test-024.log 2>&1"` | 554/554/0 |
-| Merge check | `git merge --no-ff rescript/022-insertdata-drift` (on main) | clean, no conflicts |
+| Merge check | `git merge --no-ff rescript/025-fix-test-suite` (on main) | clean, no conflicts |
 
 ## Scope
 
@@ -125,11 +126,13 @@ Do NOT stage: `fix_*`, `fix_tests*`, `test_backslash.js`,
 
 Commit: `chore(repo): catch-up plans, build configs, parity artifacts, com-integration runner`
 
-Body: "Session-level catch-up. Plans 001–024 were executed against an
+Body: "Session-level catch-up. Plans 001–025 were executed against an
 uncommitted working tree; this commit brings plan files, ReScript build
 configs, parity artifacts, and the COM integration runner into git so
-future cycles can trust git state. Junk scratch files from prior agent
-iterations are deleted in the same plan, not committed."
+future cycles can trust git state. Plan 024 self-amended to reference
+the post-025 chain (rescript/025-fix-test-suite instead of rescript/022-insertdata-drift).
+Junk scratch files from prior agent iterations are deleted in a
+follow-up commit, not this one."
 
 ### Step 2: Delete junk
 
@@ -147,8 +150,8 @@ if trivial, else a tiny second commit `chore(repo): drop scratch files`.
 
 ```powershell
 git checkout main
-git merge --no-ff rescript/022-insertdata-drift -m "merge: plans 016/017/021/022/023 + plan 015 T1 (instance types)"
-git branch -d rescript/017-odbc-test-fixes rescript/015-instance-types-and-producers rescript/021-housekeeping rescript/022-insertdata-drift
+git merge --no-ff rescript/025-fix-test-suite -m "merge: plans 016/017/021/022/023/025 + plan 015 T1 (instance types)"
+git branch -d rescript/017-odbc-test-fixes rescript/015-instance-types-and-producers rescript/021-housekeeping rescript/022-insertdata-drift rescript/025-fix-test-suite
 ```
 
 The chain is linear, so `--no-ff` produces one merge commit and zero
@@ -164,7 +167,7 @@ cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp bu
 cmd.exe /c "cd /d D:\code\python\ms-access-mcp-server && pnpm -C rescript-mcp test > rescript-mcp\parity\test-024.log 2>&1"
 ```
 
-Required: build exit 0 (92/92); suite exit 0, 572/572/0. This is the
+Required: build exit 0 (92/92); suite exit 0, 572/572/0 (plan 025 correction from 554/554/0). This is the
 FIRST trustworthy green state in the repo's history — flag it in the
 README dependency note.
 
@@ -173,7 +176,8 @@ README dependency note.
 Row 024 → DONE. Update the dependency-notes section: "Plans 015-T2..T6
 resume from main after plan 024. All suite claims from plans 003-017
 pre-date plan 024's fresh-build gate; treat only 572/572/0 on main as
-authoritative."
+authoritative. Plan 024 self-amended to reference plan 025's branch
+(rescript/025-fix-test-suite) as the merge tip."
 
 ## Test plan
 
@@ -183,7 +187,7 @@ The fresh-build green gate in Step 4 IS the test plan.
 
 - [ ] `git status` on main: clean except `.atl/` caches
 - [ ] `git branch` shows only `main` (+ any pre-existing unrelated branches)
-- [ ] Fresh build 92/92, suite 554/554/0, both from clean `lib/bs`
+- [ ] Fresh build 92/92, suite 572/572/0, both from clean `lib/bs`
 - [ ] `git log --oneline main -10` shows the merged chain
 - [ ] `plans/README.md` row 024 DONE
 
@@ -192,7 +196,8 @@ The fresh-build green gate in Step 4 IS the test plan.
 - Merge conflicts in Step 3 → STOP (tree drifted; investigate).
 - Fresh-build gate fails on main → STOP; do NOT mark DONE; the merge
   is already local-only so recovery is `git checkout rescript/022-insertdata-drift`
-  + re-diagnose.
+  + re-diagnose. If the tip is `rescript/025-fix-test-suite`, the tree is
+  correct for plan 024's amended scope.
 - Any junk file turns out to be referenced by a test → restore it,
   commit it, note it.
 
