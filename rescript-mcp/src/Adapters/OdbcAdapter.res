@@ -2,6 +2,12 @@
 // REQ-D4/D5/D6/D9 — lifecycle + data operations
 
 // ---------------------------------------------------------------------------
+// Local module alias — breaks circular OdbcAdapter → Adapters → OdbcAdapter
+// (Adapters.res re-exports OdbcAdapter; use direct Instances reference here)
+// ---------------------------------------------------------------------------
+module Instances = Instances
+
+// ---------------------------------------------------------------------------
 // Exception message extraction
 // ---------------------------------------------------------------------------
 
@@ -1365,5 +1371,48 @@ let setQuerySql = (
           Promise.resolve(Error(Errors.databaseError(msg)))
         })
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// asInstance — produce an Instances.dataAdapterInstance from an OdbcAdapter.t
+// ---------------------------------------------------------------------------
+
+let asInstance = (t: t): Instances.dataAdapterInstance => {
+  {
+    connect: (connStr, ~password=?) => connect(t, connStr, ~password?),
+    disconnect: () => disconnect(t),
+    isConnected: () => isConnected(t),
+    executeQuery: (sql, ~params=?) => executeQuery(t, sql, ~params?),
+    insertData: (table, data) => insertData(t, table, data),
+    updateData: (table, setDict, ~where=?) => {
+      switch where {
+      | None => updateData(t, table, setDict)
+      | Some(w) => updateData(t, table, setDict, ~where=?w)
+      }
+    },
+    deleteData: (table, ~where=?) => {
+      switch where {
+      | None => deleteData(t, table)
+      | Some(w) => deleteData(t, table, ~where=?w)
+      }
+    },
+    executeRawSql: sql => executeRawSql(t, sql),
+    exportData: (sql, filePath, ~format=?, ~options=?) => {
+      switch options {
+      | None => {
+          switch format {
+          | None => exportData(t, sql, filePath)
+          | Some(f) => exportData(t, sql, filePath, ~format=?f)
+          }
+        }
+      | Some(opts) => {
+          switch format {
+          | None => exportData(t, sql, filePath, ~_options=?opts)
+          | Some(f) => exportData(t, sql, filePath, ~format=?f, ~_options=?opts)
+          }
+        }
+      }
+    },
   }
 }
