@@ -137,6 +137,7 @@ async function runOperation(facade, operation, args) {
       return await Facade.executeRawSql(
         facade,
         args.sql,
+        undefined,
         args.confirm ?? false,
         args.dryRun ?? false,
       );

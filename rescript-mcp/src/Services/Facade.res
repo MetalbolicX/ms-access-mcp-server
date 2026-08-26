@@ -866,7 +866,9 @@ let executeRawSql = (
         Promise.resolve(result)
       } else {
         // Guard 3: confirm guard for dangerous SQL (DROP/DELETE/UPDATE)
-        let dangerousRe = Js.Re.fromString("^\\s*(?i)(drop|delete|update)\\b")
+        // Use fromStringWithFlags with the JS-style case-insensitive flag string
+        // "i"; the Java/POSIX `(?i)` inline flag is not valid in JavaScript regex.
+        let dangerousRe = Js.Re.fromStringWithFlags("^\\s*(drop|delete|update)\\b", ~flags="i")
         if Js.Re.exec_(dangerousRe, sql) != None && !confirm {
           let msg = "confirm=True required for execute_raw_sql"
           Promise.resolve(shapeErr(Errors.validationError(msg)))
