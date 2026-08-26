@@ -1,0 +1,7 @@
+{
+  "operation": "disconnect_access",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "Disconnect the default connection; envelope should include success and message"
+}

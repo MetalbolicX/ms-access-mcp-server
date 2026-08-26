@@ -1,0 +1,7 @@
+{
+  "operation": "connect_access",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "Happy path: connect to the fixture .accdb; envelope should include success, connected, database, name"
+}

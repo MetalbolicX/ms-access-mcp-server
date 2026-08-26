@@ -1,0 +1,8 @@
+{
+  "operation": "get_tables",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "get_tables — 3 user tables (Customers, Orders, Products) per fixture inventory",
+  "volatileFields": ["primaryKey", "recordCount"]
+}

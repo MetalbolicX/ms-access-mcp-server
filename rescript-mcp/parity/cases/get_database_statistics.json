@@ -1,0 +1,8 @@
+{
+  "operation": "get_database_statistics",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "get_database_statistics — returns success + objects + file + system",
+  "volatileFields": ["modified", "size_bytes"]
+}

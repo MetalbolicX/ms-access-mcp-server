@@ -1,0 +1,8 @@
+{
+  "operation": "list_connections",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "After a connect, list_connections should return at least one entry; envelope includes success, connections (object), count, active",
+  "volatileFields": ["created_at"]
+}

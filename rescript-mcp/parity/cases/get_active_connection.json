@@ -1,0 +1,7 @@
+{
+  "operation": "get_active_connection",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "get_active_connection after connect; envelope success=true, active=name"
+}

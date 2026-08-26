@@ -1,0 +1,7 @@
+{
+  "operation": "set_active_connection",
+  "args": {"name": "default"},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "set_active_connection to default; envelope success=true, active=default"
+}

@@ -1,0 +1,7 @@
+{
+  "operation": "is_connected",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "After a connect, is_connected should report connected=true; envelope has connected, database, name (no success key — parity exception)"
+}

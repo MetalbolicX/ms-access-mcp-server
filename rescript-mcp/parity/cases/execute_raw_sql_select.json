@@ -1,0 +1,7 @@
+{
+  "operation": "execute_raw_sql",
+  "args": {"sql": "SELECT COUNT(*) FROM [Products]", "confirm": false},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "execute_raw_sql with a SELECT (non-dangerous); envelope: success, rows_affected"
+}

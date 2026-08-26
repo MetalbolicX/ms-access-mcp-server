@@ -1,0 +1,7 @@
+{
+  "operation": "get_queries",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "get_queries — empty list per fixture inventory (no saved queries)"
+}

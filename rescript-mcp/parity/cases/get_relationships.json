@@ -1,0 +1,8 @@
+{
+  "operation": "get_relationships",
+  "args": {},
+  "variant": "odbc",
+  "mutating": false,
+  "description": "get_relationships — Orders.CustomerID -> Customers.ID per fixture inventory",
+  "volatileFields": ["attributes"]
+}
