@@ -1,8 +1,8 @@
 {
   "operation": "query_data",
-  "args": {"sql": "SELECT * FROM [Customers]"},
+  "args": {"sql": "SELECT * FROM [customers]"},
   "variant": "odbc",
   "mutating": false,
-  "description": "SELECT * FROM Customers — 3 rows; envelope: success, rows, count, columns, error=null",
+  "description": "SELECT * FROM customers — 3 rows; envelope: success, rows, count, columns, error=null",
   "volatileFields": ["error"]
 }

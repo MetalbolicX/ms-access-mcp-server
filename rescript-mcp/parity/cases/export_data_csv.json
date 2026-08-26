@@ -1,6 +1,6 @@
 {
   "operation": "export_data",
-  "args": {"sql": "SELECT * FROM [Products]", "format": "csv", "filePath": "REPLACE_AT_RUNTIME"},
+  "args": {"sql": "SELECT * FROM [products]", "format": "csv", "filePath": "REPLACE_AT_RUNTIME"},
   "variant": "odbc",
   "mutating": true,
   "description": "export_data to CSV — env-temp path written per side; envelope: success, rows_exported, file_path, format",

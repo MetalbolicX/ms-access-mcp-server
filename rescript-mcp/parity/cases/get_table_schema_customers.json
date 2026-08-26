@@ -1,8 +1,8 @@
 {
   "operation": "get_table_schema",
-  "args": {"table": "Customers"},
+  "args": {"table": "customers"},
   "variant": "odbc",
   "mutating": false,
-  "description": "get_table_schema for Customers; envelope: success, table{ name, fields, recordCount, primaryKey }",
+  "description": "get_table_schema for customers; envelope: success, table{ name, fields, recordCount, primaryKey }",
   "volatileFields": ["primaryKey"]
 }

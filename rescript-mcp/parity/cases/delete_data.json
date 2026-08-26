@@ -1,7 +1,7 @@
 {
   "operation": "delete_data",
-  "args": {"table": "Products", "whereDict": {"Name": "ParityUpdated"}, "confirm": true},
+  "args": {"table": "products", "whereDict": {"Name": "ParityUpdated"}, "confirm": true},
   "variant": "odbc",
   "mutating": true,
-  "description": "delete_data on Products with WHERE; envelope: success, affected=1"
+  "description": "delete_data on products with WHERE; envelope: success, affected=1"
 }

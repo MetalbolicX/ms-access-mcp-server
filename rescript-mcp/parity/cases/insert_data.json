@@ -1,7 +1,7 @@
 {
   "operation": "insert_data",
-  "args": {"table": "Products", "data": {"Name": "ParityTestWidget"}},
+  "args": {"table": "products", "data": {"Name": "ParityTestWidget"}},
   "variant": "odbc",
   "mutating": true,
-  "description": "insert_data into Products with one row; envelope: success, affected=1"
+  "description": "insert_data into products with one row; envelope: success, affected=1"
 }
