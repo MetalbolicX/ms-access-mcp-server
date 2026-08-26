@@ -154,9 +154,9 @@ module FakeOdbcAdapter = {
     filePath: string,
     ~format: option<string>=?,
     ~options: option<dict<JSON.t>>=?,
-  ): Promise.t<result<exportResult, Errors.t>> => {
+  ): Promise.t<result<mutationResult, Errors.t>> => {
     CallLog.log(ExportData(self.name, query, filePath))
-    Promise.resolve(Ok({success: true, rowsExported: 0, filePath: filePath, error: None}))
+    Promise.resolve(Ok({success: true, affected: 0, error: None}))
   }
 
   // asInstance — produce an Instances.dataAdapterInstance from a FakeOdbcAdapter.t
@@ -264,9 +264,9 @@ module FakeComAdapter = {
     filePath: string,
     ~format: option<string>=?,
     ~options: option<dict<JSON.t>>=?,
-  ): Promise.t<result<exportResult, Errors.t>> => {
+  ): Promise.t<result<mutationResult, Errors.t>> => {
     CallLog.log(ExportData(self.name, query, filePath))
-    Promise.resolve(Ok({success: true, rowsExported: 0, filePath: filePath, error: None}))
+    Promise.resolve(Ok({success: true, affected: 0, error: None}))
   }
 }
 

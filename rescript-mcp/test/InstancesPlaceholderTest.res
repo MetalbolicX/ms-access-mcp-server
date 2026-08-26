@@ -20,7 +20,7 @@ test("Instances dataAdapterInstance has correct 9 fields", () => {
       Promise.resolve(Ok({success: true, affected: 0, error: None})),
     executeRawSql: (_s) => Promise.resolve(Ok(0)),
     exportData: (_q, _p, ~format=?, ~options=?) =>
-      Promise.resolve(Ok({success: true, rowsExported: 0, filePath: "", error: None})),
+      Promise.resolve(Ok({success: true, affected: 0, error: None})),
   }
   // Verify connect is callable (compile proof of well-formedness)
   let _ = instance.connect("DBQ=test")

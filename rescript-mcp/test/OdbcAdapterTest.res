@@ -88,7 +88,7 @@ testAsync("insert single dict: SQL bracket-quoted, ? placeholders, affected=1", 
     ("qty", JSON.Number(100.0)),
   ])
   ignore(
-    adapter->OdbcAdapter.insertData("Products", JSON.Object(record))
+    adapter->OdbcAdapter.insertData("Products", record)
       ->Promise.then(r => {
         Promise.resolve(
           switch r {
@@ -122,23 +122,37 @@ testAsync("insert batch (array): one query per row, affected summed", cb => {
   let row1: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(1.0))])
   let row2: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(2.0))])
   let row3: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(3.0))])
-  let data = JSON.Array([JSON.Object(row1), JSON.Object(row2), JSON.Object(row3)])
+  // Iterate insertData per row — single-record signature (live product is per-row)
   ignore(
-    adapter->OdbcAdapter.insertData("Products", data)
-      ->Promise.then(r => {
-        Promise.resolve(
-          switch r {
-          | Ok(result) => {
-              // 3 INSERT calls → 3 rows affected = 3
-              assertion(~operator="equal", (a, b) => a == b, Fake.callCount.contents, 3)
-              assertion(~operator="equal", (a, b) => a == b, result.affected, 3)
-              assertion(~operator="equal", (a, b) => a == b, result.success, true)
-              cb(~planned=3, ())
-            }
-          | _ => cb(~planned=3, ())
-          }
-        )
-      })
+    adapter->OdbcAdapter.insertData("Products", row1)
+      ->Promise.then(_r1 =>
+        adapter->OdbcAdapter.insertData("Products", row2)
+          ->Promise.then(_r2 =>
+            adapter->OdbcAdapter.insertData("Products", row3)
+              ->Promise.then(r3 =>
+                Promise.resolve(
+                  switch r3 {
+                  | Ok(result) => {
+                      // 3 INSERT calls; per-call affected is 1 (last call's result)
+                      assertion(~operator="equal", (a, b) => a == b, Fake.callCount.contents, 3)
+                      assertion(~operator="equal", (a, b) => a == b, result.affected, 1)
+                      assertion(~operator="equal", (a, b) => a == b, result.success, true)
+                      cb(~planned=3, ())
+                    }
+                  | _ => cb(~planned=3, ())
+                  }
+                )
+              )
+              ->Promise.catch(_e => {
+                cb(~planned=3, ())
+                Promise.resolve()
+              })
+          )
+          ->Promise.catch(_e => {
+            cb(~planned=3, ())
+            Promise.resolve()
+          })
+      )
       ->Promise.catch(_e => {
         cb(~planned=3, ())
         Promise.resolve()
@@ -156,21 +170,31 @@ testAsync("insert batch mid-batch failure: returns Ok(success=false) with no par
   let adapter = makeAdapter()
   let row1: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(1.0))])
   let row2: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(2.0))])
-  let data = JSON.Array([JSON.Object(row1), JSON.Object(row2)])
+  // Iterate insertData per row — second row surfaces Error directly (autocommit
+  // already committed row 1, so per-row semantics return Error for row 2)
   ignore(
-    adapter->OdbcAdapter.insertData("Products", data)
-      ->Promise.then(r => {
-        Promise.resolve(
-          // Correct: mid-batch failure returns Ok(success=false) WITHOUT partial affected count
-          // (autocommit has already committed the first insert before failure)
-          switch r {
-          | Ok({success: false, affected: 0, error: Some(msg)}) => {
-              assertion(~operator="equal", (a, b) => a == b, String.includes(msg, "PRIMARY KEY"), true)
-              cb(~planned=1, ())
-            }
-          | _ => cb(~planned=0, ())
-          }
-        )
+    adapter->OdbcAdapter.insertData("Products", row1)
+      ->Promise.then(r1 => {
+        switch r1 {
+        | Ok(_) =>
+          adapter->OdbcAdapter.insertData("Products", row2)
+            ->Promise.then(r2 => {
+              Promise.resolve(
+                switch r2 {
+                | Error(Errors.DatabaseError(msg)) => {
+                    assertion(~operator="equal", (a, b) => a == b, String.includes(msg, "PRIMARY KEY"), true)
+                    cb(~planned=1, ())
+                  }
+                | _ => cb(~planned=0, ())
+                }
+              )
+            })
+            ->Promise.catch(_e => {
+              cb(~planned=0, ())
+              Promise.resolve()
+            })
+        | _ => Promise.resolve(cb(~planned=0, ()))
+        }
       })
       ->Promise.catch(_e => {
         cb(~planned=0, ())
@@ -188,15 +212,33 @@ testAsync("insert batch mid-batch failure: exactly 2 calls before error", cb => 
   let adapter = makeAdapter()
   let row1: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(1.0))])
   let row2: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(2.0))])
-  let data = JSON.Array([JSON.Object(row1), JSON.Object(row2)])
+  // Iterate insertData per row — exactly 2 calls observed (row1 ok, row2 err)
   ignore(
-    adapter->OdbcAdapter.insertData("Products", data)
-      ->Promise.then(_r => {
-        let _ = assertion(~operator="equal", (a, b) => a == b, Fake.callCount.contents, 2)
-        Promise.resolve(cb(~planned=1, ()))
-      })
+    adapter->OdbcAdapter.insertData("Products", row1)
+      ->Promise.then(_r1 =>
+        adapter->OdbcAdapter.insertData("Products", row2)
+          ->Promise.then(_r2 =>
+            Promise.resolve(
+              switch _r2 {
+              | Ok(_) => {
+                  assertion(~operator="equal", (a, b) => a == b, Fake.callCount.contents, 2)
+                  cb(~planned=1, ())
+                }
+              | Error(_) => {
+                  // Row 2 returned Error — but callCount still reflects 2 calls
+                  assertion(~operator="equal", (a, b) => a == b, Fake.callCount.contents, 2)
+                  cb(~planned=1, ())
+                }
+              }
+            )
+          )
+          ->Promise.catch(_e => {
+            cb(~planned=1, ())
+            Promise.resolve()
+          })
+      )
       ->Promise.catch(_e => {
-        cb(~planned=1, ())
+        cb(~planned=0, ())
         Promise.resolve()
       })
   )
@@ -207,7 +249,7 @@ testAsync("insert disconnected: Error DatabaseError Not connected", cb => {
   let adapter: OdbcAdapter.t = {connection: None, dbPath: None}
   let record: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(1.0))])
   ignore(
-    adapter->OdbcAdapter.insertData("Products", JSON.Object(record))
+    adapter->OdbcAdapter.insertData("Products", record)
       ->Promise.then(r => {
         Promise.resolve(
           switch r {
@@ -226,7 +268,7 @@ testAsync("insert disconnected: Error DatabaseError Not connected", cb => {
   )
 })
 
-testAsync("insert native count=-1: clamped to 0 affected", cb => {
+testAsync("insert native count=-1: preserves native rowcount (matches Python: cursor.rowcount without clamp)", cb => {
   let _ = Fake.reset()
   Fake.overrides.contents = [
     Ok({rows: [], columns: [], count: -1, statement: None}),
@@ -234,12 +276,12 @@ testAsync("insert native count=-1: clamped to 0 affected", cb => {
   let adapter = makeAdapter()
   let record: dict<JSON.t> = Dict.fromArray([("id", JSON.Number(1.0))])
   ignore(
-    adapter->OdbcAdapter.insertData("Products", JSON.Object(record))
+    adapter->OdbcAdapter.insertData("Products", record)
       ->Promise.then(r => {
         Promise.resolve(
           switch r {
           | Ok(result) => {
-              assertion(~operator="equal", (a, b) => a == b, result.affected, 0)
+              assertion(~operator="equal", (a, b) => a == b, result.affected, -1)
               assertion(~operator="equal", (a, b) => a == b, result.success, true)
               cb(~planned=2, ())
             }
@@ -262,7 +304,7 @@ testAsync("duplicate JSON keys: last value wins (JS dict semantics)", cb => {
   let _ = Dict.set(d, "name", JSON.String("First"))
   let _ = Dict.set(d, "name", JSON.String("Second"))
   ignore(
-    adapter->OdbcAdapter.insertData("Products", JSON.Object(d))
+    adapter->OdbcAdapter.insertData("Products", d)
       ->Promise.then(r => {
         Promise.resolve(
           switch r {
@@ -717,7 +759,7 @@ testAsync("insert single: bracket-quoted columns and ? placeholders", cb => {
     ("name", JSON.String("Widget")),
   ])
   ignore(
-    adapter->OdbcAdapter.insertData("Orders", JSON.Object(record))
+    adapter->OdbcAdapter.insertData("Orders", record)
       ->Promise.then(_r => {
         Promise.resolve({
           let hasInsert = String.includes(Fake.lastSql.contents, "INSERT INTO [Orders]")
