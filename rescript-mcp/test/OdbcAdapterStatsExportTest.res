@@ -57,6 +57,22 @@ let makeMsysDeniedAdapter = (): OdbcAdapter.t => mkAdapter(FakeMsysDeniedConnect
 let makeExportAdapter = (): OdbcAdapter.t => mkAdapter(FakeExportConnection.query, FakeExportConnection.tables, FakeExportConnection.columns, FakeExportConnection.close, None)
 let makeDisconnectedAdapter = (): OdbcAdapter.t => {connection: None, dbPath: None}
 
+// Helper: extract a numeric field from the nested `objects` dict.
+let _countFromStats = (stats: dict<JSON.t>, field: string): option<JSON.t> => {
+  switch Dict.get(stats, "objects") {
+  | Some(JSON.Object(objDict)) => Dict.get(objDict, field)
+  | _ => None
+  }
+}
+
+// Helper: extract a string field from the nested `file` dict.
+let _fileField = (stats: dict<JSON.t>, field: string): option<JSON.t> => {
+  switch Dict.get(stats, "file") {
+  | Some(JSON.Object(fileDict)) => Dict.get(fileDict, field)
+  | _ => None
+  }
+}
+
 // getDatabaseStatistics: disconnected → zero counts, empty file, no warning
 testAsync("getDatabaseStatistics: disconnected returns zero counts, empty file, no warning", cb => {
   let adapter = makeDisconnectedAdapter()
@@ -65,15 +81,15 @@ testAsync("getDatabaseStatistics: disconnected returns zero counts, empty file, 
       switch result {
       | Ok(stats) => {
           assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "success"), Some(JSON.Boolean(true)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "tables"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "queries"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "forms"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "reports"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "macros"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "modules"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "file_name"), Some(JSON.String("")))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "file_size_bytes"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "file_modified"), Some(JSON.String("")))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "tables"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "queries"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "forms"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "reports"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "macros"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "modules"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _fileField(stats, "name"), Some(JSON.String("")))
+          assertion(~operator="equal", (a, b) => a == b, _fileField(stats, "size_bytes"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _fileField(stats, "modified"), Some(JSON.String("")))
           assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "warning"), Some(JSON.Null))
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -91,11 +107,11 @@ testAsync("getDatabaseStatistics: lstatSync throws (nonexistent path) → size=0
     ->Promise.then(result => {
       switch result {
       | Ok(stats) => {
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "tables"), Some(JSON.Number(5.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "queries"), Some(JSON.Number(3.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "file_name"), Some(JSON.String("missing.accdb")))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "file_size_bytes"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "file_modified"), Some(JSON.String("")))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "tables"), Some(JSON.Number(5.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "queries"), Some(JSON.Number(3.0)))
+          assertion(~operator="equal", (a, b) => a == b, _fileField(stats, "name"), Some(JSON.String("missing.accdb")))
+          assertion(~operator="equal", (a, b) => a == b, _fileField(stats, "size_bytes"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _fileField(stats, "modified"), Some(JSON.String("")))
           assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "warning"), Some(JSON.Null))
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -114,14 +130,18 @@ testAsync("getDatabaseStatistics: MSysObjects query maps Type codes to counts co
       switch result {
       | Ok(stats) => {
           assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "success"), Some(JSON.Boolean(true)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "tables"), Some(JSON.Number(5.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "queries"), Some(JSON.Number(3.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "forms"), Some(JSON.Number(2.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "reports"), Some(JSON.Number(1.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "macros"), Some(JSON.Number(4.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "modules"), Some(JSON.Number(1.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "tables"), Some(JSON.Number(5.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "queries"), Some(JSON.Number(3.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "forms"), Some(JSON.Number(2.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "reports"), Some(JSON.Number(1.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "macros"), Some(JSON.Number(4.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "modules"), Some(JSON.Number(1.0)))
           assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "warning"), Some(JSON.Null))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "com_available"), Some(JSON.Boolean(false)))
+          // system.com_available
+          assertion(~operator="equal", (a, b) => a == b, switch Dict.get(stats, "system") {
+            | Some(JSON.Object(sys)) => Dict.get(sys, "com_available")
+            | _ => None
+          }, Some(JSON.Boolean(false)))
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
@@ -138,12 +158,12 @@ testAsync("getDatabaseStatistics: MSysObjects denied falls back to getTables cou
     ->Promise.then(result => {
       switch result {
       | Ok(stats) => {
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "tables"), Some(JSON.Number(4.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "queries"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "forms"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "reports"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "macros"), Some(JSON.Number(0.0)))
-          assertion(~operator="equal", (a, b) => a == b, Dict.get(stats, "modules"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "tables"), Some(JSON.Number(4.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "queries"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "forms"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "reports"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "macros"), Some(JSON.Number(0.0)))
+          assertion(~operator="equal", (a, b) => a == b, _countFromStats(stats, "modules"), Some(JSON.Number(0.0)))
           let warningStr = switch Dict.get(stats, "warning") {
           | Some(JSON.String(s)) => s | _ => ""
           }

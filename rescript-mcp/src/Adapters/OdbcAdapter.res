@@ -989,17 +989,23 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
       // Disconnected: zero counts, empty file, no warning
       let stats: dict<JSON.t> = Dict.fromArray([
         ("success", JSON.Boolean(true)),
-        ("tables", JSON.Number(0.0)),
-        ("queries", JSON.Number(0.0)),
-        ("forms", JSON.Number(0.0)),
-        ("reports", JSON.Number(0.0)),
-        ("macros", JSON.Number(0.0)),
-        ("modules", JSON.Number(0.0)),
-        ("file_name", JSON.String("")),
-        ("file_size_bytes", JSON.Number(0.0)),
-        ("file_modified", JSON.String("")),
-        ("access_version", JSON.Null),
-        ("com_available", JSON.Boolean(false)),
+        ("objects", JSON.Object(Dict.fromArray([
+          ("tables", JSON.Number(0.0)),
+          ("queries", JSON.Number(0.0)),
+          ("forms", JSON.Number(0.0)),
+          ("reports", JSON.Number(0.0)),
+          ("macros", JSON.Number(0.0)),
+          ("modules", JSON.Number(0.0)),
+        ]))),
+        ("file", JSON.Object(Dict.fromArray([
+          ("name", JSON.String("")),
+          ("size_bytes", JSON.Number(0.0)),
+          ("modified", JSON.String("")),
+        ]))),
+        ("system", JSON.Object(Dict.fromArray([
+          ("access_version", JSON.Null),
+          ("com_available", JSON.Boolean(false)),
+        ]))),
         ("warning", JSON.Null),
       ])
       Promise.resolve(Ok(stats))
@@ -1023,20 +1029,26 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
                   }
                   let stats: dict<JSON.t> = Dict.fromArray([
                     ("success", JSON.Boolean(true)),
-                    ("tables", JSON.Number(Float.fromInt(tableCount))),
-                    ("queries", JSON.Number(0.0)),
-                    ("forms", JSON.Number(0.0)),
-                    ("reports", JSON.Number(0.0)),
-                    ("macros", JSON.Number(0.0)),
-                    ("modules", JSON.Number(0.0)),
-                    ("file_name", JSON.String(switch adapter.dbPath {
-                      | Some(p) => %raw("s => s.split(/[\\\\/]/).pop()")(p)
-                      | None => ""
-                    })),
-                    ("file_size_bytes", JSON.Number(Float.fromInt(size))),
-                    ("file_modified", JSON.String(modified)),
-                    ("access_version", JSON.Null),
-                    ("com_available", JSON.Boolean(false)),
+                    ("objects", JSON.Object(Dict.fromArray([
+                      ("tables", JSON.Number(Float.fromInt(tableCount))),
+                      ("queries", JSON.Number(0.0)),
+                      ("forms", JSON.Number(0.0)),
+                      ("reports", JSON.Number(0.0)),
+                      ("macros", JSON.Number(0.0)),
+                      ("modules", JSON.Number(0.0)),
+                    ]))),
+                    ("file", JSON.Object(Dict.fromArray([
+                      ("name", JSON.String(switch adapter.dbPath {
+                        | Some(p) => %raw("s => s.split(/[\\\\/]/).pop()")(p)
+                        | None => ""
+                      })),
+                      ("size_bytes", JSON.Number(Float.fromInt(size))),
+                      ("modified", JSON.String(modified)),
+                    ]))),
+                    ("system", JSON.Object(Dict.fromArray([
+                      ("access_version", JSON.Null),
+                      ("com_available", JSON.Boolean(false)),
+                    ]))),
                     ("warning", JSON.String("MSysObjects access denied — table count from cursor.tables(), other counts unavailable")),
                   ])
                   Promise.resolve(Ok(stats))
@@ -1044,17 +1056,23 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
                 ->Promise.catch(_e => {
                   let emptyStats: dict<JSON.t> = Dict.fromArray([
                     ("success", JSON.Boolean(true)),
-                    ("tables", JSON.Number(0.0)),
-                    ("queries", JSON.Number(0.0)),
-                    ("forms", JSON.Number(0.0)),
-                    ("reports", JSON.Number(0.0)),
-                    ("macros", JSON.Number(0.0)),
-                    ("modules", JSON.Number(0.0)),
-                    ("file_name", JSON.String("")),
-                    ("file_size_bytes", JSON.Number(0.0)),
-                    ("file_modified", JSON.String("")),
-                    ("access_version", JSON.Null),
-                    ("com_available", JSON.Boolean(false)),
+                    ("objects", JSON.Object(Dict.fromArray([
+                      ("tables", JSON.Number(0.0)),
+                      ("queries", JSON.Number(0.0)),
+                      ("forms", JSON.Number(0.0)),
+                      ("reports", JSON.Number(0.0)),
+                      ("macros", JSON.Number(0.0)),
+                      ("modules", JSON.Number(0.0)),
+                    ]))),
+                    ("file", JSON.Object(Dict.fromArray([
+                      ("name", JSON.String("")),
+                      ("size_bytes", JSON.Number(0.0)),
+                      ("modified", JSON.String("")),
+                    ]))),
+                    ("system", JSON.Object(Dict.fromArray([
+                      ("access_version", JSON.Null),
+                      ("com_available", JSON.Boolean(false)),
+                    ]))),
                     ("warning", JSON.String("MSysObjects access denied — table count from cursor.tables(), other counts unavailable")),
                   ])
                   Promise.resolve(Ok(emptyStats))
@@ -1087,20 +1105,26 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
               }
               let stats: dict<JSON.t> = Dict.fromArray([
                 ("success", JSON.Boolean(true)),
-                ("tables", JSON.Number(Float.fromInt(tables.contents))),
-                ("queries", JSON.Number(Float.fromInt(queries.contents))),
-                ("forms", JSON.Number(Float.fromInt(forms.contents))),
-                ("reports", JSON.Number(Float.fromInt(reports.contents))),
-                ("macros", JSON.Number(Float.fromInt(macros.contents))),
-                ("modules", JSON.Number(Float.fromInt(modules.contents))),
-                ("file_name", JSON.String(switch adapter.dbPath {
-                  | Some(p) => %raw("s => s.split(/[\\\\/]/).pop()")(p)
-                  | None => ""
-                })),
-                ("file_size_bytes", JSON.Number(Float.fromInt(size))),
-                ("file_modified", JSON.String(modified)),
-                ("access_version", JSON.Null),
-                ("com_available", JSON.Boolean(false)),
+                ("objects", JSON.Object(Dict.fromArray([
+                  ("tables", JSON.Number(Float.fromInt(tables.contents))),
+                  ("queries", JSON.Number(Float.fromInt(queries.contents))),
+                  ("forms", JSON.Number(Float.fromInt(forms.contents))),
+                  ("reports", JSON.Number(Float.fromInt(reports.contents))),
+                  ("macros", JSON.Number(Float.fromInt(macros.contents))),
+                  ("modules", JSON.Number(Float.fromInt(modules.contents))),
+                ]))),
+                ("file", JSON.Object(Dict.fromArray([
+                  ("name", JSON.String(switch adapter.dbPath {
+                    | Some(p) => %raw("s => s.split(/[\\\\/]/).pop()")(p)
+                    | None => ""
+                  })),
+                  ("size_bytes", JSON.Number(Float.fromInt(size))),
+                  ("modified", JSON.String(modified)),
+                ]))),
+                ("system", JSON.Object(Dict.fromArray([
+                  ("access_version", JSON.Null),
+                  ("com_available", JSON.Boolean(false)),
+                ]))),
                 ("warning", JSON.Null),
               ])
               Promise.resolve(Ok(stats))
@@ -1111,17 +1135,23 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
           // Unexpected error during MSysObjects query — degrade gracefully
           let emptyStats: dict<JSON.t> = Dict.fromArray([
             ("success", JSON.Boolean(true)),
-            ("tables", JSON.Number(0.0)),
-            ("queries", JSON.Number(0.0)),
-            ("forms", JSON.Number(0.0)),
-            ("reports", JSON.Number(0.0)),
-            ("macros", JSON.Number(0.0)),
-            ("modules", JSON.Number(0.0)),
-            ("file_name", JSON.String("")),
-            ("file_size_bytes", JSON.Number(0.0)),
-            ("file_modified", JSON.String("")),
-            ("access_version", JSON.Null),
-            ("com_available", JSON.Boolean(false)),
+            ("objects", JSON.Object(Dict.fromArray([
+              ("tables", JSON.Number(0.0)),
+              ("queries", JSON.Number(0.0)),
+              ("forms", JSON.Number(0.0)),
+              ("reports", JSON.Number(0.0)),
+              ("macros", JSON.Number(0.0)),
+              ("modules", JSON.Number(0.0)),
+            ]))),
+            ("file", JSON.Object(Dict.fromArray([
+              ("name", JSON.String("")),
+              ("size_bytes", JSON.Number(0.0)),
+              ("modified", JSON.String("")),
+            ]))),
+            ("system", JSON.Object(Dict.fromArray([
+              ("access_version", JSON.Null),
+              ("com_available", JSON.Boolean(false)),
+            ]))),
             ("warning", JSON.String("MSysObjects access denied — table count from cursor.tables(), other counts unavailable")),
           ])
           Promise.resolve(Ok(emptyStats))
