@@ -45,22 +45,30 @@ type t = {
 
 // ---------------------------------------------------------------------------
 // _normalizeQueryResult — oDBcResult → Interfaces.queryResult
-// All ODBC row values are converted to JSON via valueToJson
+// The odbc v2 npm package returns rows DIRECTLY as the result array
+// (Result<T> extends Array<T>) with bookkeeping properties (columns,
+// count, statement, parameters, return) hung off the same object — there
+// is no `r.rows` property. Iterate the array, skip bookkeeping keys, and
+// convert plain JS row values to JSON directly (no oDBcValue variant
+// wrapping at the boundary).
 // ---------------------------------------------------------------------------
 
 let _normalizeQueryResult = (result: Bindings.Odbc.oDBcResult): Interfaces.queryResult => {
-  let jsonRows = Belt.Array.map(result.rows, row => {
-    // Convert each oDBcRow (dict<oDBcValue>) to dict<JSON.t>
-    let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-    let jsonEntry = Belt.Array.map(entries, ((k, v)) => (k, Bindings.Odbc.valueToJson(v)))
-    let jsonDict: dict<JSON.t> = %raw("entries => Object.fromEntries(entries)")(jsonEntry)
-    jsonDict
+  let jsonRows: array<dict<JSON.t>> = %raw(
+    "r => { if (!Array.isArray(r)) return []; const skip = new Set(['columns','count','statement','parameters','return']); return r.filter(x => x && typeof x === 'object' && !Array.isArray(x)).map(row => { const obj = {}; for (const k of Object.keys(row)) { if (skip.has(k)) continue; const v = row[k]; if (v === null || v === undefined) { obj[k] = null; } else if (typeof v === 'string') { obj[k] = v; } else if (typeof v === 'number') { obj[k] = v; } else if (typeof v === 'boolean') { obj[k] = v; } else if (v instanceof Date) { obj[k] = v.toISOString(); } else if (Buffer.isBuffer(v)) { obj[k] = v.toString('base64'); } else { obj[k] = String(v); } } return obj; }); }"
+  )(result)
+  let columnDefs: array<dict<JSON.t>> = %raw("r => Array.isArray(r.columns) ? r.columns : []")(result)
+  let columnNames: array<string> = Belt.Array.map(columnDefs, c => {
+    switch Dict.get(c, "name") {
+    | Some(JSON.String(s)) => s
+    | _ => ""
+    }
   })
   {
     success: true,
     rows: jsonRows,
     count: Belt.Array.length(jsonRows),
-    columns: result.columns,
+    columns: columnNames,
     error: None,
   }
 }

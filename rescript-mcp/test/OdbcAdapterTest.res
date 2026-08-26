@@ -25,7 +25,7 @@ module Fake = {
     allParams.contents = []
   }
 
-  let query = (sql: string, params: array<JSON.t>): Promise.t<result<Bindings.Odbc.oDBcResult, Errors.t>> => {
+  let query = (sql: string, params: array<JSON.t>): Promise.t<result<'a, Errors.t>> => {
     callCount.contents = callCount.contents + 1
     lastSql.contents = sql
     lastParams.contents = params
@@ -34,11 +34,27 @@ module Fake = {
     let idx = callCount.contents - 1
     if idx < Belt.Array.length(overrides.contents) {
       switch Belt.Array.getUnsafe(overrides.contents, idx) {
-      | Ok(r) => Promise.resolve(Ok(r))
+      | Ok(r) => {
+          // Wrap the legacy {rows, columns, count, statement} shape into the
+          // odbc v2 array-with-bookkeeping shape (rows IS the array; columns,
+          // count, statement hang off the same array object). Also flatten
+          // oDBcValue variants to plain JS values since v2 returns primitives.
+          let arr: array<dict<JSON.t>> = %raw(
+            "r => r.rows.map(row => { const o = {}; for (const k of Object.keys(row)) { const v = row[k]; if (v == null) { o[k] = null; } else if (typeof v === 'object' && v.TAG === 'Str') { o[k] = v._0; } else if (typeof v === 'object' && v.TAG === 'Int') { o[k] = v._0; } else if (typeof v === 'object' && v.TAG === 'Float') { o[k] = v._0; } else if (typeof v === 'object' && v.TAG === 'Bool') { o[k] = v._0; } else if (typeof v === 'object' && v.TAG === 'Null') { o[k] = null; } else { o[k] = v; } } return o; })"
+          )(r)
+          let wrapped: array<dict<JSON.t>> = %raw("arr => arr")(arr)
+          let _ = %raw(
+            "(arr, r) => { arr.columns = r.columns; arr.count = r.count; arr.statement = r.statement; return arr; }"
+          )(wrapped, r)
+          Promise.resolve(Obj.magic(Ok(wrapped)))
+        }
       | Error(e) => Promise.resolve(Error(e))
       }
     } else {
-      Promise.resolve(Ok({rows: [], columns: [], count: 1, statement: None}))
+      // Default: empty result in the v2 shape with count=1 (most tests are
+      // mutations that return affected=1).
+      let empty: array<dict<JSON.t>> = %raw("() => { const a = []; a.columns = []; a.count = 1; a.statement = null; return a; }")(())
+      Promise.resolve(Obj.magic(Ok(empty)))
     }
   }
 
