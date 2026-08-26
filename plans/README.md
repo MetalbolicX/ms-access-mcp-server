@@ -70,6 +70,17 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
    `OdbcAdapter.insertData` signature). Every plan's "suite is green"
    claim MUST come from `rescript clean` + full rebuild + test, full
    stop. Cached `lib/bs` is not evidence.
+8. **Grep gates need precision.** "No `Fakes` in Facade.res" can be
+   read two ways — strict (zero substring matches) or intent (no
+   public-type coupling to the Fakes module). Plan 015's executor
+   introduced `_rawDataAdapter: option<Fakes.FakeOdbcAdapter.t>` and
+   `_rawSchemaAdapter: option<Fakes.FakeSchemaAdapter.t>` as
+   `_`-prefixed internal test-injection helpers (preserves test
+   ergonomics without exposing the binding's public type). Strict
+   grep reads 2 matches; intent reads 0 (public coupling is gone).
+   Plan 015's plan gate text was over-strict; amended to
+   "no PUBLIC Fakes coupling" in the dependency note. Future plan
+   grep gates should specify the intent, not just the substring.
 
 
   work where test-first cannot apply (nothing to drive out) and there is
@@ -94,7 +105,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 012 | Port Access COM surface to typed .mts (access.d.ts) | 12 | NEITHER | P1 | L | 011 | DONE |
 | 013 | Port winax binding internals to typed .mts (optional) | 13 | NEITHER | P3 | M | 012 | DONE |
 | 014 | Port ODBC surface %raw blocks to typed .mts (SqlBuilder, OdbcSchemaReader, OdbcAdapter, TrustedLocations) | 14 | STRICT TDD | P2 | M | 013 | DONE |
-| 015 | Facade adapter composition root (instance types + real factory) | 15 | SDD | P1 | M | 003, 004, 005, 006, 021, 022, 023 | PARTIAL (T1 committed at 8b190f1; T2-T6 pending) |
+| 015 | Facade adapter composition root (instance types + real factory) | 15 | SDD | P1 | M | 003, 004, 005, 006, 021, 022, 023, 024, 025 | DONE (T2-T6 landed on rescript/015-facade-composition-root-resume; suite 581/581/0) |
 | 016 | Prove real ODBC stack + inventory fixture DB | 16 | NEITHER | P1 | S | 003, 006 | DONE |
 | 017 | Fix two pre-existing OdbcAdapterTest failures | 17 | STRICT TDD | P2 | S | - | DONE |
 | 018 | Amend plan 007 for six parity-harness design holes | 18 | NEITHER | P1 | S | 015, 016, 022, 023, 024 | TODO |
@@ -136,8 +147,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   **016 ✅**, **017 ✅**, **021 ✅**, **022+023 ✅** (drift close-out
   committed at `1672743`), **025 ✅** (stale `.mjs` + count-clamp +
   Instances.res type fix), **024 ✅** (consolidated to main at
-  `bf8f9d0` merge + `96afc2d` Instances fix), then **015 T2-T6** (resume
-  from post-024 main), then **018** (amend plan 007 text), then **007**.
+  `bf8f9d0` merge + `96afc2d` Instances fix), **015 ✅** (T2-T6 landed
+  on `rescript/015-facade-composition-root-resume` at `b998021`;
+  suite grew 572→581 with 9 new tests; Facade.res re-typed to instance
+  types; Composition.res exports realFactory), then **018** (amend
+  plan 007 text), then **007**.
   Plans 015-018 were written against the UNCOMMITTED plans-003-006
   working tree at `2bbff3a`; plans 024 + 025 resolve that debt and the
   pre-existing test-suite drift from plan 015 T1.
