@@ -55,8 +55,8 @@ let makeFakeFactory = (): Facade.bindingFactory => {
     Promise.resolve(Ok({
       dataAdapter: dataAdapter,
       schemaAdapter: schemaAdapter,
-      _rawDataAdapter: rawDataAdapter,
-      _rawSchemaAdapter: rawSchemaAdapter,
+      _rawDataAdapter: Some(rawDataAdapter),
+      _rawSchemaAdapter: Some(rawSchemaAdapter),
       dbPath: dbPath,
       adapterType: adapterType,
     }: Facade.binding))
@@ -1171,8 +1171,13 @@ let setupFakeSchemaTables = (facade: Facade.t, tables: array<Adapters.Interfaces
       let bindings = facade.bindings
       switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
       | Some((_, b)) => {
-          b._rawSchemaAdapter.fakeTables = tables
-          b._rawSchemaAdapter.connected = true
+          switch b._rawSchemaAdapter {
+          | Some(raw) => {
+              raw.fakeTables = tables
+              raw.connected = true
+            }
+          | None => ()
+          }
         }
       | None => ()
       }
@@ -1186,7 +1191,12 @@ let setupFakeSchemaRelationships = (facade: Facade.t, rels: array<Adapters.Inter
   | Ok(_) => {
       let bindings = facade.bindings
       switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
-      | Some((_, b)) => { b._rawSchemaAdapter.fakeRelationships = rels }
+      | Some((_, b)) => {
+          switch b._rawSchemaAdapter {
+          | Some(raw) => { raw.fakeRelationships = rels }
+          | None => ()
+          }
+        }
       | None => ()
       }
     }
@@ -1199,7 +1209,12 @@ let setupFakeSchemaQueries = (facade: Facade.t, queries: array<Adapters.Interfac
   | Ok(_) => {
       let bindings = facade.bindings
       switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
-      | Some((_, b)) => { b._rawSchemaAdapter.fakeQueries = queries }
+      | Some((_, b)) => {
+          switch b._rawSchemaAdapter {
+          | Some(raw) => { raw.fakeQueries = queries }
+          | None => ()
+          }
+        }
       | None => ()
       }
     }
@@ -1212,7 +1227,12 @@ let setupFakeSchemaStats = (facade: Facade.t, stats: dict<JSON.t>) => {
   | Ok(_) => {
       let bindings = facade.bindings
       switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
-      | Some((_, b)) => { b._rawSchemaAdapter.fakeDbStats = stats }
+      | Some((_, b)) => {
+          switch b._rawSchemaAdapter {
+          | Some(raw) => { raw.fakeDbStats = stats }
+          | None => ()
+          }
+        }
       | None => ()
       }
     }

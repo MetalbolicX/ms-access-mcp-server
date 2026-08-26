@@ -20,8 +20,9 @@ type binding = {
   // Internal: raw fake adapters for test infrastructure access (T3 migration helper)
   // These allow test helpers (setupFake*) to inject test data directly.
   // Prefixed with _ to signal they are test-only internals.
-  _rawDataAdapter: Fakes.FakeOdbcAdapter.t,
-  _rawSchemaAdapter: Fakes.FakeSchemaAdapter.t,
+  // option<> so production bindings can use None (real adapters don't need mutation)
+  _rawDataAdapter: option<Fakes.FakeOdbcAdapter.t>,
+  _rawSchemaAdapter: option<Fakes.FakeSchemaAdapter.t>,
   dbPath: string,
   adapterType: string,
 }
