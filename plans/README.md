@@ -28,6 +28,41 @@ Each phase is labeled with how it is built:
   `apply: Implement tasks following strict TDD` — so SDD phases are not
   TDD-free; they add spec/design stages IN FRONT of TDD implementation.
 - **NEITHER** — configuration, verification infrastructure, or decision
+
+## Plan authoring standards (hardened 2026-08-25 after plan 015/021/022 execution failures)
+
+These rules exist because executing the original plan set surfaced five
+systemic failure modes. Every NEW or AMENDED plan must follow them:
+
+1. **Verify claims at authoring time, not just execution time.** Every
+   "Current state" excerpt (line numbers, type signatures, method counts)
+   must be read from the live files BEFORE the plan is written. Plan 015's
+   design claimed 18 schema methods (real: 22), a self-taking
+   `OdbcSchemaReader` (real: query seam), and `insertData: JSON.t` (real:
+   `dict<JSON.t>`) — each error cost a full SDD cycle re-run.
+2. **Fresh-build verification only.** Any "suite is green" claim must come
+   from `rescript clean` + full rebuild. Cached `lib/bs/*.mjs` artifacts
+   produced the false 553/553/0 baseline that hid the aggregator breakage
+   for three cycles.
+3. **Environment quirks go in the plan header.** Plans executing on this
+   machine must state: (a) pnpm via `cmd.exe /c` wrapper + log files
+   (PowerShell wrapper hides output); (b) `pnpm install --ignore-scripts`
+   when winax/node-gyp/Python fail; (c) `.venv\Scripts\python.exe`, never
+   `uv`.
+4. **Design verbatim is binding for executors.** Apply-phase agents must
+   copy design snippets exactly; deviation is a STOP, not improvisation.
+   Plan 015's first apply attempt rewrote `insertData`'s signature and
+   dropped labeled args off-script, corrupting the working tree.
+5. **Clean tree is a precondition.** Every plan's drift check starts with
+   `git status` expecting zero uncommitted `src/`/`test/` changes. A dirty
+   tree at plan start is itself a STOP. Plan 024 enforces this globally.
+6. **`rescript clean` does NOT clear `rescript-mcp/test/*.mjs`** — only
+   `lib/bs/`. Stale compiled test artifacts (e.g. orphans left after a
+   `.res` source rewrite) silently crash the test runner. Any plan that
+   rewrites test source shape must either delete the stale `.mjs` files
+   or document the gap. Plan 025 enforces this for the current orphans.
+
+
   work where test-first cannot apply (nothing to drive out) and there is
   no new behavior contract to specify (scaffolding, a differential
   harness that compares existing implementations, a decision memo).
@@ -42,7 +77,7 @@ Each phase is labeled with how it is built:
 | 004 | COM layer via winax (VBA, forms, macros, versioning) | 4 | SDD | P2 | L | 002, 003 | DONE |
 | 005 | ConnectionPool & backend services | 5 | STRICT TDD | P2 | M | 003, 004 | DONE |
 | 006 | Database facade for AI harness | 6 | SDD | P1 | M | 003, 004, 005 | DONE |
-| 007 | Differential parity harness vs Python | 7 | NEITHER | P2 | M | 003, 004, 005, 006, 015, 016, 017, 018 | TODO |
+| 007 | Differential parity harness vs Python | 7 | NEITHER | P2 | M | 003, 004, 005, 006, 015, 016, 017, 018, 023, 024 | TODO |
 | 008 | Minimal local MCP stdio server | 8 | SDD | P3 | M | 006 | TODO |
 | 009 | UI assessment decision memo | 9 | NEITHER | P3 | S | 008 | TODO |
 | 010 | TypeScript → .mjs bridge foundation (toolchain + pilot) | 10 | STRICT TDD | P1 | S | — | DONE |
@@ -50,11 +85,15 @@ Each phase is labeled with how it is built:
 | 012 | Port Access COM surface to typed .mts (access.d.ts) | 12 | NEITHER | P1 | L | 011 | DONE |
 | 013 | Port winax binding internals to typed .mts (optional) | 13 | NEITHER | P3 | M | 012 | DONE |
 | 014 | Port ODBC surface %raw blocks to typed .mts (SqlBuilder, OdbcSchemaReader, OdbcAdapter, TrustedLocations) | 14 | STRICT TDD | P2 | M | 013 | DONE |
-| 015 | Facade adapter composition root (instance types + real factory) | 15 | SDD | P1 | M | 003, 004, 005, 006 | TODO |
+| 015 | Facade adapter composition root (instance types + real factory) | 15 | SDD | P1 | M | 003, 004, 005, 006, 021, 022, 023 | PARTIAL (T1 committed at 8b190f1; T2-T6 pending) |
 | 016 | Prove real ODBC stack + inventory fixture DB | 16 | NEITHER | P1 | S | 003, 006 | DONE |
-| 017 | Fix two pre-existing OdbcAdapterTest failures | 17 | STRICT TDD | P2 | S | — | DONE |
-| 018 | Amend plan 007 for six parity-harness design holes | 18 | NEITHER | P1 | S | 015, 016 | TODO |
-| 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | — | DONE |
+| 017 | Fix two pre-existing OdbcAdapterTest failures | 17 | STRICT TDD | P2 | S | - | DONE |
+| 018 | Amend plan 007 for six parity-harness design holes | 18 | NEITHER | P1 | S | 015, 016, 022, 023, 024 | TODO |
+| 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | - | DONE |
+| 022 | Reconcile insertData/exportData drift (dict<JSON.t> + mutationResult) | 22 | STRICT TDD | P1 | XS | 021 | PARTIAL (edits in tree; blocked on plan 023's CsvWriter fix) |
+| 023 | Finish plan 022 — CsvWriter ~header fix + commit + fresh-build verify | 23 | STRICT TDD | P1 | XS | 021 | DONE |
+| 024 | Repo hygiene — commit plans/tooling/artifacts + consolidate branch chain to main | 24 | NEITHER | P1 | S | 023, 025 | TODO |
+| 025 | Fix the test suite (stale test/.mjs cleanup + count-clamping fix) — pre-024 gate | 25 | NEITHER | P1 | S | 023 | DONE |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -79,14 +118,19 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   cleanly.
 - 013 is optional polish; skipping it leaves two documented
   `toComObject` casts plus binding internals as accepted boundaries.
-- **Pre-007 gate (plans 015-018)**: 007's parity driver needs a facade
+- **Pre-007 gate (plans 015-018, 021-025)**: 007's parity driver needs a facade
   that accepts REAL adapters (015), a proven real-ODBC stack + fixture
-  inventory (016), a fully green suite (017), and the amended plan text
-  (018). Recommended order: **016 first** (cheapest; de-risks 015's
-  smoke), then **015** (017 is parallel-safe — different files), then
-  **018**, then 007. Plans 015-018 were written against the UNCOMMITTED
-  plans-003-006 working tree at `2bbff3a`; commit that tree before
-  executing them so their drift checks are meaningful.
+  inventory (016), a fully green suite (017, plus 025's cleanup), the
+  amended plan text (018), aggregator/import hygiene (021), signature
+  drift reconciled (022+023), a clean committed tree (024), and a
+  non-crashing test suite (025). Recommended order:
+  **016 ✅**, **017 ✅**, **021 ✅**, **022+023 ✅** (drift close-out
+  committed at `1672743`), then **025** (stale `.mjs` + count-clamp),
+  then **024** (consolidate to main), then **015 T2-T6** (resume from
+  post-024 main), then **018** (amend plan 007 text), then **007**.
+  Plans 015-018 were written against the UNCOMMITTED plans-003-006
+  working tree at `2bbff3a`; plans 024 + 025 resolve that debt and the
+  pre-existing test-suite drift from plan 015 T1.
 - **Plan 016 executed 2026-08-25** (commit `6613e89`):
   runner `test/odbc-integration/run.mjs:123` fixed (missing `Driver={...}`
   clause); 17 real ODBC cases now execute (was 0); 6 PASS, 11 FAIL triaged
