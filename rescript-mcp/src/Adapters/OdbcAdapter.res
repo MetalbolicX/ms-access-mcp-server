@@ -24,6 +24,53 @@ let _exnMessage = (e: exn): string => {
 }
 
 // ---------------------------------------------------------------------------
+// _tablesAll / _columnsFor — direct FFI calls to odbc v2 native methods
+// ReScript's `~arg=None` named-arg syntax compiles to JS `undefined`, but
+// the native odbc v2 C++ binding (via N-API) requires literal JS `null` for
+// its nullable string params (it checks `IsNull()` which is false for
+// `undefined`). Pass `null` explicitly through %raw to avoid the rejection.
+// _rowString / _rowInt / _rowNum — read a string/int field from an oDBcRow
+// The odbc v2 npm package returns plain JS values in rows, NOT ReScript
+// variants like {TAG:"Str",_0:s}. The legacy variant pattern matches
+// silently fail, producing "". Treat values as plain JS at the boundary.
+// ---------------------------------------------------------------------------
+
+let _tablesAll = (
+  conn: Bindings.Odbc.connection,
+): Promise.t<result<array<Bindings.Odbc.oDBcRow>, Errors.t>> => {
+  // The odbc binding's c_tables already wraps the result in Ok(rows);
+  // use a JS shim to extract the rows before wrapping again.
+  let raw = %raw("(conn) => conn.tables(null, null, null, 'TABLE').then(w => Array.isArray(w && w._0) ? w._0 : [])")(conn)
+  raw->Promise.then(rows => Promise.resolve(Ok(rows)))
+}
+
+let _columnsFor = (
+  conn: Bindings.Odbc.connection,
+  name: string,
+): Promise.t<result<array<Bindings.Odbc.oDBcRow>, Errors.t>> => {
+  let raw = %raw("(conn, name) => conn.columns(null, null, name, null).then(w => Array.isArray(w && w._0) ? w._0 : [])")(conn, name)
+  raw->Promise.then(rows => Promise.resolve(Ok(rows)))
+}
+
+let _rowString = (row: Bindings.Odbc.oDBcRow, key: string): string => {
+  // odbc v2 returns plain JS values; ReScript test mocks return variants.
+  // Accept both forms.
+  %raw("(row, k) => { const v = row[k]; if (typeof v === 'string') return v; if (v && typeof v === 'object' && v.TAG === 'String' && typeof v._0 === 'string') return v._0; return ''; }")(row, key)
+}
+
+let _rowInt = (row: Bindings.Odbc.oDBcRow, key: string): int => {
+  // odbc v2 returns plain JS values; ReScript test mocks return variants.
+  // Accept both forms.
+  %raw("(row, k) => { const v = row[k]; if (typeof v === 'number') return Math.trunc(v); if (v && typeof v === 'object' && (v.TAG === 'Int' || v.TAG === 'Float') && typeof v._0 === 'number') return Math.trunc(v._0); return 0; }")(row, key)
+}
+
+let _rowFirstInt = (row: dict<JSON.t>): int => {
+  // odbc v2 returns plain JS values; ReScript test mocks return variants.
+  // Accept both forms.
+  %raw("(row) => { for (const k of Object.keys(row)) { const v = row[k]; if (typeof v === 'number') return Math.trunc(v); if (v && typeof v === 'object' && (v.TAG === 'Int' || v.TAG === 'Float') && typeof v._0 === 'number') return Math.trunc(v._0); } return 0; }")(row)
+}
+
+// ---------------------------------------------------------------------------
 // _buildWhereClause — parse JSON.t where clause into SqlBuilder.whereClause
 // JSON Object with "Dict" key → Dict variant
 // JSON Object with "Raw" key → Raw variant
@@ -517,31 +564,14 @@ let _jsonToString = (j: option<JSON.t>): string => {
 // ---------------------------------------------------------------------------
 
 let _fieldInfoFromRow = (row: Bindings.Odbc.oDBcRow): Interfaces.fieldInfo => {
-  let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-  let getStr = (k: string): string => {
-    let v = Belt.Array.get(Belt.Array.keep(entries, ((key, _v)) => key == k), 0)
-    switch v {
-    | Some((_k, Bindings.Odbc.Str(s))) => s
-    | _ => ""
-    }
-  }
-  let getInt = (k: string): int => {
-    let v = Belt.Array.get(Belt.Array.keep(entries, ((key, _v)) => key == k), 0)
-    switch v {
-    | Some((_k, Bindings.Odbc.Int(i))) => i
-    | Some((_k, Bindings.Odbc.Float(f))) => Float.toInt(f)
-    | _ => 0
-    }
-  }
-  let name = getStr("COLUMN_NAME")
-  let typeNameOpt = switch Belt.Array.get(Belt.Array.keep(entries, ((key, _v)) => key == "TYPE_NAME"), 0) {
-  | Some((_k, Bindings.Odbc.Str(s))) => Some(s)
-  | Some((_k, Bindings.Odbc.Null)) => None
-  | _ => None
+  let name = _rowString(row, "COLUMN_NAME")
+  let typeNameOpt = switch %raw("row => { const v = row['TYPE_NAME']; return v == null ? null : (typeof v === 'string' ? v : null) }")(row) {
+  | Some(s) => Some(s)
+  | None => None
   }
   let type_ = _pyodbcTypeName(typeNameOpt)
-  let size = getInt("COLUMN_SIZE")
-  let nullable = getInt("NULLABLE")
+  let size = _rowInt(row, "COLUMN_SIZE")
+  let nullable = _rowInt(row, "NULLABLE")
   // nullable=0 means SQL_NO_NULLS → required=true; nullable=1 means NULL allowed → required=false
   let required = nullable == 0
   {
@@ -572,18 +602,14 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
   switch _requireConnection(adapter) {
   | None => Promise.resolve(Ok([]))
   | Some(conn) => {
-      conn.tables(~tableType=Some("TABLE"))
+      _tablesAll(conn)
         ->Promise.then(result => {
           switch result {
           | Error(e) => Promise.resolve(Error(e))
           | Ok(tableRows) => {
               // Filter out MSys* tables
               let userTableRows = Belt.Array.keep(tableRows, row => {
-                let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-                let name = switch Belt.Array.get(Belt.Array.keep(entries, ((k, _)) => k == "TABLE_NAME"), 0) {
-                | Some((_, Bindings.Odbc.Str(s))) => s
-                | _ => ""
-                }
+                let name = _rowString(row, "TABLE_NAME")
                 !String.startsWith(name, "MSys")
               })
 
@@ -595,65 +621,49 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
                 switch Belt.Array.get(remaining, 0) {
                 | None => Promise.resolve(Ok(tables))
                 | Some(row) => {
-                    let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-                    let name = switch Belt.Array.get(Belt.Array.keep(entries, ((k, _)) => k == "TABLE_NAME"), 0) {
-                    | Some((_, Bindings.Odbc.Str(s))) => s
-                    | _ => ""
-                    }
+                    let name = _rowString(row, "TABLE_NAME")
 
                     // Get column metadata
-                    conn.columns(~table=Some(name))
+                    _columnsFor(conn, name)
                       ->Promise.then(colResult => {
                         let fields = switch colResult {
                         | Ok(colRows) => Belt.Array.map(colRows, _fieldInfoFromRow)
                         | Error(_) => []
                         }
 
-                        // Get record count
+                        // Get record count — the binding returns the native
+                        // array wrapped in Ok; odbc v2 puts bookkeeping keys
+                        // on the array itself. Use a JS shim that returns the
+                        // count as a plain number, chained into the existing
+                        // promise so the await happens before we construct
+                        // tableInfo.
                         let countSql = _buildCountQuery(name)
-                        conn.query(countSql, [])
-                          ->Promise.then(countResult => {
-                            let recordCount = switch countResult {
-                            | Ok(r) if r.count > 0 => {
-                                switch Belt.Array.get(r.rows, 0) {
-                                | Some(firstRow) => {
-                                    let rowEntries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(firstRow)
-                                    switch Belt.Array.get(rowEntries, 0) {
-                                    | Some((_, Bindings.Odbc.Int(i))) => i
-                                    | Some((_, Bindings.Odbc.Float(f))) => Float.toInt(f)
-                                    | _ => 0
-                                    }
-                                  }
-                                | None => 0
-                                }
-                              }
-                            | _ => 0
-                            }
-
-                            let tableInfo: Interfaces.tableInfo = {
-                              name: name,
-                              fields: fields,
-                              recordCount: recordCount,
-                              primaryKey: None,
-                            }
-                            processTables(
-                              Belt.Array.concat(tables, [tableInfo]),
-                              Belt.Array.sliceToEnd(remaining, 1),
-                            )
-                          })
-                          ->Promise.catch(_e => {
-                            // COUNT failure tolerated: table listed with recordCount=0
-                            let tableInfo: Interfaces.tableInfo = {
-                              name: name,
-                              fields: fields,
-                              recordCount: 0,
-                              primaryKey: None,
-                            }
-                            processTables(
-                              Belt.Array.concat(tables, [tableInfo]),
-                              Belt.Array.sliceToEnd(remaining, 1),
-                            )
-                          })
+                        %raw("(conn, sql) => conn.query(sql, []).then(w => { if (!w || w.TAG !== 'Ok') return 0; const arr = w._0; if (!Array.isArray(arr) || arr.length === 0) return 0; const row = arr[0]; for (const k of Object.keys(row)) { const v = row[k]; if (typeof v === 'number') return Math.trunc(v); if (typeof v === 'string') { const n = Number(v); if (Number.isFinite(n)) return Math.trunc(n); } } return 0; })")(conn, countSql)
+                        ->Promise.then(recordCount => {
+                          let tableInfo: Interfaces.tableInfo = {
+                            name: name,
+                            fields: fields,
+                            recordCount: recordCount,
+                            primaryKey: None,
+                          }
+                          processTables(
+                            Belt.Array.concat(tables, [tableInfo]),
+                            Belt.Array.sliceToEnd(remaining, 1),
+                          )
+                        })
+                      })
+                      ->Promise.catch(_e => {
+                        // columns/count failure tolerated: table listed with empty fields and recordCount=0
+                        let tableInfo: Interfaces.tableInfo = {
+                          name: name,
+                          fields: [],
+                          recordCount: 0,
+                          primaryKey: None,
+                        }
+                        processTables(
+                          Belt.Array.concat(tables, [tableInfo]),
+                          Belt.Array.sliceToEnd(remaining, 1),
+                        )
                       })
                   }
                 }
@@ -662,10 +672,6 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
               processTables([], userTableRows)
             }
           }
-        })
-        ->Promise.catch(e => {
-          let msg = _exnMessage(e)
-          Promise.resolve(Error(Errors.databaseError(msg)))
         })
     }
   }
@@ -711,12 +717,10 @@ let getRelationships = (adapter: t): Promise.t<result<array<Interfaces.relations
           ->Promise.then(result => {
             switch result {
             | Ok(r) => {
-                // Convert oDBcResult.rows to array<dict<JSON.t>>
+                // odbc v2 returns plain JS values in rows; produce dict<JSON.t>
+                // for the schema reader by wrapping each cell in a JSON.t variant.
                 let jsonRows = Belt.Array.map(r.rows, row => {
-                  let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-                  let jsonEntry = Belt.Array.map(entries, ((k, v)) => (k, Bindings.Odbc.valueToJson(v)))
-                  let jsonDict: dict<JSON.t> = %raw("entries => Object.fromEntries(entries)")(jsonEntry)
-                  jsonDict
+                  %raw("(row) => { const o = {}; for (const k of Object.keys(row)) { const v = row[k]; if (v == null) o[k] = null; else if (typeof v === 'string') o[k] = v; else if (typeof v === 'number') o[k] = v; else if (typeof v === 'boolean') o[k] = v; else o[k] = String(v); } return o; }")(row)
                 })
                 Promise.resolve(Ok(jsonRows))
               }
@@ -808,15 +812,8 @@ let getQueries = (adapter: t): Promise.t<result<array<Interfaces.queryInfo>, Err
           switch result {
           | Ok(r) => {
               let queries = Belt.Array.map(r.rows, row => {
-                let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-                let name = switch Belt.Array.get(Belt.Array.keep(entries, ((k, _)) => k == "TABLE_NAME"), 0) {
-                | Some((_, Bindings.Odbc.Str(s))) => s
-                | _ => ""
-                }
-                let sqlText = switch Belt.Array.get(Belt.Array.keep(entries, ((k, _)) => k == "VIEW_DEFINITION"), 0) {
-                | Some((_, Bindings.Odbc.Str(s))) => s
-                | _ => ""
-                }
+                let name = _rowString(row, "TABLE_NAME")
+                let sqlText = _rowString(row, "VIEW_DEFINITION")
                 (
                   {
                     name: name,
@@ -915,7 +912,7 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
           switch result {
           | Error(_) => {
               // MSysObjects denied — fall back to getTables count
-              conn.tables(~tableType=Some("TABLE"))
+              _tablesAll(conn)
                 ->Promise.then(tableResult => {
                   let tableCount = switch tableResult {
                   | Ok(rows) => Belt.Array.length(rows)
@@ -965,7 +962,7 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
                 })
             }
           | Ok(r) => {
-              // Aggregate from MSysObjects
+              // Aggregate from MSysObjects — odbc v2 returns plain JS values
               let tables = ref(0)
               let queries = ref(0)
               let forms = ref(0)
@@ -973,25 +970,9 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
               let macros = ref(0)
               let modules = ref(0)
               let _procRows = Belt.Array.map(r.rows, row => {
-                let entries: array<(string, Bindings.Odbc.oDBcValue)> = %raw("d => Object.entries(d)")(row)
-                let typeCode = ref(0)
-                let count = ref(0)
-                let _ = Belt.Array.map(entries, ((k, v)) => {
-                  switch k {
-                  | "Type" => switch v {
-                    | Bindings.Odbc.Int(i) => typeCode := i
-                    | Bindings.Odbc.Float(f) => typeCode := Float.toInt(f)
-                    | _ => ()
-                    }
-                  | "Count" => switch v {
-                    | Bindings.Odbc.Int(i) => count := i
-                    | Bindings.Odbc.Float(f) => count := Float.toInt(f)
-                    | _ => ()
-                    }
-                  | _ => ()
-                  }
-                })
-                switch _mapMsysType(typeCode.contents, count.contents) {
+                let typeCode = _rowInt(row, "Type")
+                let count = _rowInt(row, "Count")
+                switch _mapMsysType(typeCode, count) {
                 | Some(("tables", n)) => tables := n
                 | Some(("queries", n)) => queries := n
                 | Some(("forms", n)) => forms := n
