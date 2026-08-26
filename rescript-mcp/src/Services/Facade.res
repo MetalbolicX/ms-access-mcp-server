@@ -15,8 +15,13 @@ open ConnectionPool
 // ---------------------------------------------------------------------------
 
 type binding = {
-  dataAdapter: Fakes.FakeOdbcAdapter.t,
-  schemaAdapter: Fakes.FakeSchemaAdapter.t,
+  dataAdapter: Adapters.Instances.dataAdapterInstance,
+  schemaAdapter: Adapters.Instances.schemaAdapterInstance,
+  // Internal: raw fake adapters for test infrastructure access (T3 migration helper)
+  // These allow test helpers (setupFake*) to inject test data directly.
+  // Prefixed with _ to signal they are test-only internals.
+  _rawDataAdapter: Fakes.FakeOdbcAdapter.t,
+  _rawSchemaAdapter: Fakes.FakeSchemaAdapter.t,
   dbPath: string,
   adapterType: string,
 }
@@ -81,25 +86,25 @@ let _bindingForName = (
   Belt.Array.getBy(facade.bindings, ((n, _b)) => n == name)->Option.map(((_n, b)) => b)
 }
 
-// adapterForName: get the FakeOdbcAdapter.t for a named connection
+// adapterForName: get the dataAdapterInstance for a named connection
 // Used by CRUD ops (future phases); connection lifecycle doesn't call this
 let adapterForName = (
   facade: t,
   ~name: string,
   ~notConnectedMsg: string,
-): result<Fakes.FakeOdbcAdapter.t, Errors.t> => {
+): result<Adapters.Instances.dataAdapterInstance, Errors.t> => {
   switch _bindingForName(facade, name) {
   | Some(binding) => Ok(binding.dataAdapter)
   | None => Error(Errors.databaseError(notConnectedMsg))
   }
 }
 
-// schemaAdapterForName: get the FakeSchemaAdapter.t for a named connection
+// schemaAdapterForName: get the schemaAdapterInstance for a named connection
 let schemaAdapterForName = (
   facade: t,
   ~name: string,
   ~notConnectedMsg: string,
-): result<Fakes.FakeSchemaAdapter.t, Errors.t> => {
+): result<Adapters.Instances.schemaAdapterInstance, Errors.t> => {
   switch _bindingForName(facade, name) {
   | Some(binding) => Ok(binding.schemaAdapter)
   | None => Error(Errors.databaseError(notConnectedMsg))
@@ -403,7 +408,7 @@ let queryData = (
   switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
-    adapter->Fakes.FakeOdbcAdapter.executeQuery(sql, ~params?)
+    adapter.executeQuery(sql, ~params?)
       ->Promise.then(r => {
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
@@ -458,7 +463,7 @@ let insertData = (
       }
       // Execute insert for each dict and sum affected
       let rec recurse = (
-        adapter: Fakes.FakeOdbcAdapter.t,
+        adapter: Adapters.Instances.dataAdapterInstance,
         remaining: array<dict<JSON.t>>,
         ~acc: int,
       ): Promise.t<dict<JSON.t>> => {
@@ -470,7 +475,7 @@ let insertData = (
         } else {
           let head = Belt.Array.getUnsafe(remaining, 0)
           let tail = Belt.Array.sliceToEnd(remaining, 1)
-          adapter->Fakes.FakeOdbcAdapter.insertData(table, head)
+          adapter.insertData(table, head)
             ->Promise.then(r => {
               switch r {
               | Error(e) => Promise.resolve(shapeErr(e))
@@ -523,22 +528,22 @@ let updateData = (
               let msg = "confirm=True required for update_data"
               Promise.resolve(shapeErr(Errors.validationError(msg)))
             } else {
-              adapter->Fakes.FakeOdbcAdapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.Object(d)))
-                ->Promise.then(r => {
-                  switch r {
-                  | Error(e) => Promise.resolve(shapeErr(e))
-                  | Ok(mut) => {
-                      let result = Dict.make()
-                      Dict.set(result, "success", JSON.Boolean(true))
-                      Dict.set(result, "affected", JSON.Number(Int.toFloat(mut.affected)))
-                      Promise.resolve(result)
-                    }
+adapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.Object(d))->Belt.Option.map(v => Some(v)))
+              ->Promise.then(r => {
+                switch r {
+                | Error(e) => Promise.resolve(shapeErr(e))
+                | Ok(mut) => {
+                    let result = Dict.make()
+                    Dict.set(result, "success", JSON.Boolean(true))
+                    Dict.set(result, "affected", JSON.Number(Int.toFloat(mut.affected)))
+                    Promise.resolve(result)
                   }
-                })
+                }
+              })
             }
           } else {
             // Targeted update (whereDict present) — no confirm required
-            adapter->Fakes.FakeOdbcAdapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.Object(d)))
+            adapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.Object(d))->Belt.Option.map(v => Some(v)))
               ->Promise.then(r => {
                 switch r {
                 | Error(e) => Promise.resolve(shapeErr(e))
@@ -594,7 +599,7 @@ let deleteData = (
           let msg = "confirm=True required for delete_data"
           Promise.resolve(shapeErr(Errors.validationError(msg)))
         } else {
-          adapter->Fakes.FakeOdbcAdapter.deleteData(table, ~where=?Some(JSON.Object(whereDict)))
+          adapter.deleteData(table, ~where=?Some(JSON.Object(whereDict))->Belt.Option.map(v => Some(v)))
             ->Promise.then(r => {
               switch r {
               | Error(e) => Promise.resolve(shapeErr(e))
@@ -627,7 +632,7 @@ let getTables = (
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
-    adapter->Fakes.FakeSchemaAdapter.getTables
+    adapter.getTables()
       ->Promise.then(r => {
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
@@ -682,7 +687,7 @@ let getTableSchema = (
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
-    adapter->Fakes.FakeSchemaAdapter.getTables
+    adapter.getTables()
       ->Promise.then(r => {
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
@@ -737,7 +742,7 @@ let getRelationships = (
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
-    adapter->Fakes.FakeSchemaAdapter.getRelationships
+    adapter.getRelationships()
       ->Promise.then(r => {
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
@@ -777,7 +782,7 @@ let getQueries = (
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
-    adapter->Fakes.FakeSchemaAdapter.getQueries
+    adapter.getQueries()
       ->Promise.then(r => {
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
@@ -814,7 +819,7 @@ let getDatabaseStatistics = (
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
-    adapter->Fakes.FakeSchemaAdapter.getDatabaseStatistics
+    adapter.getDatabaseStatistics()
       ->Promise.then(r => {
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
@@ -869,7 +874,7 @@ let executeRawSql = (
           switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
           | Error(err) => Promise.resolve(shapeErr(err))
           | Ok(adapter) => {
-              adapter->Fakes.FakeOdbcAdapter.executeRawSql(sql)
+              adapter.executeRawSql(sql)
                 ->Promise.then(r => {
                   switch r {
                   | Error(e) => Promise.resolve(shapeErr(e))
@@ -965,7 +970,7 @@ let exportData = (
             | Error(err) => Promise.resolve(shapeErr(err))
             | Ok(adapter) => {
                 // Execute the SELECT query to get rows
-                adapter->Fakes.FakeOdbcAdapter.executeQuery(sql)
+                adapter.executeQuery(sql)
                   ->Promise.then(r => {
                     switch r {
                     | Error(e) => Promise.resolve(shapeErr(e))

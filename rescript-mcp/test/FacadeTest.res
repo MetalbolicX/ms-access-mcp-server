@@ -38,7 +38,8 @@ let getDictNum = (d: dict<JSON.t>, k: string): option<float> => {
   }
 }
 
-// Fake binding factory — creates FakeOdbcAdapter + FakeSchemaAdapter
+// Fake binding factory — creates FakeOdbcAdapter + FakeSchemaAdapter wrapped as instances
+// Also stores raw fakes for test infrastructure (setupFake* helpers)
 let makeFakeFactory = (): Facade.bindingFactory => {
   (~backend: option<BackendSelector.backend>, ~dbPath: string, ~password: string) => {
     let adapterType = switch backend {
@@ -47,11 +48,15 @@ let makeFakeFactory = (): Facade.bindingFactory => {
     | Some(BackendSelector.DAO) => "dao"
     | Some(BackendSelector.AUTO) | None => "odbc"
     }
-    let dataAdapter = Fakes.FakeOdbcAdapter.make(~name=adapterType)
-    let schemaAdapter = Fakes.FakeSchemaAdapter.make(~name=adapterType ++ "-schema")
+    let rawDataAdapter = Fakes.FakeOdbcAdapter.make(~name=adapterType)
+    let rawSchemaAdapter = Fakes.FakeSchemaAdapter.make(~name=adapterType ++ "-schema")
+    let dataAdapter = rawDataAdapter->Fakes.FakeOdbcAdapter.asInstance
+    let schemaAdapter = rawSchemaAdapter->Fakes.FakeSchemaAdapter.asInstance
     Promise.resolve(Ok({
       dataAdapter: dataAdapter,
       schemaAdapter: schemaAdapter,
+      _rawDataAdapter: rawDataAdapter,
+      _rawSchemaAdapter: rawSchemaAdapter,
       dbPath: dbPath,
       adapterType: adapterType,
     }: Facade.binding))
@@ -1156,14 +1161,21 @@ describe("deleteData", () => {
 
 // ---------------------------------------------------------------------------
 // Helper: set up fake schema data on a connected facade's schema adapter
-// Uses the public schemaAdapterForName to access the adapter
+// Uses _rawSchemaAdapter (internal) to inject test data directly into the fake
 // ---------------------------------------------------------------------------
 
 let setupFakeSchemaTables = (facade: Facade.t, tables: array<Adapters.Interfaces.tableInfo>) => {
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
-  | Ok(adapter) => {
-      adapter.fakeTables = tables
-      adapter.connected = true
+  | Ok(_) => {
+      // Access raw fake via internal binding field
+      let bindings = facade.bindings
+      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      | Some((_, b)) => {
+          b._rawSchemaAdapter.fakeTables = tables
+          b._rawSchemaAdapter.connected = true
+        }
+      | None => ()
+      }
     }
   | Error(_) => ()
   }
@@ -1171,21 +1183,39 @@ let setupFakeSchemaTables = (facade: Facade.t, tables: array<Adapters.Interfaces
 
 let setupFakeSchemaRelationships = (facade: Facade.t, rels: array<Adapters.Interfaces.relationshipInfo>) => {
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
-  | Ok(adapter) => { adapter.fakeRelationships = rels }
+  | Ok(_) => {
+      let bindings = facade.bindings
+      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      | Some((_, b)) => { b._rawSchemaAdapter.fakeRelationships = rels }
+      | None => ()
+      }
+    }
   | Error(_) => ()
   }
 }
 
 let setupFakeSchemaQueries = (facade: Facade.t, queries: array<Adapters.Interfaces.queryInfo>) => {
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
-  | Ok(adapter) => { adapter.fakeQueries = queries }
+  | Ok(_) => {
+      let bindings = facade.bindings
+      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      | Some((_, b)) => { b._rawSchemaAdapter.fakeQueries = queries }
+      | None => ()
+      }
+    }
   | Error(_) => ()
   }
 }
 
 let setupFakeSchemaStats = (facade: Facade.t, stats: dict<JSON.t>) => {
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
-  | Ok(adapter) => { adapter.fakeDbStats = stats }
+  | Ok(_) => {
+      let bindings = facade.bindings
+      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      | Some((_, b)) => { b._rawSchemaAdapter.fakeDbStats = stats }
+      | None => ()
+      }
+    }
   | Error(_) => ()
   }
 }
