@@ -82,15 +82,6 @@
     }
   },
   {
-    "operation": "set_active_connection",
-    "case": "set_active_connection.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "python: \"Connection 'default' not found\""
-    }
-  },
-  {
     "operation": "update_data",
     "case": "update_data.json",
     "diff": {

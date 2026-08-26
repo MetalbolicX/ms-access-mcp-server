@@ -19,16 +19,16 @@ build` exit 0; ReScript suite 581/581/0; `git log main` contains both
 
 17 cases exercised across all 17 v1 facade operations:
 
-- 8 PASS — lifecycle ops that don't need a live ODBC connection
-  (`connect_access`, `disconnect_access`, `is_connected`,
+- 9 PASS — `connect_access`, `disconnect_access`, `is_connected`,
   `get_active_connection`, `set_active_connection`, `list_connections`,
-  `get_queries`, `get_relationships`) plus `delete_data` (which
-  currently diffs to zero on both sides when no rows satisfy the WHERE).
-- 7 FAIL — ReScript side returns `{success: false, error: null}` (or
-  analogous) while Python returns the expected envelope. See
-  007-F-001 / 007-F-002.
-- 2 ERROR — driver-level failures (one ReScript bug, one Python-side
-  lifecycle setup; the latter fixed mid-run). See 007-F-003 / 007-F-004.
+  `get_queries`, `get_relationships`, `delete_data`.
+- 7 FAIL — `query_data`, `insert_data`, `update_data`, `get_tables`,
+  `get_table_schema`, `get_database_statistics`, `export_data`. ReScript
+  side returns `{success: false, error: null}` (or analogous) while
+  Python returns the expected envelope. See 007-F-001 / 007-F-002 /
+  007-F-005.
+- 1 ERROR — `execute_raw_sql` (007-F-003: invalid regex syntax in
+  `Facade.res`).
 
 Findings categories:
 
@@ -95,6 +95,23 @@ Findings categories:
   fresh process with an empty pool. Fixed by priming the pool inside
   `_set_active_op` itself (the same pattern the runner uses for the
   ReScript side).
+
+## Mutation test (Step 5)
+
+Proves the harness detects injected mismatches:
+
+1. **Mutate**: rename the `count` field in `Facade.res:327` from
+   `("count", ...)` to `("count_injected_bug_for_mutation_test", ...)`.
+2. **Rebuild**: `pnpm -C rescript-mcp build` (exit 0).
+3. **Run**: `pnpm -C rescript-mcp parity`. Total: 17 cases, 8 matched,
+   **8 mismatched** (was 9/7 before), 1 errored.
+4. **Observe**: `list_connections.json` flips from PASS to FAIL with
+   `diff at $`, `expected: ["count"]`, `actual: "missing"` — exactly
+   what an injected field rename should produce.
+5. **Revert**: edit the field name back to `count`. Rebuild.
+6. **Confirm**: `pnpm -C rescript-mcp parity` returns to 9 PASS / 7
+   FAIL / 1 ERROR (the pre-mutation baseline). The harness fails when
+   behavior differs, as designed.
 
 ## Follow-ups for plan 008+
 
