@@ -1,7 +1,7 @@
 // Mcp/Tools.res — MCP tool registration via facadeOps seam
 // T7a: connect_access, disconnect_access, list_connections, is_connected
 // T7b: query_data, insert_data, update_data, delete_data (with B1 __raw__ normalization)
-// T7c: get_tables, get_table_schema, get_queries, execute_raw_sql (placeholder)
+// T7c: get_tables, get_table_schema, get_queries, execute_raw_sql
 // facadeOps: typed record injected at registration; tests inject spies.
 
 open Bindings
@@ -362,22 +362,154 @@ let callDeleteData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder schemas for T7c tools (get_tables, get_table_schema, get_queries, execute_raw_sql)
+// get_tables
+// Schema: {connection_name?: string (default "default")}
 // ---------------------------------------------------------------------------
 
-let _placeholderSchema: McpSdk.zObject = {
+let getTablesSchema: McpSdk.zObject = {
   %raw(`{
     parse: (x) => x,
     safeParse: (x) => ({success: true, data: x})
   }`)
 }
 
-let _placeholderCallback = (_args: dict<JSON.t>, _ops: facadeOps): JSON.t => {
-  JSON.Object(dict{"error": JSON.String("Not yet implemented")})
+let callGetTables = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
+  switch ops.getTables {
+  | Some(fn) => {
+      let name = switch Dict.get(args, "connection_name") {
+      | Some(JSON.String(s)) => Some(s)
+      | _ => None
+      }
+      JSON.Object(fn(name))
+    }
+  | None => JSON.Object(dict{"error": JSON.String("getTables not configured")})
+  }
 }
 
 // ---------------------------------------------------------------------------
-// tools list — all 15 registered tools (T7a: 4 connection, T7b: 4 CRUD, T7c: 4 schema + execute_raw_sql placeholder)
+// get_table_schema
+// Schema: {table_name: string (required), connection_name?: string (default "default")}
+// ---------------------------------------------------------------------------
+
+let getTableSchemaSchema: McpSdk.zObject = {
+  %raw(`{
+    parse: (x) => x,
+    safeParse: (x) => ({success: true, data: x})
+  }`)
+}
+
+let callGetTableSchema = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
+  switch ops.getTableSchema {
+  | Some(fn) => {
+      let tableName = switch Dict.get(args, "table_name") {
+        | Some(JSON.String(s)) => s
+        | _ => ""
+      }
+      if tableName == "" {
+        JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: table_name is required")})
+      } else {
+        let name = switch Dict.get(args, "connection_name") {
+        | Some(JSON.String(s)) => Some(s)
+        | _ => None
+        }
+        JSON.Object(fn(tableName, name))
+      }
+    }
+  | None => JSON.Object(dict{"error": JSON.String("getTableSchema not configured")})
+  }
+}
+
+// ---------------------------------------------------------------------------
+// get_queries
+// Schema: {connection_name?: string (default "default")}
+// ---------------------------------------------------------------------------
+
+let getQueriesSchema: McpSdk.zObject = {
+  %raw(`{
+    parse: (x) => x,
+    safeParse: (x) => ({success: true, data: x})
+  }`)
+}
+
+let callGetQueries = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
+  switch ops.getQueries {
+  | Some(fn) => {
+      let name = switch Dict.get(args, "connection_name") {
+      | Some(JSON.String(s)) => Some(s)
+      | _ => None
+      }
+      JSON.Object(fn(name))
+    }
+  | None => JSON.Object(dict{"error": JSON.String("getQueries not configured")})
+  }
+}
+
+// ---------------------------------------------------------------------------
+// execute_raw_sql
+// Schema: {sql: string (required), connection_name?: string, confirm?: bool, dry_run?: bool}
+// dangerous pattern: ^\s*(drop|delete|update)\b (case-insensitive)
+// ---------------------------------------------------------------------------
+
+let executeRawSqlSchema: McpSdk.zObject = {
+  %raw(`{
+    parse: (x) => x,
+    safeParse: (x) => ({success: true, data: x})
+  }`)
+}
+
+// isDangerousSql: returns true if SQL matches ^\s*(drop|delete|update)\b (case-insensitive)
+let isDangerousSql = (sql: string): bool => {
+  let trimmed = Js.String.trim(sql)
+  let lowered = Js.String.toLowerCase(trimmed)
+  let pattern = %raw(`/^\s*(drop|delete|update)\b/i`)
+  %raw(`(pattern, lowered) => pattern.test(lowered)`)(pattern, lowered)
+}
+
+let callExecuteRawSql = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
+  switch ops.executeRawSql {
+  | Some(fn) => {
+      let sql = switch Dict.get(args, "sql") {
+        | Some(JSON.String(s)) => s
+        | _ => ""
+      }
+      if sql == "" {
+        JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: sql is required")})
+      } else {
+        let dryRun = switch Dict.get(args, "dry_run") {
+        | Some(JSON.Boolean(b)) => Some(b)
+        | _ => None
+        }
+        // Short-circuit for dry_run=true
+        if dryRun == Some(true) {
+          let result = Dict.make()
+          Dict.set(result, "success", JSON.Boolean(true))
+          Dict.set(result, "dry_run", JSON.Boolean(true))
+          Dict.set(result, "sql", JSON.String(sql))
+          JSON.Object(result)
+        } else {
+          let confirm = switch Dict.get(args, "confirm") {
+          | Some(JSON.Boolean(b)) => Some(b)
+          | _ => None
+          }
+          let name = switch Dict.get(args, "connection_name") {
+          | Some(JSON.String(s)) => Some(s)
+          | _ => None
+          }
+          // Guard: dangerous SQL without confirm
+          if isDangerousSql(sql) && confirm != Some(true) {
+            JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("confirm=True required for execute_raw_sql")})
+          } else {
+            JSON.Object(fn(sql, name, confirm, dryRun))
+          }
+        }
+      }
+    }
+  | None => JSON.Object(dict{"error": JSON.String("executeRawSql not configured")})
+  }
+}
+
+// ---------------------------------------------------------------------------
+// tools list — all 11 registered tools (T7a: 4 connection, T7b: 4 CRUD, T7c: 4 schema)
 // Each entry matches SDK registerTool(server, name, {description, inputSchema}, callback)
 // ---------------------------------------------------------------------------
 
@@ -433,26 +565,26 @@ let makeTools = (ops: facadeOps): array<toolDef> => [
   {
     name: "get_tables",
     description: "List all user tables in the connected database.",
-    inputSchema: _placeholderSchema,
-    handler: _placeholderCallback,
+    inputSchema: getTablesSchema,
+    handler: callGetTables,
   },
   {
     name: "get_table_schema",
     description: "Get the field schema for a specific table.",
-    inputSchema: _placeholderSchema,
-    handler: _placeholderCallback,
+    inputSchema: getTableSchemaSchema,
+    handler: callGetTableSchema,
   },
   {
     name: "get_queries",
     description: "List all saved queries in the database.",
-    inputSchema: _placeholderSchema,
-    handler: _placeholderCallback,
+    inputSchema: getQueriesSchema,
+    handler: callGetQueries,
   },
   {
     name: "execute_raw_sql",
     description: "Execute arbitrary SQL (including DDL) with safety guards.",
-    inputSchema: _placeholderSchema,
-    handler: _placeholderCallback,
+    inputSchema: executeRawSqlSchema,
+    handler: callExecuteRawSql,
   },
 ]
 

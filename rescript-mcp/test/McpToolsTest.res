@@ -1170,3 +1170,693 @@ test("delete_data handler: dry_run=true returns dry_run envelope without adapter
   let dryRunVal = Dict.get(d, "dry_run")
   assertion(~operator="equal", (a, b) => a == b, dryRunVal, Some(JSON.Boolean(true)))
 })
+
+// ---------------------------------------------------------------------------
+// get_tables tests
+// facadeOps.getTables: (option<string>) => dict<JSON.t>
+// ---------------------------------------------------------------------------
+
+test("get_tables handler: happy path calls facadeOps with default connection", () => {
+  let spy = makeSpy(dict{
+    "success": JSON.Boolean(true),
+    "tables": JSON.Array([
+      JSON.Object(dict{
+        "name": JSON.String("Users"),
+        "fields": JSON.Array([]),
+        "recordCount": JSON.Number(0.0),
+        "primaryKey": JSON.Null,
+      }),
+    ]),
+    "count": JSON.Number(1.0),
+  })
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: Some(name => {
+      spy.called = true
+      spy.lastArgs = dict{"name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null }}
+      spy.response
+    }),
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{}
+  let result = Mcp.Tools.callGetTables(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(true)))
+  let countVal = Dict.get(d, "count")
+  assertion(~operator="equal", (a, b) => a == b, countVal, Some(JSON.Number(1.0)))
+})
+
+test("get_tables handler: with connection_name forwarded correctly", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true), "tables": JSON.Array([]), "count": JSON.Number(0.0)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: Some(name => {
+      spy.called = true
+      spy.lastArgs = dict{"name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null }}
+      spy.response
+    }),
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"connection_name": JSON.String("prod")}
+  let result = Mcp.Tools.callGetTables(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let nameVal = spy.lastArgs->Dict.get("name")
+  assertion(~operator="equal", (a, b) => a == b, nameVal, Some(JSON.String("prod")))
+})
+
+test("get_tables handler: disconnected returns error envelope from facadeOps", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(false), "error": JSON.String("Not connected to database")})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: Some(name => {
+      spy.called = true
+      spy.response
+    }),
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{}
+  let result = Mcp.Tools.callGetTables(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(false)))
+})
+
+// ---------------------------------------------------------------------------
+// get_table_schema tests
+// facadeOps.getTableSchema: (string, option<string>) => dict<JSON.t>
+// ---------------------------------------------------------------------------
+
+test("get_table_schema handler: happy path calls facadeOps with table_name and default connection", () => {
+  let spy = makeSpy(dict{
+    "success": JSON.Boolean(true),
+    "table": JSON.Object(dict{
+      "name": JSON.String("Users"),
+      "fields": JSON.Array([
+        JSON.Object(dict{
+          "name": JSON.String("id"),
+          "type": JSON.String("LongInteger"),
+          "size": JSON.Number(4.0),
+          "required": JSON.Boolean(false),
+          "allowZeroLength": JSON.Boolean(false),
+          "defaultValue": JSON.Null,
+          "isAutoincrement": JSON.Boolean(true),
+        }),
+      ]),
+      "recordCount": JSON.Number(0.0),
+      "primaryKey": JSON.String("id"),
+    }),
+  })
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: Some((tableName, name) => {
+      spy.called = true
+      spy.lastArgs = dict{
+        "tableName": JSON.String(tableName),
+        "name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null },
+      }
+      spy.response
+    }),
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"table_name": JSON.String("Users")}
+  let result = Mcp.Tools.callGetTableSchema(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let tableVal = spy.lastArgs->Dict.get("tableName")
+  assertion(~operator="equal", (a, b) => a == b, tableVal, Some(JSON.String("Users")))
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(true)))
+})
+
+test("get_table_schema handler: with connection_name forwarded correctly", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true), "table": JSON.Object(dict{})})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: Some((tableName, name) => {
+      spy.called = true
+      spy.lastArgs = dict{
+        "tableName": JSON.String(tableName),
+        "name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null },
+      }
+      spy.response
+    }),
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"table_name": JSON.String("Users"), "connection_name": JSON.String("prod")}
+  let result = Mcp.Tools.callGetTableSchema(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let nameVal = spy.lastArgs->Dict.get("name")
+  assertion(~operator="equal", (a, b) => a == b, nameVal, Some(JSON.String("prod")))
+})
+
+test("get_table_schema handler: missing table returns not-found error from facadeOps", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(false), "error": JSON.String("Table 'GhostTable' not found")})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: Some((tableName, name) => {
+      spy.called = true
+      spy.response
+    }),
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"table_name": JSON.String("GhostTable")}
+  let result = Mcp.Tools.callGetTableSchema(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  let errorVal = Dict.get(d, "error")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(false)))
+  assertion(~operator="equal", (a, b) => a == b, errorVal !== None, true)
+})
+
+test("get_table_schema handler: missing table_name returns error envelope without calling facade", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: Some((tableName, name) => {
+      spy.called = true
+      spy.response
+    }),
+    getQueries: None,
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{}
+  let result = Mcp.Tools.callGetTableSchema(args, ops)
+
+  // facade should NOT be called when table_name is missing
+  assertion(~operator="equal", (a, b) => a == b, spy.called, false)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let hasError = Dict.get(d, "error")
+  assertion(~operator="equal", (a, b) => a == b, hasError !== None, true)
+})
+
+// ---------------------------------------------------------------------------
+// get_queries tests
+// facadeOps.getQueries: (option<string>) => dict<JSON.t>
+// ---------------------------------------------------------------------------
+
+test("get_queries handler: happy path calls facadeOps with default connection", () => {
+  let spy = makeSpy(dict{
+    "success": JSON.Boolean(true),
+    "queries": JSON.Array([
+      JSON.Object(dict{
+        "name": JSON.String("qry_ActiveUsers"),
+        "sql": JSON.String("SELECT * FROM Users WHERE active = True"),
+        "type": JSON.String("select"),
+      }),
+    ]),
+    "count": JSON.Number(1.0),
+  })
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: Some(name => {
+      spy.called = true
+      spy.lastArgs = dict{"name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null }}
+      spy.response
+    }),
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{}
+  let result = Mcp.Tools.callGetQueries(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(true)))
+  let countVal = Dict.get(d, "count")
+  assertion(~operator="equal", (a, b) => a == b, countVal, Some(JSON.Number(1.0)))
+})
+
+test("get_queries handler: with connection_name forwarded correctly", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true), "queries": JSON.Array([]), "count": JSON.Number(0.0)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: Some(name => {
+      spy.called = true
+      spy.lastArgs = dict{"name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null }}
+      spy.response
+    }),
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"connection_name": JSON.String("prod")}
+  let result = Mcp.Tools.callGetQueries(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let nameVal = spy.lastArgs->Dict.get("name")
+  assertion(~operator="equal", (a, b) => a == b, nameVal, Some(JSON.String("prod")))
+})
+
+test("get_queries handler: disconnected returns error envelope from facadeOps", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(false), "error": JSON.String("Not connected to database")})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: Some(name => {
+      spy.called = true
+      spy.response
+    }),
+    executeRawSql: None,
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{}
+  let result = Mcp.Tools.callGetQueries(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(false)))
+})
+
+// ---------------------------------------------------------------------------
+// execute_raw_sql tests
+// facadeOps.executeRawSql: (string, option<string>, option<bool>, option<bool>) => dict<JSON.t>
+// dangerous pattern: ^\s*(drop|delete|update)\b (case-insensitive)
+// ---------------------------------------------------------------------------
+
+test("execute_raw_sql handler: happy path INSERT calls facadeOps without confirm", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true), "rows_affected": JSON.Number(1.0)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: Some((sql, name, confirm, dryRun) => {
+      spy.called = true
+      spy.lastArgs = dict{
+        "sql": JSON.String(sql),
+        "name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null },
+        "confirm": JSON.Boolean(confirm->Belt.Option.getWithDefault(false)),
+        "dryRun": JSON.Boolean(dryRun->Belt.Option.getWithDefault(false)),
+      }
+      spy.response
+    }),
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"sql": JSON.String("INSERT INTO Users (name) VALUES ('Alice')")}
+  let result = Mcp.Tools.callExecuteRawSql(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, true)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(true)))
+})
+
+test("execute_raw_sql handler: dry_run=true returns dry_run envelope without calling facade", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: Some((sql, name, confirm, dryRun) => {
+      spy.called = true
+      spy.response
+    }),
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"sql": JSON.String("DROP TABLE Users"), "dry_run": JSON.Boolean(true)}
+  let result = Mcp.Tools.callExecuteRawSql(args, ops)
+
+  // facade should NOT be called for dry_run
+  assertion(~operator="equal", (a, b) => a == b, spy.called, false)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let dryRunVal = Dict.get(d, "dry_run")
+  let sqlVal = Dict.get(d, "sql")
+  assertion(~operator="equal", (a, b) => a == b, dryRunVal, Some(JSON.Boolean(true)))
+  assertion(~operator="equal", (a, b) => a == b, sqlVal, Some(JSON.String("DROP TABLE Users")))
+})
+
+test("execute_raw_sql handler: dangerous DROP without confirm returns error guard envelope", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: Some((sql, name, confirm, dryRun) => {
+      spy.called = true
+      spy.response
+    }),
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"sql": JSON.String("DROP TABLE Users")}
+  let result = Mcp.Tools.callExecuteRawSql(args, ops)
+
+  // facade should NOT be called - dangerous SQL blocked
+  assertion(~operator="equal", (a, b) => a == b, spy.called, false)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  let errorVal = Dict.get(d, "error")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(false)))
+  assertion(~operator="equal", (a, b) => a == b, errorVal !== None, true)
+})
+
+test("execute_raw_sql handler: dangerous DELETE without confirm returns error guard envelope", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: Some((sql, name, confirm, dryRun) => {
+      spy.called = true
+      spy.response
+    }),
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"sql": JSON.String("DELETE FROM Users WHERE id = 1")}
+  let result = Mcp.Tools.callExecuteRawSql(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, false)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(false)))
+})
+
+test("execute_raw_sql handler: dangerous UPDATE without confirm returns error guard envelope", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: Some((sql, name, confirm, dryRun) => {
+      spy.called = true
+      spy.response
+    }),
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{"sql": JSON.String("UPDATE Users SET name = 'Bob' WHERE id = 1")}
+  let result = Mcp.Tools.callExecuteRawSql(args, ops)
+
+  assertion(~operator="equal", (a, b) => a == b, spy.called, false)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let successVal = Dict.get(d, "success")
+  assertion(~operator="equal", (a, b) => a == b, successVal, Some(JSON.Boolean(false)))
+})
+
+test("execute_raw_sql handler: missing sql returns error envelope without calling facade", () => {
+  let spy = makeSpy(dict{"success": JSON.Boolean(true)})
+
+  let ops = {
+    connectAccess: None,
+    disconnectAccess: None,
+    listConnections: None,
+    isConnected: None,
+    setActiveConnection: None,
+    getActiveConnection: None,
+    queryData: None,
+    insertData: None,
+    updateData: None,
+    deleteData: None,
+    getTables: None,
+    getTableSchema: None,
+    getQueries: None,
+    executeRawSql: Some((sql, name, confirm, dryRun) => {
+      spy.called = true
+      spy.response
+    }),
+    getRelationships: None,
+    getDatabaseStatistics: None,
+    exportData: None,
+  }
+
+  let args = dict{}
+  let result = Mcp.Tools.callExecuteRawSql(args, ops)
+
+  // facade should NOT be called when sql is missing
+  assertion(~operator="equal", (a, b) => a == b, spy.called, false)
+  let d = switch jsonToDict(result) {
+    | Some(d) => d
+    | None => dict{}
+  }
+  let hasError = Dict.get(d, "error")
+  assertion(~operator="equal", (a, b) => a == b, hasError !== None, true)
+})
