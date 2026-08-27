@@ -319,18 +319,36 @@ let _buildWhereClause = (whereOpt: option<JSON.t>): option<whereClause> => {
   switch whereOpt {
   | None => None
   | Some(JSON.Object(props)) => {
-      // Check for {"Dict": {"key": value}} or {"Raw": "condition"}
-      let dictEntry = Dict.get(props, "Dict")
-      let rawEntry = Dict.get(props, "Raw")
-      switch (dictEntry, rawEntry) {
-      | (Some(JSON.Object(d)), _) => Some(Dict(d))
-      | (_, Some(JSON.String(s))) => Some(Raw(s))
-      | (Some(JSON.String(k)), _) => {
-          // Fallback: single string key with dict value → treat as Dict
-          let d: dict<JSON.t> = %raw("k => ({[k]: null})")(k)
-          Some(Dict(d))
-        }
-      | _ => None  // Invalid where JSON
+      // __raw__ sentinel: reserved key that injects verbatim SQL.
+      // WARNING: __raw__ is NOT a valid column name — do not use it as such.
+      // When present, all other keys are ignored; the string value is spliced
+      // directly into the WHERE clause with NO parameterization or escaping.
+      let rawSentinel = Dict.get(props, "__raw__")
+      switch rawSentinel {
+      | Some(JSON.String(rawSql)) =>
+          if rawSql == "" {
+            None  // Empty raw string → no WHERE clause at all
+          } else {
+            Some(Raw(rawSql))
+          }
+          | _ =>
+              // Not a __raw__ sentinel — check for {"Dict": {"key":value}} or {"Raw":"condition"}
+              switch Dict.get(props, "Dict") {
+              | Some(JSON.Object(d)) => Some(Dict(d))
+              | _ =>
+                  switch Dict.get(props, "Raw") {
+                  | Some(JSON.String(s)) => Some(Raw(s))
+                  | _ =>
+                      // Plain dict (e.g., {"a":1,"b":2}) — use props directly.
+                      // Validate props is a non-empty object by checking its keys.
+                      let keys: array<string> = %raw("p => Object.keys(p)")(props)
+                      if Belt.Array.length(keys) > 0 {
+                        Some(Dict(props))
+                      } else {
+                        None
+                      }
+                  }
+              }
       }
     }
   | _ => None

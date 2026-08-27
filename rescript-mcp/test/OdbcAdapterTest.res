@@ -788,3 +788,186 @@ testAsync("insert single: bracket-quoted columns and ? placeholders", cb => {
       })
   )
 })
+
+// ---------------------------------------------------------------------------
+// T6 — __raw__ sentinel in where_dict (updateData / deleteData via _buildWhereClause)
+// ---------------------------------------------------------------------------
+
+// _buildWhereClause is tested indirectly via updateData: capture Fake.lastSql.
+
+testAsync("T6 __raw__ sentinel: verbatim SQL, no brackets, no escaping", cb => {
+  let _ = Fake.reset()
+  Fake.overrides.contents = [
+    Ok({rows: [], columns: [], count: 1, statement: None}),
+  ]
+  let adapter = makeAdapter()
+  let setDict: dict<JSON.t> = Dict.fromArray([
+    ("status", JSON.String("shipped")),
+  ])
+  // Pass {"__raw__": "status='shipped'"} as where — accepted by _buildWhereClause
+  let whereJson = JSON.Object(Dict.fromArray([
+    ("__raw__", JSON.String("status='shipped'")),
+  ]))
+  ignore(
+    adapter->OdbcAdapter.updateData("Orders", setDict, ~where=whereJson)
+      ->Promise.then(r => {
+        Promise.resolve(
+          switch r {
+          | Ok({success: true, affected: 1}) => {
+              // __raw__ must produce verbatim SQL: WHERE status='shipped'
+              // No bracket quoting, no escaping — Raw SQL is spliced as-is.
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "WHERE status='shipped'"),
+                true,
+              )
+              cb(~planned=1, ())
+            }
+          | _ => cb(~planned=0, ())
+          }
+        )
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+  )
+})
+
+testAsync("T6 __raw__ sentinel: other keys dropped when __raw__ present", cb => {
+  let _ = Fake.reset()
+  Fake.overrides.contents = [
+    Ok({rows: [], columns: [], count: 1, statement: None}),
+  ]
+  let adapter = makeAdapter()
+  let setDict: dict<JSON.t> = Dict.fromArray([
+    ("processed", JSON.Boolean(true)),
+  ])
+  // {"__raw__": "x=1", "other": "ignored"} — "other" must be dropped
+  let whereJson = JSON.Object(Dict.fromArray([
+    ("__raw__", JSON.String("x=1")),
+    ("other", JSON.String("ignored")),
+  ]))
+  ignore(
+    adapter->OdbcAdapter.updateData("Items", setDict, ~where=whereJson)
+      ->Promise.then(r => {
+        Promise.resolve(
+          switch r {
+          | Ok({success: true, affected: 1}) => {
+              // "other" column must NOT appear in SQL
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "WHERE x=1"),
+                true,
+              )
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "[other]"),
+                false,
+              )
+              cb(~planned=2, ())
+            }
+          | _ => cb(~planned=0, ())
+          }
+        )
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+  )
+})
+
+testAsync("T6 no __raw__: existing dict behavior preserved ([key]=value AND ...)", cb => {
+  let _ = Fake.reset()
+  Fake.overrides.contents = [
+    Ok({rows: [], columns: [], count: 1, statement: None}),
+  ]
+  let adapter = makeAdapter()
+  let setDict: dict<JSON.t> = Dict.fromArray([
+    ("qty", JSON.Number(0.0)),
+  ])
+  // {"a": 1, "b": 2} — standard dict path, no __raw__
+  let whereJson = JSON.Object(Dict.fromArray([
+    ("a", JSON.Number(1.0)),
+    ("b", JSON.Number(2.0)),
+  ]))
+  ignore(
+    adapter->OdbcAdapter.updateData("Stock", setDict, ~where=whereJson)
+      ->Promise.then(r => {
+        Promise.resolve(
+          switch r {
+          | Ok({success: true, affected: 1}) => {
+              // Bracket-quoted keys AND-separated
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "[a]=1"),
+                true,
+              )
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "[b]=2"),
+                true,
+              )
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, " AND "),
+                true,
+              )
+              cb(~planned=3, ())
+            }
+          | _ => cb(~planned=0, ())
+          }
+        )
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+  )
+})
+
+testAsync("T6 __raw__ empty string: produces no WHERE clause", cb => {
+  let _ = Fake.reset()
+  Fake.overrides.contents = [
+    Ok({rows: [], columns: [], count: 1, statement: None}),
+  ]
+  let adapter = makeAdapter()
+  let setDict: dict<JSON.t> = Dict.fromArray([
+    ("active", JSON.Boolean(false)),
+  ])
+  // {"__raw__": ""} — empty raw → _buildWhereClause returns None → no WHERE
+  let whereJson = JSON.Object(Dict.fromArray([
+    ("__raw__", JSON.String("")),
+  ]))
+  ignore(
+    adapter->OdbcAdapter.updateData("Flags", setDict, ~where=whereJson)
+      ->Promise.then(r => {
+        Promise.resolve(
+          switch r {
+          | Ok({success: true, affected: 1}) => {
+              // Empty raw → no WHERE clause at all
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                String.includes(Fake.lastSql.contents, "WHERE"),
+                false,
+              )
+              cb(~planned=1, ())
+            }
+          | _ => cb(~planned=0, ())
+          }
+        )
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+  )
+})
