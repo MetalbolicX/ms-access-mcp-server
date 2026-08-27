@@ -901,17 +901,19 @@ testAsync("T6 no __raw__: existing dict behavior preserved ([key]=value AND ...)
         Promise.resolve(
           switch r {
           | Ok({success: true, affected: 1}) => {
-              // Bracket-quoted keys AND-separated
+// F-007 inlines values via _replaceQuestionMarks (ACE doesn't describe
+              // prepared params), so the captured SQL has the values inlined
+              // and Fake.lastParams is empty.
               assertion(
                 ~operator="equal",
                 (a, b) => a == b,
-                String.includes(Fake.lastSql.contents, "[a]=1"),
+                String.includes(Fake.lastSql.contents, "[a] = 1"),
                 true,
               )
               assertion(
                 ~operator="equal",
                 (a, b) => a == b,
-                String.includes(Fake.lastSql.contents, "[b]=2"),
+                String.includes(Fake.lastSql.contents, "[b] = 2"),
                 true,
               )
               assertion(
@@ -920,7 +922,14 @@ testAsync("T6 no __raw__: existing dict behavior preserved ([key]=value AND ...)
                 String.includes(Fake.lastSql.contents, " AND "),
                 true,
               )
-              cb(~planned=3, ())
+              // F-007 inlines, so no params reach Fake.lastParams
+              assertion(
+                ~operator="equal",
+                (a, b) => a == b,
+                Belt.Array.length(Fake.lastParams.contents),
+                0,
+              )
+              cb(~planned=4, ())
             }
           | _ => cb(~planned=0, ())
           }
