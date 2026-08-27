@@ -8,7 +8,7 @@ open Test
 // Test helpers
 // ---------------------------------------------------------------------------
 
-type toolCallback = (. JSON.t) => JSON.t
+// Note: toolCallback type is now from Bindings.McpSdk (async: (. JSON.t) => Promise<JSON.t])
 
 // Helper: build a Zod object schema via raw call (bypasses dict homogeneity)
 let makeObjSchema = (fields): Bindings.McpSdk.zObject => {
@@ -40,8 +40,8 @@ test("registerTool accepts valid input via safeParse wrap", () => {
   let server = Bindings.McpSdk.newMcpServer({name: "test-server", version: "1.0.0"})
   let schema = makeObjSchema(dict{"query": Bindings.Zod.z_string()})
 
-  let callback: toolCallback = (. args) => {
-    JSON.Object(dict{"echo": args})
+  let callback: Bindings.McpSdk.toolCallback = (. args) => {
+    Promise.resolve(JSON.Object(dict{"echo": args}))
   }
 
   ignore(Bindings.McpSdk.registerTool(
@@ -63,8 +63,8 @@ test("validateToolInput wrap re-throws InvalidParams as pinned Error envelope", 
   let server = Bindings.McpSdk.newMcpServer({name: "test-server", version: "1.0.0"})
   let schema = makeObjSchema(dict{"name": Bindings.Zod.z_string()})
 
-  let callback: toolCallback = (. _args) => {
-    JSON.Null
+  let callback: Bindings.McpSdk.toolCallback = (. _args) => {
+    Promise.resolve(JSON.Null)
   }
   ignore(Bindings.McpSdk.registerTool(
     server,
@@ -146,8 +146,8 @@ test("server with registered tool: validateWrap with valid input succeeds", () =
   let server = Bindings.McpSdk.newMcpServer({name: "test-server", version: "1.0.0"})
   let schema = makeObjSchema(dict{"q": Bindings.Zod.z_string()})
 
-  let callback: toolCallback = (. _args) => {
-    JSON.Object(dict{"result": JSON.String("ok")})
+  let callback: Bindings.McpSdk.toolCallback = (. _args) => {
+    Promise.resolve(JSON.Object(dict{"result": JSON.String("ok")}))
   }
   ignore(Bindings.McpSdk.registerTool(
     server,
@@ -192,7 +192,7 @@ test("validateToolInput wrap returns parsed data for valid input", () => {
   let server = Bindings.McpSdk.newMcpServer({name: "test-server", version: "1.0.0"})
   let schema = makeObjSchema(dict{"name": Bindings.Zod.z_string()})
 
-  let callback: toolCallback = (. _args) => JSON.Null
+  let callback: Bindings.McpSdk.toolCallback = (. _args) => Promise.resolve(JSON.Null)
   ignore(Bindings.McpSdk.registerTool(
     server,
     "hello",

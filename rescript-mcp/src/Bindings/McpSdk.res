@@ -19,8 +19,9 @@ type zObject = {
   safeParse: JSON.t => result<JSON.t, JSON.t>,
 }
 
-// Tool callback: receives parsed JSON arguments, returns JSON tool result.
-type toolCallback = (. JSON.t) => JSON.t
+// Tool callback: receives parsed JSON arguments, returns JSON tool result or Promise.
+// The SDK accepts both sync and async callbacks; Promise<JSON.t> covers both cases.
+type toolCallback = (. JSON.t) => Promise.t<JSON.t>
 
 // Tool registration config — matches SDK's registerTool config object.
 type toolConfig = {
