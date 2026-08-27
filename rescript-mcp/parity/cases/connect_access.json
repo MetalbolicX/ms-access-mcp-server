@@ -3,5 +3,6 @@
   "args": {},
   "variant": "odbc",
   "mutating": false,
-  "description": "Happy path: connect to the fixture .accdb; envelope should include success, connected, database, name"
+  "description": "Happy path: connect to the fixture .accdb; envelope should include success, connected, database, name, adapter_type",
+  "volatileFields": ["adapter_type"]
 }
