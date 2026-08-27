@@ -6,3 +6,4 @@ module Odbc = Odbc
 module TsBridge = TsBridge
 module Winax = Winax
 module Zod = Zod
+module McpSdk = McpSdk
