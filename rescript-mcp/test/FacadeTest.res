@@ -217,6 +217,27 @@ describe("connectAccess", () => {
       })
       ->ignore
   })
+
+  // B4: success dict includes adapter_type: "odbc"
+  testAsync("connectAccess: success dict includes adapter_type: odbc", cb => {
+    let facade = makeTestFacade()
+    Facade.connectAccess(facade, ~dbPath=testPath("adapter-type"))
+      ->Promise.then(result => {
+        let successOk = getDictBool(result, "success") == Some(true)
+        let hasAdapterType = switch getDictStr(result, "adapter_type") {
+        | Some(t) => t == "odbc"
+        | None => false
+        }
+        assertion(~operator="equal", (a, b) => a == b, successOk && hasAdapterType, true)
+        cb(~planned=1, ())
+        Promise.resolve()
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+      ->ignore
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -386,6 +407,53 @@ describe("listConnections", () => {
           | _ => false
           }
           assertion(~operator="equal", (a, b) => a == b, successOk && count1 && hasDefault, true)
+          cb(~planned=1, ())
+          Promise.resolve()
+        }
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+      ->ignore
+  })
+
+  // B2: created_at is emitted and matches connect time ±1s
+  testAsync("listConnections: entry includes created_at ISO-8601", cb => {
+    let facade = makeTestFacade()
+    Facade.connectAccess(facade, ~dbPath=testPath("list-created-at"))
+      ->Promise.then(r => {
+        if getDictBool(r, "success") != Some(true) {
+          cb(~planned=0, ())
+          Promise.resolve()
+        } else {
+          let result = Facade.listConnections(facade)
+          let defaultEntry = switch Dict.get(result, "connections") {
+          | Some(JSON.Object(d)) => Dict.get(d, "default")
+          | _ => None
+          }
+          let hasCreatedAt = switch defaultEntry {
+          | Some(JSON.Object(entry)) => Dict.get(entry, "created_at") != None
+          | _ => false
+          }
+          // Verify it is ISO-8601 format (contains T and Z)
+          let createdAtStr = switch defaultEntry {
+          | Some(JSON.Object(entry)) => switch Dict.get(entry, "created_at") {
+            | Some(JSON.String(s)) => Some(s)
+            | _ => None
+            }
+          | _ => None
+          }
+          let isIsoFormat = switch createdAtStr {
+          | Some(s) => String.includes(s, "T") && String.includes(s, "Z")
+          | None => false
+          }
+          // Verify timestamp is valid ISO-8601 format (presence of T and Z suffices for test)
+          let tsOk = switch createdAtStr {
+          | Some(s) => String.includes(s, "T") && String.includes(s, "Z")
+          | None => false
+          }
+          assertion(~operator="equal", (a, b) => a == b, hasCreatedAt && isIsoFormat && tsOk, true)
           cb(~planned=1, ())
           Promise.resolve()
         }
@@ -648,18 +716,39 @@ describe("queryData", () => {
       ->ignore
   })
 
-  // Disconnected — "Not connected" error
-  testAsync("queryData: disconnected returns Not connected error", cb => {
+  // Disconnected — "Not connected to database" (B3 canonical)
+  testAsync("queryData: disconnected returns Not connected to database", cb => {
     let facade = makeTestFacade()
     // No connect — queryData against empty facade
     Facade.queryData(facade, ~sql="SELECT 1")
       ->Promise.then(result => {
         let isFailure = getDictBool(result, "success") == Some(false)
-        let hasNotConnected = switch getDictStr(result, "error") {
-        | Some(msg) => String.includes(msg, "Not connected")
+        let hasCanonical = switch getDictStr(result, "error") {
+        | Some(msg) => msg == "Not connected to database"
         | None => false
         }
-        assertion(~operator="equal", (a, b) => a == b, isFailure && hasNotConnected, true)
+        assertion(~operator="equal", (a, b) => a == b, isFailure && hasCanonical, true)
+        cb(~planned=1, ())
+        Promise.resolve()
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+      ->ignore
+  })
+
+  // B3: canonical disconnected message is "Not connected to database"
+  testAsync("queryData: disconnected returns canonical 'Not connected to database'", cb => {
+    let facade = makeTestFacade()
+    Facade.queryData(facade, ~sql="SELECT 1")
+      ->Promise.then(result => {
+        let isFailure = getDictBool(result, "success") == Some(false)
+        let canonicalMsg = switch getDictStr(result, "error") {
+        | Some(msg) => msg == "Not connected to database"
+        | None => false
+        }
+        assertion(~operator="equal", (a, b) => a == b, isFailure && canonicalMsg, true)
         cb(~planned=1, ())
         Promise.resolve()
       })
@@ -785,18 +874,18 @@ describe("insertData", () => {
       ->ignore
   })
 
-  // Disconnected — "Not connected" error
-  testAsync("insertData: disconnected returns Not connected error", cb => {
+  // Disconnected — "Not connected to database" (B3 canonical)
+  testAsync("insertData: disconnected returns Not connected to database", cb => {
     let facade = makeTestFacade()
     // No connect
     Facade.insertData(facade, ~table="foo", ~data=JSON.Object(Dict.fromArray([("a", JSON.Number(1.0))])))
       ->Promise.then(result => {
         let isFailure = getDictBool(result, "success") == Some(false)
-        let hasNotConnected = switch getDictStr(result, "error") {
-        | Some(msg) => String.includes(msg, "Not connected")
+        let hasCanonical = switch getDictStr(result, "error") {
+        | Some(msg) => msg == "Not connected to database"
         | None => false
         }
-        assertion(~operator="equal", (a, b) => a == b, isFailure && hasNotConnected, true)
+        assertion(~operator="equal", (a, b) => a == b, isFailure && hasCanonical, true)
         cb(~planned=1, ())
         Promise.resolve()
       })

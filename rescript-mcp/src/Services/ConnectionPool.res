@@ -21,6 +21,7 @@ type connectionState = {
   dbPathStr: string,
   adapterType: string,
   password: string,
+  createdAt: string,  // ISO-8601 UTC timestamp, set once at connect
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +77,7 @@ let connect = (
         dbPathStr: dbPath,
         adapterType: adapterType,
         password: password,
+        createdAt: Date.toISOString(Date.make()),
       }
       p.connections = Belt.Array.concat(p.connections, [(name, state)])
       Promise.resolve(Ok(state))

@@ -231,10 +231,11 @@ let connectAccess = (
                       | Ok(_state) => {
                           // Step 5: Register binding
                           facade.bindings = Belt.Array.concat(facade.bindings, [(connName, binding)])
-                          // Step 6: Return success shape
+                          // Step 6: Return success shape (B4: adapter_type is always "odbc")
                           let result = Dict.fromArray([
                             ("success", JSON.Boolean(true)),
                             ("connected", JSON.Boolean(true)),
+                            ("adapter_type", JSON.String("odbc")),
                             ("database", JSON.String(resolvedPath)),
                             ("name", JSON.String(connName)),
                           ])
@@ -297,13 +298,14 @@ let listConnections = (facade: t): dict<JSON.t> => {
   let poolConnections = ConnectionPool.list(facade.pool)
   let connectionsDict = Dict.make()
 
-  Belt.Array.forEach(poolConnections, ((connName, _state)) => {
+  Belt.Array.forEach(poolConnections, ((connName, state)) => {
     switch _bindingForName(facade, connName) {
     | Some(binding) => {
         let info = Dict.fromArray([
           ("database", JSON.String(binding.dbPath)),
           ("adapter_type", JSON.String(binding.adapterType)),
           ("connected", JSON.Boolean(true)),
+          ("created_at", JSON.String(state.createdAt)),
         ])
         Dict.set(connectionsDict, connName, JSON.Object(info))
       }
@@ -406,7 +408,7 @@ let queryData = (
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
   let connName = name->Belt.Option.getWithDefault("default")
-  switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected") {
+  switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
     adapter.executeQuery(sql, ~params?)
@@ -447,7 +449,7 @@ let insertData = (
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(_) =>
     // Guard 2: connected
-    switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected") {
+    switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
     | Error(err) => Promise.resolve(shapeErr(err))
     | Ok(adapter) =>
       // Detect single vs batch at runtime
@@ -511,7 +513,7 @@ let updateData = (
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(_) => {
       // Guard 2: connected
-      switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected") {
+      switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
       | Error(err) => Promise.resolve(shapeErr(err))
       | Ok(adapter) => {
           // Guard 3: mass-update (only when whereDict is absent/empty)
@@ -583,7 +585,7 @@ let deleteData = (
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(_) =>
     // Guard 2: connected
-    switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected") {
+    switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
     | Error(err) => Promise.resolve(shapeErr(err))
     | Ok(adapter) => {
         // Guard 3: WHERE must be non-empty (always required for delete)
