@@ -27,6 +27,7 @@
   client against the stdio server), not unit-TDD'able; tool functions are
   thin and unit-tested against facade fakes.
 - **Planned at**: commit `0b69c82`, 2026-08-18
+- **Status**: DONE ✅ (2026-08-27, commit `ee60884`)
 
 ## Why this matters
 
@@ -183,6 +184,12 @@ Machine-checkable. ALL must hold:
 - A Python tool's name/args cannot be mapped to JSON schema (exotic
   typing) — report the tool; spec must pin the mapping.
 - In-process client tests need > 2 fix attempts — report verbatim errors.
+
+## What landed
+
+All plan 008 work units landed on branch `rescript/008-mcp-stdio` at `ee60884`
+(29 commits from `main`; 11 work units with T# labels: T2–T9 plus supporting
+commits — see `plans/008-mcp-stdio-sdd.md` for full commit table).
 
 ## Maintenance notes
 

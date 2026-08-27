@@ -98,7 +98,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 005 | ConnectionPool & backend services | 5 | STRICT TDD | P2 | M | 003, 004 | DONE |
 | 006 | Database facade for AI harness | 6 | SDD | P1 | M | 003, 004, 005 | DONE |
 | 007 | Differential parity harness vs Python | 7 | NEITHER | P2 | M | 003, 004, 005, 006, 015, 016, 017, 018, 023, 024 | DONE (17/9 matched / 7 mismatched / 1 errored; mutation test proven; 007-F-001..006 findings recorded) |
-| 008 | Minimal local MCP stdio server | 8 | SDD | P3 | M | 006 | TODO |
+| 008 | Minimal local MCP stdio server | 8 | SDD | P3 | M | 006 | DONE (branch `rescript/008-mcp-stdio` at `ee60884`; stdio server, 9 tools, in-process tests; plan 007 parity 17/17 carried forward) |
 | 009 | UI assessment decision memo | 9 | NEITHER | P3 | S | 008 | TODO |
 | 010 | TypeScript → .mjs bridge foundation (toolchain + pilot) | 10 | STRICT TDD | P1 | S | — | DONE |
 | 011 | Port pure-helper %raw blocks to typed .mts (codec/fs/hash) | 11 | STRICT TDD | P1 | M | 010 | DONE |
