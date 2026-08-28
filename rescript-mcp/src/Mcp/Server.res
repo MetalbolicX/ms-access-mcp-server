@@ -6,15 +6,35 @@
 open McpSdk
 
 // ---------------------------------------------------------------------------
-// Version — read from package.json at runtime via %raw
+// envelopeResult — route every runtime tool result through the MCP envelope
+// (T4). Raw facade dicts at the top level of a CallToolResult leak protocol
+// noise and hide errors from strict clients (content:[] + no isError).
 // ---------------------------------------------------------------------------
 
+let envelopeResult = (d: dict<JSON.t>): JSON.t =>
+  Mcp.Envelope.transcribeJson(JSON.Object(d))
+
+// ---------------------------------------------------------------------------
+// Version — ESM-safe read of package.json relative to this compiled module.
+// ---------------------------------------------------------------------------
+
+// ESM-safe: resolve package.json relative to this compiled module's URL.
+// (require() does not exist in ESM — "type": "module" is set.)
+@module("node:fs") external readFileSyncUtf8: (string, string) => string = "readFileSync"
+
 let getVersion = (): string => {
-  %raw(`(function() {
-    // ESM context: use require to load package.json
-    const pkg = require('../../package.json');
-    return pkg.version;
-  })()`)
+  // import.meta.dirname (Node >=20.11; engines floor is >=24) resolves to
+  // src/Mcp/ at runtime — package.json sits two levels up.
+  let pkgPath: string = %raw(`import.meta.dirname + "/../../package.json"`)
+  let json = Js.Json.parseExn(readFileSyncUtf8(pkgPath, "utf8"))
+  switch Js.Json.decodeObject(json) {
+  | Some(obj) =>
+    switch Js.Dict.get(obj, "version") {
+    | Some(v) => Js.Json.decodeString(v)->Belt.Option.getWithDefault("0.0.0")
+    | None => "0.0.0"
+    }
+  | None => "0.0.0"
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +91,7 @@ let makeConnectAccessCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let useCom = getBoolOpt(d, "use_com")
     let backend = getStringOpt(d, "backend")
     Facade.connectAccess(facade, ~dbPath, ~name?, ~useCom?, ~password?, ~backend?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -80,14 +100,14 @@ let makeDisconnectAccessCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let name = getStringOpt(d, "name")
     Facade.disconnectAccess(facade, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
 let makeListConnectionsCallback = (facade: Facade.t): McpSdk.toolCallback => {
   (. _args) => {
     let result = Facade.listConnections(facade)
-    Promise.resolve(JSON.Object(result))
+    Promise.resolve(envelopeResult(result))
   }
 }
 
@@ -96,7 +116,7 @@ let makeIsConnectedCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let name = getStringOpt(d, "name")
     let result = Facade.isConnected(facade, ~name?)
-    Promise.resolve(JSON.Object(result))
+    Promise.resolve(envelopeResult(result))
   }
 }
 
@@ -105,14 +125,14 @@ let makeSetActiveConnectionCallback = (facade: Facade.t): McpSdk.toolCallback =>
     let d = parseArgs(args)
     let name = getString(d, "name")
     Facade.setActiveConnection(facade, ~name)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
 let makeGetActiveConnectionCallback = (facade: Facade.t): McpSdk.toolCallback => {
   (. _args) => {
     let result = Facade.getActiveConnection(facade)
-    Promise.resolve(JSON.Object(result))
+    Promise.resolve(envelopeResult(result))
   }
 }
 
@@ -121,12 +141,12 @@ let makeQueryDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let sql = getString(d, "sql")
     if sql == "" {
-      Promise.resolve(JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("sql is required")}))
+      Promise.resolve(envelopeResult(dict{"success": JSON.Boolean(false), "error": JSON.String("sql is required")}))
     } else {
       let params = getArrayOpt(d, "params")
       let name = getStringOpt(d, "connection_name")
       Facade.queryData(facade, ~sql, ~params?, ~name?)
-        ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+        ->Promise.then(result => Promise.resolve(envelopeResult(result)))
     }
   }
 }
@@ -141,7 +161,7 @@ let makeInsertDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
     }
     let name = getStringOpt(d, "connection_name")
     Facade.insertData(facade, ~table=tableName, ~data, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -157,7 +177,7 @@ let makeUpdateDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let dryRun = getBoolOpt(d, "dry_run")
     // Short-circuit for dry_run=true
     if dryRun == Some(true) {
-      Promise.resolve(JSON.Object(dict{"dry_run": JSON.Boolean(true)}))
+      Promise.resolve(envelopeResult(dict{"dry_run": JSON.Boolean(true)}))
     } else {
       // Normalize where_dict (same logic as Tools.res)
       let normalized = Mcp.Tools.normalizeWhereDict(whereDictArg)
@@ -167,7 +187,7 @@ let makeUpdateDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
           let confirm = getBoolOpt(d, "confirm")
           let name = getStringOpt(d, "connection_name")
           Facade.updateData(facade, ~table=tableName, ~setDict, ~whereDict=?Some(whereDict), ~name?, ~confirm?, ~dryRun?)
-            ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+            ->Promise.then(result => Promise.resolve(envelopeResult(result)))
         }
       }
     }
@@ -182,7 +202,7 @@ let makeDeleteDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let dryRun = getBoolOpt(d, "dry_run")
     // Short-circuit for dry_run=true
     if dryRun == Some(true) {
-      Promise.resolve(JSON.Object(dict{"dry_run": JSON.Boolean(true)}))
+      Promise.resolve(envelopeResult(dict{"dry_run": JSON.Boolean(true)}))
     } else {
       let normalized = Mcp.Tools.normalizeWhereDict(whereDictArg)
       switch normalized {
@@ -191,7 +211,7 @@ let makeDeleteDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
           let confirm = getBoolOpt(d, "confirm")
           let name = getStringOpt(d, "connection_name")
           Facade.deleteData(facade, ~table=tableName, ~whereDict, ~name?, ~confirm?, ~dryRun?)
-            ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+            ->Promise.then(result => Promise.resolve(envelopeResult(result)))
         }
       }
     }
@@ -203,7 +223,7 @@ let makeGetTablesCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let name = getStringOpt(d, "connection_name")
     Facade.getTables(facade, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -212,11 +232,11 @@ let makeGetTableSchemaCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let tableName = getString(d, "table_name")
     if tableName == "" {
-      Promise.resolve(JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: table_name is required")}))
+      Promise.resolve(envelopeResult(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: table_name is required")}))
     } else {
       let name = getStringOpt(d, "connection_name")
       Facade.getTableSchema(facade, ~table=tableName, ~name?)
-        ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+        ->Promise.then(result => Promise.resolve(envelopeResult(result)))
     }
   }
 }
@@ -226,7 +246,7 @@ let makeGetQueriesCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let name = getStringOpt(d, "connection_name")
     Facade.getQueries(facade, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -235,11 +255,11 @@ let makeExecuteRawSqlCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let sql = getString(d, "sql")
     if sql == "" {
-      Promise.resolve(JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: sql is required")}))
+      Promise.resolve(envelopeResult(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: sql is required")}))
     } else {
       let dryRun = getBoolOpt(d, "dry_run")
       if dryRun == Some(true) {
-        Promise.resolve(JSON.Object(dict{
+        Promise.resolve(envelopeResult(dict{
           "success": JSON.Boolean(true),
           "dry_run": JSON.Boolean(true),
           "sql": JSON.String(sql),
@@ -249,10 +269,10 @@ let makeExecuteRawSqlCallback = (facade: Facade.t): McpSdk.toolCallback => {
         let name = getStringOpt(d, "connection_name")
         // Guard: dangerous SQL without confirm
         if Mcp.Tools.isDangerousSql(sql) && confirm != Some(true) {
-          Promise.resolve(JSON.Object(dict{"success": JSON.Boolean(false), "error": JSON.String("confirm=True required for execute_raw_sql")}))
+          Promise.resolve(envelopeResult(dict{"success": JSON.Boolean(false), "error": JSON.String("confirm=True required for execute_raw_sql")}))
         } else {
           Facade.executeRawSql(facade, ~sql, ~name?, ~confirm?, ~dryRun?)
-            ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+            ->Promise.then(result => Promise.resolve(envelopeResult(result)))
         }
       }
     }
@@ -264,7 +284,7 @@ let makeGetRelationshipsCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let d = parseArgs(args)
     let name = getStringOpt(d, "connection_name")
     Facade.getRelationships(facade, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -273,7 +293,7 @@ let makeGetDatabaseStatisticsCallback = (facade: Facade.t): McpSdk.toolCallback 
     let d = parseArgs(args)
     let name = getStringOpt(d, "connection_name")
     Facade.getDatabaseStatistics(facade, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -287,7 +307,7 @@ let makeExportDataCallback = (facade: Facade.t): McpSdk.toolCallback => {
     let header = getBoolOpt(d, "header")
     let name = getStringOpt(d, "connection_name")
     Facade.exportData(facade, ~sql, ~filePath, ~format, ~delimiter?, ~header?, ~name?)
-      ->Promise.then(result => Promise.resolve(JSON.Object(result)))
+      ->Promise.then(result => Promise.resolve(envelopeResult(result)))
   }
 }
 
@@ -427,12 +447,13 @@ let run = (): Promise.t<unit> => {
   let version = getVersion()
   let serverInfo = {name: "MS Access MCP Server", version: version}
 
-  // Build real Facade via Composition.realFactory
+  // Respect the documented env contract: ACCESS_MCP_READONLY and
+  // ACCESS_MCP_ALLOWED_DIRS (semicolon-separated; defaults to user home).
   let facade = Facade.make(
     ~factory=Composition.realFactory,
     ~comAvailable=false,
-    ~readonly=() => false,
-    ~allowedDirs=() => [NodeJs.Os.homedir()],
+    ~readonly=Config.readonly,
+    ~allowedDirs=Config.allowedDirs,
   )
 
   // Create MCP server

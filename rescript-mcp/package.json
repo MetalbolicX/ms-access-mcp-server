@@ -12,7 +12,7 @@
     "test": "retest \"test/**/*.res.mjs\"",
     "lint:cases": "node parity/lint-cases.mjs",
     "parity": "node parity/run.mjs",
-    "server": "node ./src/Mcp/Server.bs.js"
+    "server": "node ./src/Mcp/main.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

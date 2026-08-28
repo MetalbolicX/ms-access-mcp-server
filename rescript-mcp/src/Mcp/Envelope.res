@@ -61,3 +61,26 @@ let transcribe: JSON.t => response = input => {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// transcribeJson — Facade dict → MCP CallToolResult as JSON.t
+//
+// Records compile their field names verbatim (type_), but the MCP wire format
+// requires "type". Build the JS object through JSON.t so the wire shape is
+// exactly { isError, content: [{ type: "text", text: <json> }] }.
+// ---------------------------------------------------------------------------
+
+let transcribeJson: JSON.t => JSON.t = input => {
+  let r = transcribe(input)
+  JSON.Object(dict{
+    "isError": JSON.Boolean(r.isError),
+    "content": JSON.Array(
+      r.content->Belt.Array.map(b =>
+        JSON.Object(dict{
+          "type": JSON.String(b.type_),
+          "text": JSON.String(b.text),
+        })
+      ),
+    ),
+  })
+}
