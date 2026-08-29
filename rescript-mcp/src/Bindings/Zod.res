@@ -33,8 +33,10 @@ type zArray = {
 }
 
 type zObject = {
-  parse: dict<JSON.t> => dict<JSON.t>,
+  parse: JSON.t => JSON.t,
   safeParse: JSON.t => zodParseResult,
+  parseAsync: JSON.t => promise<JSON.t>,
+  safeParseAsync: JSON.t => promise<zodParseResult>,
 }
 
 type zRecord = {
@@ -101,6 +103,13 @@ external z_optional: zAny => zOptional = "optional"
 @module("zod")
 external z_any: unit => zAny = "any"
 
+@module("zod")
+external z_object: dict<zAny> => zObject = "object"
+
+// ReScript records are homogeneous, while Zod object shapes contain several
+// schema subtypes. This is an identity cast at the FFI boundary only.
+external asAny: 'a => zAny = "%identity"
+
 // ---------------------------------------------------------------------------
 // zNamespace type — convenience object matching the Zod JS API.
 // ---------------------------------------------------------------------------
@@ -124,10 +133,7 @@ type zNamespace = {
 let z: zNamespace = {
   string: () => z_string(),
   boolean: () => z_boolean(),
-  object: (shape) => {
-    // z.object uses %raw to bypass dict<zString> </: dict<zAny> structural mismatch.
-    %raw(`(shape) => Zod.object(shape)`)
-  },
+  object: shape => z_object(shape),
   array: (item) => z_array(item),
   record: (keyType, valueType) => z_record(keyType, valueType),
   union: (schemas) => z_union(schemas),

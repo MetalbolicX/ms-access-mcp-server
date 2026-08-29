@@ -43,23 +43,27 @@ type toolDef = {
 }
 
 // ---------------------------------------------------------------------------
-// Shared pass-through input schema.
+// Zod input schemas.
 //
-// Handlers parse args defensively themselves, so the schema accepts anything.
-// It MUST implement the full Zod-ish surface the SDK probes on tools/call:
-// safeParseAsync + parseAsync (the SDK calls the async variants; missing
-// them made every real stdio tools/call fail with
-// "v3Schema.safeParseAsync is not a function").
+// Raw shapes let the MCP SDK publish accurate JSON Schema metadata through
+// tools/list and retain its safeParseAsync validation path. Handlers continue
+// to perform semantic checks that Zod cannot express (for example __raw__).
 // ---------------------------------------------------------------------------
 
-let passThroughSchema: McpSdk.zObject = %raw(`({
-  parse: (x) => x,
-  parseAsync: async (x) => x,
-  safeParse: (x) => ({success: true, data: x}),
-  safeParseAsync: async (x) => ({success: true, data: x}),
-})`)
+let zAny = (schema): Zod.zAny => Zod.asAny(schema)
+let stringSchema = () => zAny(Zod.z.string())
+let booleanSchema = () => zAny(Zod.z.boolean())
+let optional = schema => zAny(Zod.z.optional(schema))
+let objectRecord = () => zAny(Zod.z.record(stringSchema(), zAny(Zod.z.any())))
+let jsonArray = () => zAny(Zod.z.array(zAny(Zod.z.any())))
 
-let connectAccessSchema: McpSdk.zObject = passThroughSchema
+let connectAccessSchema: McpSdk.zObject = Zod.z.object(dict{
+  "database_path": stringSchema(),
+  "name": optional(stringSchema()),
+  "password": optional(stringSchema()),
+  "use_com": optional(booleanSchema()),
+  "backend": optional(stringSchema()),
+})
 
 // callConnectAccess — TDD seam: extracts args and forwards to facadeOps
 // Exported so tests can call it directly without going through SDK transport.
@@ -97,7 +101,9 @@ let callConnectAccess = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {name?: string}
 // ---------------------------------------------------------------------------
 
-let disconnectAccessSchema: McpSdk.zObject = passThroughSchema
+let disconnectAccessSchema: McpSdk.zObject = Zod.z.object(dict{
+  "name": optional(stringSchema()),
+})
 
 let callDisconnectAccess = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.disconnectAccess {
@@ -117,7 +123,7 @@ let callDisconnectAccess = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {} (no args)
 // ---------------------------------------------------------------------------
 
-let listConnectionsSchema: McpSdk.zObject = passThroughSchema
+let listConnectionsSchema: McpSdk.zObject = Zod.z.object(dict{})
 
 let callListConnections = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.listConnections {
@@ -133,7 +139,9 @@ let callListConnections = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {name?: string}
 // ---------------------------------------------------------------------------
 
-let isConnectedSchema: McpSdk.zObject = passThroughSchema
+let isConnectedSchema: McpSdk.zObject = Zod.z.object(dict{
+  "name": optional(stringSchema()),
+})
 
 let callIsConnected = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.isConnected {
@@ -182,7 +190,11 @@ let normalizeWhereDict = (whereDictArg: option<JSON.t>): result<dict<JSON.t>, di
 // Schema: {sql: string (required), params?: array<unknown> (default []), connection_name?: string (default "default")}
 // ---------------------------------------------------------------------------
 
-let queryDataSchema: McpSdk.zObject = passThroughSchema
+let queryDataSchema: McpSdk.zObject = Zod.z.object(dict{
+  "sql": stringSchema(),
+  "params": optional(jsonArray()),
+  "connection_name": optional(stringSchema()),
+})
 
 let callQueryData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.queryData {
@@ -214,7 +226,11 @@ let callQueryData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {table_name: string (required), data: object|array<object> (required), connection_name?: string (default "default")}
 // ---------------------------------------------------------------------------
 
-let insertDataSchema: McpSdk.zObject = passThroughSchema
+let insertDataSchema: McpSdk.zObject = Zod.z.object(dict{
+  "table_name": stringSchema(),
+  "data": zAny(Zod.z.union([objectRecord(), zAny(Zod.z.array(objectRecord()))])),
+  "connection_name": optional(stringSchema()),
+})
 
 let callInsertData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.insertData {
@@ -242,7 +258,14 @@ let callInsertData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {table_name, set_dict, where_dict?: object|string, connection_name?, confirm?: bool, dry_run?: bool}
 // ---------------------------------------------------------------------------
 
-let updateDataSchema: McpSdk.zObject = passThroughSchema
+let updateDataSchema: McpSdk.zObject = Zod.z.object(dict{
+  "table_name": stringSchema(),
+  "set_dict": objectRecord(),
+  "where_dict": optional(zAny(Zod.z.union([objectRecord(), stringSchema()]))),
+  "connection_name": optional(stringSchema()),
+  "confirm": optional(booleanSchema()),
+  "dry_run": optional(booleanSchema()),
+})
 
 let callUpdateData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.updateData {
@@ -292,7 +315,13 @@ let callUpdateData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {table_name, where_dict?: object|string, connection_name?, confirm?: bool, dry_run?: bool}
 // ---------------------------------------------------------------------------
 
-let deleteDataSchema: McpSdk.zObject = passThroughSchema
+let deleteDataSchema: McpSdk.zObject = Zod.z.object(dict{
+  "table_name": stringSchema(),
+  "where_dict": optional(zAny(Zod.z.union([objectRecord(), stringSchema()]))),
+  "connection_name": optional(stringSchema()),
+  "confirm": optional(booleanSchema()),
+  "dry_run": optional(booleanSchema()),
+})
 
 let callDeleteData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.deleteData {
@@ -338,7 +367,9 @@ let callDeleteData = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {connection_name?: string (default "default")}
 // ---------------------------------------------------------------------------
 
-let getTablesSchema: McpSdk.zObject = passThroughSchema
+let getTablesSchema: McpSdk.zObject = Zod.z.object(dict{
+  "connection_name": optional(stringSchema()),
+})
 
 let callGetTables = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.getTables {
@@ -358,7 +389,10 @@ let callGetTables = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {table_name: string (required), connection_name?: string (default "default")}
 // ---------------------------------------------------------------------------
 
-let getTableSchemaSchema: McpSdk.zObject = passThroughSchema
+let getTableSchemaSchema: McpSdk.zObject = Zod.z.object(dict{
+  "table_name": stringSchema(),
+  "connection_name": optional(stringSchema()),
+})
 
 let callGetTableSchema = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.getTableSchema {
@@ -386,7 +420,9 @@ let callGetTableSchema = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // Schema: {connection_name?: string (default "default")}
 // ---------------------------------------------------------------------------
 
-let getQueriesSchema: McpSdk.zObject = passThroughSchema
+let getQueriesSchema: McpSdk.zObject = Zod.z.object(dict{
+  "connection_name": optional(stringSchema()),
+})
 
 let callGetQueries = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
   switch ops.getQueries {
@@ -407,7 +443,12 @@ let callGetQueries = (args: dict<JSON.t>, ops: facadeOps): JSON.t => {
 // dangerous pattern: ^\s*(drop|delete|update)\b (case-insensitive)
 // ---------------------------------------------------------------------------
 
-let executeRawSqlSchema: McpSdk.zObject = passThroughSchema
+let executeRawSqlSchema: McpSdk.zObject = Zod.z.object(dict{
+  "sql": stringSchema(),
+  "connection_name": optional(stringSchema()),
+  "confirm": optional(booleanSchema()),
+  "dry_run": optional(booleanSchema()),
+})
 
 // isDangerousSql: returns true if SQL matches ^\s*(drop|delete|update)\b (case-insensitive)
 let isDangerousSql = (sql: string): bool => {

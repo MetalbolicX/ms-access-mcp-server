@@ -38,7 +38,11 @@ testAsync("Composition: realFactory produces a binding with correct instance typ
     // The binding must type-check as Facade.binding — this proves the
     // instance types (dataAdapterInstance + schemaAdapterInstance) are wired
     let factory = Composition.makeRealFactory(~comAvailable=false)
-    factory(~backend=None, ~dbPath="smoke", ~password="")
+    let dbPath = switch getTestDbPath() {
+      | Some(path) => path
+      | None => ""
+    }
+    factory(~backend=None, ~dbPath, ~password="")
       ->Promise.then(result => {
         switch result {
         | Ok(binding) => {
@@ -86,7 +90,7 @@ testAsync("Composition: realFactory round-trip — connect/getTables/disconnect"
       ~pool=ConnectionPool.make(),
       ~comAvailable=false,
       ~readonly=() => false,
-      ~allowedDirs=() => [],
+      ~allowedDirs=() => [dbPath],
     )
 
     Facade.connectAccess(facade, ~dbPath)

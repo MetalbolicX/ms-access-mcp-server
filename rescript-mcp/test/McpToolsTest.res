@@ -514,7 +514,11 @@ test("connect_access input schema: missing database_path returns Invalid envelop
 
 test("connect_access input schema: valid input passes validation", () => {
   let schema = Mcp.Tools.connectAccessSchema
-  let payload = dict{"database_path": JSON.String("/test/path.accdb"), "name": JSON.String("prod"), "backend": JSON.String("odbc")}
+  let payload = JSON.Object(dict{
+    "database_path": JSON.String("/test/path.accdb"),
+    "name": JSON.String("prod"),
+    "backend": JSON.String("odbc"),
+  })
 
   let threw = ref(false)
   let resultData = ref(JSON.Null)

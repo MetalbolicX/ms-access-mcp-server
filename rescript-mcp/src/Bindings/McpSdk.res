@@ -11,19 +11,9 @@
 // Types
 // ---------------------------------------------------------------------------
 
-// Zod object schema type — minimal interface matching what the SDK needs.
-// We define this locally to avoid importing Bindings.Zod (which would create
-// a circular dependency: Bindings.res -> McpSdk.res -> Bindings.Zod).
-//
-// The SDK's tools/call path invokes schema.safeParseAsync (and parseAsync on
-// some paths); pass-through schemas MUST implement both async variants or
-// every tool call fails with "v3Schema.safeParseAsync is not a function".
-type zObject = {
-  parse: JSON.t => JSON.t,
-  safeParse: JSON.t => result<JSON.t, JSON.t>,
-  parseAsync: JSON.t => Promise.t<JSON.t>,
-  safeParseAsync: JSON.t => Promise.t<result<JSON.t, JSON.t>>,
-}
+// A real Zod object is required: the SDK reads its raw shape for tools/list
+// and invokes safeParseAsync while handling tools/call.
+type zObject = Zod.zObject
 
 // Tool callback: receives parsed JSON arguments, returns JSON tool result or Promise.
 // The SDK accepts both sync and async callbacks; Promise<JSON.t> covers both cases.

@@ -389,43 +389,47 @@ let buildTestHarness = (): Promise.t<(Bindings.McpSdk.inMemoryTransport, Binding
       let serverInfo: Bindings.McpSdk.serverInfo = {name: "MS Access MCP Server", version: version}
 
       // Build real facade
+      let allowedDirs = switch TsBridge.getEnv("ACCESS_TEST_DB") {
+      | Some(path) if String.length(path) > 0 => [NodeJs.Os.homedir(), path]
+      | _ => [NodeJs.Os.homedir()]
+      }
       let facade = Services.Facade.make(
         ~factory=Composition.realFactory,
         ~comAvailable=false,
         ~readonly=() => false,
-        ~allowedDirs=() => [NodeJs.Os.homedir()],
+        ~allowedDirs=() => allowedDirs,
       )
 
       // Create server
       let server = Bindings.McpSdk.newMcpServer(serverInfo)
 
-      // Build pass-through schemas (same as Mcp/Tools.res)
-      let passThruSchema = {
-        %raw(`{ parse: (x) => x, safeParse: (x) => ({success: true, data: x}) }`)
-      }
-
-      // Register all 11 tools
+      // Register production schemas so tools/list exercises the metadata that
+      // a real MCP client receives; callbacks remain local test seams.
       let allTools = [
-        ("connect_access", "Connect to an Access database (.accdb, .mdb) using ODBC.", passThruSchema, makeConnectAccessCallback(facade)),
-        ("disconnect_access", "Disconnect a named Access database connection.", passThruSchema, makeDisconnectAccessCallback(facade)),
-        ("list_connections", "List all active database connections and their status.", passThruSchema, makeListConnectionsCallback(facade)),
-        ("is_connected", "Check whether a named connection is currently active.", passThruSchema, makeIsConnectedCallback(facade)),
-        ("query_data", "Execute a SQL SELECT query and return rows.", passThruSchema, makeQueryDataCallback(facade)),
-        ("insert_data", "Insert one or more records into a table.", passThruSchema, makeInsertDataCallback(facade)),
-        ("update_data", "Update records in a table matching a WHERE clause.", passThruSchema, makeUpdateDataCallback(facade)),
-        ("delete_data", "Delete records from a table matching a WHERE clause.", passThruSchema, makeDeleteDataCallback(facade)),
-        ("get_tables", "List all user tables in the connected database.", passThruSchema, makeGetTablesCallback(facade)),
-        ("get_table_schema", "Get the field schema for a specific table.", passThruSchema, makeGetTableSchemaCallback(facade)),
-        ("get_queries", "List all saved queries in the database.", passThruSchema, makeGetQueriesCallback(facade)),
-        ("execute_raw_sql", "Execute arbitrary SQL (including DDL) with safety guards.", passThruSchema, makeExecuteRawSqlCallback(facade)),
+        ("connect_access", "Connect to an Access database (.accdb, .mdb) using ODBC.", Mcp.Tools.connectAccessSchema, makeConnectAccessCallback(facade)),
+        ("disconnect_access", "Disconnect a named Access database connection.", Mcp.Tools.disconnectAccessSchema, makeDisconnectAccessCallback(facade)),
+        ("list_connections", "List all active database connections and their status.", Mcp.Tools.listConnectionsSchema, makeListConnectionsCallback(facade)),
+        ("is_connected", "Check whether a named connection is currently active.", Mcp.Tools.isConnectedSchema, makeIsConnectedCallback(facade)),
+        ("query_data", "Execute a SQL SELECT query and return rows.", Mcp.Tools.queryDataSchema, makeQueryDataCallback(facade)),
+        ("insert_data", "Insert one or more records into a table.", Mcp.Tools.insertDataSchema, makeInsertDataCallback(facade)),
+        ("update_data", "Update records in a table matching a WHERE clause.", Mcp.Tools.updateDataSchema, makeUpdateDataCallback(facade)),
+        ("delete_data", "Delete records from a table matching a WHERE clause.", Mcp.Tools.deleteDataSchema, makeDeleteDataCallback(facade)),
+        ("get_tables", "List all user tables in the connected database.", Mcp.Tools.getTablesSchema, makeGetTablesCallback(facade)),
+        ("get_table_schema", "Get the field schema for a specific table.", Mcp.Tools.getTableSchemaSchema, makeGetTableSchemaCallback(facade)),
+        ("get_queries", "List all saved queries in the database.", Mcp.Tools.getQueriesSchema, makeGetQueriesCallback(facade)),
+        ("execute_raw_sql", "Execute arbitrary SQL (including DDL) with safety guards.", Mcp.Tools.executeRawSqlSchema, makeExecuteRawSqlCallback(facade)),
       ]
 
       Belt.Array.forEach(allTools, ((name, description, inputSchema, callback)) => {
+        let envelopeCallback: toolCallback = (. args) => {
+          callback(args)
+            ->Promise.then(result => Promise.resolve(Mcp.Envelope.transcribeJson(result)))
+        }
         ignore(Bindings.McpSdk.registerTool(
           server,
           name,
           {description: description, inputSchema: inputSchema},
-          callback,
+          envelopeCallback,
         ))
       })
 
@@ -551,7 +555,7 @@ testAsync("MCP server: initialize returns serverInfo.name='MS Access MCP Server'
 })
 
 // ---------------------------------------------------------------------------
-// Test 2: tools/list — exactly 11 tools with Python-verbatim names
+// Test 2: tools/list — names and non-vacuous per-tool input metadata
 // ---------------------------------------------------------------------------
 
 testAsync("MCP server: tools/list returns exactly 12 tools with Python-verbatim names", cb => {
@@ -613,9 +617,35 @@ testAsync("MCP server: tools/list returns exactly 12 tools with Python-verbatim 
             Belt.Array.some(names, n => n == Some(e))
           })
 
+          // Assert published JSON Schema properties rather than merely checking
+          // that tools/list contains entries. This catches a pass-through Zod
+          // replacement, which serializes to an empty inputSchema.
+          let schemasMatch = switch toolsArr {
+          | Some(tools) =>
+              %raw(`(tools) => {
+                const byName = Object.fromEntries(tools.map(tool => [tool.name, tool.inputSchema]));
+                const hasProperties = (name, properties, required = []) => {
+                  const schema = byName[name];
+                  return schema
+                    && schema.type === "object"
+                    && properties.every(property => Object.hasOwn(schema.properties || {}, property))
+                    && required.every(property => (schema.required || []).includes(property));
+                };
+                return hasProperties("connect_access", ["database_path", "name", "password", "use_com", "backend"], ["database_path"])
+                  && hasProperties("query_data", ["sql", "params", "connection_name"], ["sql"])
+                  && hasProperties("insert_data", ["table_name", "data", "connection_name"], ["table_name", "data"])
+                  && hasProperties("update_data", ["table_name", "set_dict", "where_dict", "confirm", "dry_run"], ["table_name", "set_dict"])
+                  && hasProperties("delete_data", ["table_name", "where_dict", "confirm", "dry_run"], ["table_name"])
+                  && hasProperties("get_table_schema", ["table_name", "connection_name"], ["table_name"])
+                  && hasProperties("execute_raw_sql", ["sql", "confirm", "dry_run"], ["sql"]);
+              }`)(tools)
+          | None => false
+          }
+
           assertion(~operator="equal", (a, b) => a == b, countOk, true)
           assertion(~operator="equal", (a, b) => a == b, namesMatch, true)
-          cb(~planned=2, ())
+          assertion(~operator="equal", (a, b) => a == b, schemasMatch, true)
+          cb(~planned=3, ())
           Promise.resolve()
         })
         ->Promise.catch(_e => {
@@ -714,7 +744,7 @@ testAsync("MCP server: tools/call get_tables returns content[0].type=text, isErr
 
             assertion(~operator="equal", (a, b) => a == b, typeOk, true)
             assertion(~operator="equal", (a, b) => a == b, noErrorOk, true)
-            cb(~planned=1, ())
+            cb(~planned=2, ())
             Promise.resolve()
           })
           ->Promise.catch(_e => {
@@ -806,7 +836,7 @@ testAsync("MCP server: tools/call connect_access returns content text with succe
             assertion(~operator="equal", (a, b) => a == b, successOk, true)
             assertion(~operator="equal", (a, b) => a == b, connectedOk, true)
             assertion(~operator="equal", (a, b) => a == b, adapterOk, true)
-            cb(~planned=1, ())
+            cb(~planned=3, ())
             Promise.resolve()
           })
           ->Promise.catch(_e => {
