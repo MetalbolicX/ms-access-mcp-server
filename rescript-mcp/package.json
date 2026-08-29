@@ -4,14 +4,17 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.22.0",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "rescript",
     "dev": "rescript watch",
     "clean": "rescript clean",
     "test": "retest \"test/**/*.res.mjs\"",
     "lint:cases": "node parity/lint-cases.mjs",
-    "parity": "node parity/run.mjs",
+    "build:parity": "tsc -p parity/tsconfig.json",
+    "parity": "node parity/dist/run.js",
     "server": "node ./src/Mcp/main.mjs"
   },
   "dependencies": {
@@ -23,7 +26,9 @@
     "zod": "^3.0.0"
   },
   "devDependencies": {
+    "@types/node": "^26.4.0",
     "ajv": "^8.17.1",
-    "rescript-test": "^8.0.1"
+    "rescript-test": "^8.0.1",
+    "typescript": "^7.0.2"
   }
 }

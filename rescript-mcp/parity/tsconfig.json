@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noImplicitAny": true,
+    "outDir": "./dist",
+    "rootDir": "./",
+    "types": ["node"]
+  },
+  "include": ["normalize.ts", "run.ts", "runRescript.ts", "types/**/*.d.ts"],
+  "exclude": ["dist", "node_modules", "cases"]
+}
