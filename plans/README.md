@@ -116,6 +116,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 023 | Finish plan 022 — CsvWriter ~header fix + commit + fresh-build verify | 23 | STRICT TDD | P1 | XS | 021 | DONE |
 | 024 | Repo hygiene — commit plans/tooling/artifacts + consolidate branch chain to main | 24 | NEITHER | P1 | S | 023, 025 | DONE |
 | 025 | Fix the test suite (stale test/.mjs cleanup + count-clamping fix) — pre-024 gate | 25 | NEITHER | P1 | S | 023 | DONE |
+| 026 | Establish Northwind read-only real-database baseline | 26 | NEITHER | P1 | M | 007, 008, 016, 019, 020 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -167,6 +168,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   via probe-based enumeration (MSysObjects ACL-blocked — Access default).
   Plan 017 absorbs the 2 unit-suite failures; runner (a)/(b) defects
   need a runner-hardening follow-up (out of plan 017 scope).
+- **Plan 026 is the evidence gate for future ODBC mutation hardening and COM
+  facade/MCP plans.** No arbitrary Northwind mirror (no verified official
+  unattended Microsoft `.accdb` download in 2026); operator must provide through
+  Access template UI or trusted source. No product fixes, no COM opening of
+  original file. All Northwind parity cases must be `mutating:false`; the
+  runner must have a `--require-read-only` guard. A red Northwind baseline is
+  evidence, not license for scope expansion; record every mismatch/error as
+  `026-F-xxx` with reproduction and owner.
 
 ## Findings considered and rejected
 
