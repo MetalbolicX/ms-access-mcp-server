@@ -98,8 +98,8 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 005 | ConnectionPool & backend services | 5 | STRICT TDD | P2 | M | 003, 004 | DONE |
 | 006 | Database facade for AI harness | 6 | SDD | P1 | M | 003, 004, 005 | DONE |
 | 007 | Differential parity harness vs Python | 7 | NEITHER | P2 | M | 003, 004, 005, 006, 015, 016, 017, 018, 023, 024 | DONE (17/9 matched / 7 mismatched / 1 errored; mutation test proven; 007-F-001..006 findings recorded) |
-| 008 | Minimal local MCP stdio server | 8 | SDD | P3 | M | 006 | DONE (branch `rescript/008-mcp-stdio` at `ee60884`; stdio server, 9 tools, in-process tests; plan 007 parity 17/17 carried forward) |
-| 009 | UI assessment decision memo | 9 | NEITHER | P3 | S | 008 | TODO |
+| 008 | Minimal local MCP stdio server | 8 | SDD | P3 | M | 006 | DONE (merged to `main` at `e1bf8f4`; stdio server, 12 tools, stdio smoke verified; plan 007 parity 17/17 carried forward) |
+| 009 | UI assessment decision memo | 9 | NEITHER | P3 | S | 008 | DONE (decision memo: `docs/rescript-ui-assessment.md`; no UI migration, no HTTP transport, MCP clients are sole interface; Python SSR + Vue frontend untouched) |
 | 010 | TypeScript → .mjs bridge foundation (toolchain + pilot) | 10 | STRICT TDD | P1 | S | — | DONE |
 | 011 | Port pure-helper %raw blocks to typed .mts (codec/fs/hash) | 11 | STRICT TDD | P1 | M | 010 | DONE |
 | 012 | Port Access COM surface to typed .mts (access.d.ts) | 12 | NEITHER | P1 | L | 011 | DONE |
@@ -111,7 +111,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 018 | Amend plan 007 for ten parity-harness design holes | 18 | NEITHER | P1 | S | 015, 016, 022, 023, 024 | DONE |
 | 019 | Convert parity harness from .mjs to TypeScript (test-infra upgrade) | 19 | NEITHER | P2 | S | 007, 019-a | DONE |
 | 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | - | DONE |
-| 022 | Reconcile insertData/exportData drift (dict<JSON.t> + mutationResult) | 22 | STRICT TDD | P1 | XS | 021 | PARTIAL (edits in tree; blocked on plan 023's CsvWriter fix) |
+| 022 | Reconcile insertData/exportData drift (dict<JSON.t> + mutationResult) | 22 | STRICT TDD | P1 | XS | 021 | DONE (drift closed by plan 023/024; fresh-build gate passed) |
 | 023 | Finish plan 022 — CsvWriter ~header fix + commit + fresh-build verify | 23 | STRICT TDD | P1 | XS | 021 | DONE |
 | 024 | Repo hygiene — commit plans/tooling/artifacts + consolidate branch chain to main | 24 | NEITHER | P1 | S | 023, 025 | DONE |
 | 025 | Fix the test suite (stale test/.mjs cleanup + count-clamping fix) — pre-024 gate | 25 | NEITHER | P1 | S | 023 | DONE |
