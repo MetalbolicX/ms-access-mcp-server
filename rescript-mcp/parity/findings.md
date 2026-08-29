@@ -131,3 +131,9 @@ Proves the harness detects injected mismatches:
 | `8403c98` | 007-F-008 nested `{objects,file,system}` shape | `get_database_statistics` matches Python oracle |
 
 **Final parity**: 17 cases, 17 matched, 0 mismatched, 0 errored.
+
+## TS conversion (plan 019)
+
+- **parity harness converted `.mjs` → `.ts`** at `rescript/019-typescript-parity`;
+  baseline re-verified 17 matched / 0 mismatched / 0 errored; mutation test
+  re-proven (FLOAT_TOL seam in `normalize.ts` used).
