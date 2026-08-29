@@ -20,17 +20,81 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sys
 import tempfile
-from typing import Any, Callable
+from typing import Any, TypedDict, cast
 
 # Repo root: parents[0] = rescript-mcp/scripts, parents[1] = rescript-mcp,
 # parents[2] = repo root.
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from ms_access_mcp.adapters.odbc import OdbcAdapter  # noqa: E402
+from ms_access_mcp.adapters.odbc import OdbcAdapter  # type: ignore[import-untyped]
+
+
+class _Envelope(TypedDict):
+    success: bool
+    rows: list[Any]
+    count: int
+    columns: list[Any]
+    error: Any
+
+
+class _MutationEnvelope(TypedDict):
+    success: bool
+    affected: int
+
+
+class _ErrorEnvelope(TypedDict):
+    success: bool
+    error: str
+
+
+class _ConnectEnvelope(TypedDict):
+    success: bool
+    connected: bool
+    database: str
+    name: str
+
+
+class _DisconnectEnvelope(TypedDict):
+    success: bool
+    message: str
+
+
+class _IsConnectedEnvelope(TypedDict):
+    connected: bool
+    database: str
+    name: str
+
+
+class _SetActiveEnvelope(TypedDict):
+    success: bool
+    active: str
+
+
+class _ListConnectionsEnvelope(TypedDict):
+    success: bool
+    connections: dict[str, Any]
+    count: int
+    active: str
+
+
+class _GetActiveEnvelope(TypedDict):
+    success: bool
+    active: str
+
+
+class _ExportEnvelope(TypedDict):
+    success: bool
+    rows_exported: int
+    file_path: str
+    format: str
+
+
+class _RawSqlEnvelope(TypedDict):
+    success: bool
+    rows_affected: int
 
 
 def _connect(name: str = "default") -> OdbcAdapter:
@@ -46,7 +110,7 @@ def _connect(name: str = "default") -> OdbcAdapter:
     return adapter
 
 
-def _shape_query(adapter: OdbcAdapter, sql: str) -> dict:
+def _shape_query(adapter: OdbcAdapter, sql: str) -> _Envelope:
     """Wrap adapter.execute_query in the ReScript facade envelope shape.
 
     ReScript: { success, rows, count, columns, error: JSON.Null | String }
@@ -62,7 +126,7 @@ def _shape_query(adapter: OdbcAdapter, sql: str) -> dict:
     }
 
 
-def _shape_insert(adapter: OdbcAdapter, table: str, data: dict) -> dict:
+def _shape_insert(adapter: OdbcAdapter, table: str, data: dict[str, Any]) -> _MutationEnvelope:
     """Wrap adapter.insert_data — ReScript: { success, affected }."""
     result = adapter.insert_data(table, data)
     return {
@@ -72,8 +136,8 @@ def _shape_insert(adapter: OdbcAdapter, table: str, data: dict) -> dict:
 
 
 def _shape_update(
-    adapter: OdbcAdapter, table: str, set_dict: dict, where_dict: dict
-) -> dict:
+    adapter: OdbcAdapter, table: str, set_dict: dict[str, Any], where_dict: dict[str, Any]
+) -> _MutationEnvelope:
     """Wrap adapter.update_data — ReScript: { success, affected }."""
     result = adapter.update_data(table, set_dict, where_dict)
     return {
@@ -82,7 +146,7 @@ def _shape_update(
     }
 
 
-def _shape_delete(adapter: OdbcAdapter, table: str, where_dict: dict) -> dict:
+def _shape_delete(adapter: OdbcAdapter, table: str, where_dict: dict[str, Any]) -> _MutationEnvelope:
     """Wrap adapter.delete_data — ReScript: { success, affected }."""
     result = adapter.delete_data(table, where_dict)
     return {
@@ -91,7 +155,7 @@ def _shape_delete(adapter: OdbcAdapter, table: str, where_dict: dict) -> dict:
     }
 
 
-def _shape_get_tables(adapter: OdbcAdapter) -> dict:
+def _shape_get_tables(adapter: OdbcAdapter) -> dict[str, Any]:
     """Wrap adapter.get_tables — ReScript: { success, tables, count }.
 
     ReScript fields per table: name, fields[], recordCount, primaryKey.
@@ -123,7 +187,7 @@ def _shape_get_tables(adapter: OdbcAdapter) -> dict:
     }
 
 
-def _shape_get_table_schema(adapter: OdbcAdapter, table: str) -> dict:
+def _shape_get_table_schema(adapter: OdbcAdapter, table: str) -> dict[str, Any]:
     """Wrap adapter.get_tables() filtered to one — ReScript: { success, table }."""
     tables = adapter.get_tables()
     target = next((t for t in tables if t.name == table), None)
@@ -151,7 +215,7 @@ def _shape_get_table_schema(adapter: OdbcAdapter, table: str) -> dict:
     }
 
 
-def _shape_get_relationships(adapter: OdbcAdapter) -> dict:
+def _shape_get_relationships(adapter: OdbcAdapter) -> dict[str, Any]:
     """Wrap adapter.get_relationships — ReScript: { success, relationships, count }."""
     rels = adapter.get_relationships()
     rel_dicts = []
@@ -171,7 +235,7 @@ def _shape_get_relationships(adapter: OdbcAdapter) -> dict:
     }
 
 
-def _shape_get_queries(adapter: OdbcAdapter) -> dict:
+def _shape_get_queries(adapter: OdbcAdapter) -> dict[str, Any]:
     """Wrap adapter.get_queries — ReScript: { success, queries, count }."""
     queries = adapter.get_queries()
     q_dicts = [
@@ -185,12 +249,12 @@ def _shape_get_queries(adapter: OdbcAdapter) -> dict:
     }
 
 
-def _shape_get_database_statistics(adapter: OdbcAdapter) -> dict:
+def _shape_get_database_statistics(adapter: OdbcAdapter) -> dict[str, Any]:
     """Wrap adapter.get_database_statistics — ReScript merges the result."""
-    return adapter.get_database_statistics()
+    return cast(dict[str, Any], adapter.get_database_statistics())
 
 
-def _shape_execute_raw_sql(adapter: OdbcAdapter, sql: str) -> dict:
+def _shape_execute_raw_sql(adapter: OdbcAdapter, sql: str) -> dict[str, Any]:
     """Wrap adapter.execute_raw_sql — ReScript: { success, rows_affected }.
 
     ReScript clamps -1 to 0 per spec; mirror that here.
@@ -208,7 +272,7 @@ def _shape_export_data(
     sql: str,
     file_path: str,
     format: str,
-) -> dict:
+) -> dict[str, Any]:
     """Wrap adapter.export_data — ReScript: { success, rows_exported, file_path, format }.
 
     The strategy layer for Python always returns rows_exported + file_path
@@ -222,16 +286,16 @@ def _shape_export_data(
     else:
         return {"success": False, "error": f"Unknown format '{format}'"}
     if not result.get("success"):
-        return result
+        return cast(dict[str, Any], result)
     result["format"] = format
-    return result
+    return cast(dict[str, Any], result)
 
 
 # ---------------------------------------------------------------------------
 # Operation dispatch
 # ---------------------------------------------------------------------------
 
-def run_case(case: dict) -> dict:
+def run_case(case: dict[str, Any]) -> dict[str, Any]:
     """Execute the case and return the envelope dict.
 
     Each branch connects if the operation isn't a connection-lifecycle op,
@@ -298,7 +362,7 @@ def run_case(case: dict) -> dict:
 # raw adapter, so the parity envelope is at the pool layer.
 # ---------------------------------------------------------------------------
 
-def _connect_op(args: dict) -> dict:
+def _connect_op(args: dict[str, Any]) -> dict[str, Any]:
     """Mirror ReScript's connectAccess envelope.
 
     ReScript returns { success, connected, database, name } on success,
@@ -306,12 +370,12 @@ def _connect_op(args: dict) -> dict:
     Python's connect_access returns the same shape on success; on failure
     it returns { success:false, error } (and may omit database/name).
     """
-    from ms_access_mcp.mcp.container import get_container
+    from ms_access_mcp.mcp.container import get_container  # type: ignore[import-untyped]
 
     db_path = os.environ["ACCESS_TEST_DB"]
     name = args.get("name", "default")
     try:
-        state = get_container().connection_pool.connect(
+        get_container().connection_pool.connect(
             name, db_path, "odbc", password=""
         )
         return {
@@ -324,7 +388,7 @@ def _connect_op(args: dict) -> dict:
         return {"success": False, "error": str(exc)}
 
 
-def _disconnect_op(args: dict) -> dict:
+def _disconnect_op(args: dict[str, Any]) -> dict[str, Any]:
     """Mirror ReScript's disconnectAccess envelope."""
     from ms_access_mcp.mcp.container import get_container
 
@@ -336,7 +400,7 @@ def _disconnect_op(args: dict) -> dict:
         return {"success": False, "error": str(exc)}
 
 
-def _is_connected_op(args: dict) -> dict:
+def _is_connected_op(args: dict[str, Any]) -> dict[str, Any]:
     """Mirror ReScript's isConnected envelope.
 
     ReScript returns { connected, database, name } — NO success key (parity
@@ -353,7 +417,7 @@ def _is_connected_op(args: dict) -> dict:
     }
 
 
-def _set_active_op(args: dict) -> dict:
+def _set_active_op(args: dict[str, Any]) -> dict[str, Any]:
     """Mirror ReScript's setActiveConnection envelope.
 
     Each parity driver invocation runs in a fresh Python process with an
@@ -377,7 +441,7 @@ def _set_active_op(args: dict) -> dict:
         return {"success": False, "error": str(exc)}
 
 
-def _list_connections_op() -> dict:
+def _list_connections_op() -> dict[str, Any]:
     """Mirror ReScript's listConnections envelope.
 
     ReScript returns the per-connection info as { database, adapter_type,
@@ -388,7 +452,7 @@ def _list_connections_op() -> dict:
 
     pool = get_container().connection_pool
     connections = pool.list()
-    result: dict[str, dict] = {}
+    result: dict[str, dict[str, Any]] = {}
     for conn_name, state in connections.items():
         result[conn_name] = {
             "database": state.db_path,
@@ -404,7 +468,7 @@ def _list_connections_op() -> dict:
     }
 
 
-def _get_active_op() -> dict:
+def _get_active_op() -> dict[str, Any]:
     """Mirror ReScript's getActiveConnection envelope."""
     from ms_access_mcp.mcp.container import get_container
 
@@ -418,25 +482,25 @@ def _get_active_op() -> dict:
 # Data ops
 # ---------------------------------------------------------------------------
 
-def _query_data_op(adapter: OdbcAdapter, args: dict) -> dict:
+def _query_data_op(adapter: OdbcAdapter, args: dict[str, Any]) -> dict[str, Any]:
     sql = args["sql"]
-    return _shape_query(adapter, sql)
+    return _shape_query(adapter, sql)  # type: ignore[return-value]
 
 
-def _insert_data_op(adapter: OdbcAdapter, args: dict) -> dict:
+def _insert_data_op(adapter: OdbcAdapter, args: dict[str, Any]) -> dict[str, Any]:
     table = args["table"]
     data = args["data"]
-    return _shape_insert(adapter, table, data)
+    return _shape_insert(adapter, table, data)  # type: ignore[return-value]
 
 
-def _update_data_op(adapter: OdbcAdapter, args: dict) -> dict:
+def _update_data_op(adapter: OdbcAdapter, args: dict[str, Any]) -> dict[str, Any]:
     table = args["table"]
     set_dict = args["setDict"]
     where_dict = args.get("whereDict") or {}
-    return _shape_update(adapter, table, set_dict, where_dict)
+    return _shape_update(adapter, table, set_dict, where_dict)  # type: ignore[return-value]
 
 
-def _delete_data_op(adapter: OdbcAdapter, args: dict) -> dict:
+def _delete_data_op(adapter: OdbcAdapter, args: dict[str, Any]) -> dict[str, Any]:
     table = args["table"]
     where_dict = args.get("whereDict")
     if not where_dict:
@@ -444,7 +508,7 @@ def _delete_data_op(adapter: OdbcAdapter, args: dict) -> dict:
             "success": False,
             "error": "DELETE requires non-empty WHERE clause",
         }
-    return _shape_delete(adapter, table, where_dict)
+    return _shape_delete(adapter, table, where_dict)  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
