@@ -22,11 +22,11 @@ Layout
   error report.
 - `../scripts/parity_driver.py` — Python driver; prints one JSON envelope
   per case to stdout.
-- `run.mjs` — orchestrator: copies fixture per side for `mutating: true`
+- `dist/run.js` — compiled orchestrator: copies fixture per side for `mutating: true`
   cases, runs both children, normalizes, differs, prints summary.
-- `runRescript.mjs` — ReScript child runner; calls into compiled
+- `dist/runRescript.js` — compiled ReScript child runner; calls into compiled
   `Services/Facade.res`.
-- `normalize.mjs` — shared normalizer (key sort, int-valued-float
+- `dist/normalize.js` — compiled shared normalizer (key sort, int-valued-float
   canonicalization, Windows-path normalization, float tolerance 1e-9,
   ISO timestamps, `volatileFields`).
 - `findings.md` — every real mismatch recorded here with operation,
@@ -36,8 +36,9 @@ Run
 ---
 ```
 cd rescript-mcp
-pnpm lint:cases   # fast pre-check: schema-validate every case
-pnpm parity       # full run: both children, normalize, diff, summary
+pnpm lint:cases       # fast pre-check: schema-validate every case
+pnpm build:parity     # compile TypeScript sources to dist/
+pnpm parity           # full run: both children, normalize, diff, summary
 ```
 
 On Windows with `ACCESS_TEST_DB` set to
