@@ -201,3 +201,26 @@ exercised by this runner.
 | `pnpm -C rescript-mcp parity` | 17 matched, 0 mismatched, 0 errored |
 | Integration runner exit code | 1 (11 failures) |
 | Zero (a) fixes applied | Confirmed — all failures are (c) |
+
+## 020-followup (mypy strict typing)
+
+Run date: 2026-08-28. Python parity driver typed with `mypy --strict`;
+`inventory_fixture.py` already fully typed at time of analysis. Config:
+`mypy.ini` with `strict = True`, `follow_imports = skip` for
+`src/ms_access_mcp/**`, `ignore_missing_imports = True` for `pyodbc`.
+
+### Findings ledger
+
+| # | Note |
+|---|------|
+| 020-F-001 | `TypedDict` is not implicitly compatible with `dict[str, Any]` in mypy 2.x strict — must use `# type: ignore[return-value]` on TypedDict return values cast to `dict`. |
+| 020-F-002 | `follow_imports = skip` in mypy.ini suppresses local module imports but the first occurrence still requires `# type: ignore[import-untyped]` on the import line. Subsequent occurrences in different functions are skipped without error. |
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm -C rescript-mcp build` | exit 0 |
+| `pnpm -C rescript-mcp test` | 678 passed, 0 failed |
+| `pnpm -C rescript-mcp parity` | 17 matched, 0 mismatched, 0 errored |
+| `mypy --strict parity_driver.py inventory_fixture.py` | exit 0 (29 errors → 0) |

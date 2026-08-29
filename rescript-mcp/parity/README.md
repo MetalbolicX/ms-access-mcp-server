@@ -38,8 +38,18 @@ Run
 cd rescript-mcp
 pnpm lint:cases       # fast pre-check: schema-validate every case
 pnpm build:parity     # compile TypeScript sources to dist/
+pnpm parity:types     # mypy --strict on Python parity scripts (gate)
 pnpm parity           # full run: both children, normalize, diff, summary
 ```
+
+Type checking
+------------
+`pnpm parity:types` runs `mypy --strict` on the Python parity scripts
+(`scripts/parity_driver.py`, `scripts/inventory_fixture.py`). The gate
+ensures the Python driver remains fully typed — a rename of any
+`OdbcAdapter` method would surface as a type error before it could
+silently break parity. The config lives in `mypy.ini`; `follow_imports =
+ skip` excludes the untyped `src/ms_access_mcp/` product source.
 
 On Windows with `ACCESS_TEST_DB` set to
 `D:\code\python\ms-access-mcp-server\tests\integration\fixtures\test_db.accdb`,
