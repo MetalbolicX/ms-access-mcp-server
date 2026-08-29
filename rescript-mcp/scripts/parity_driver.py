@@ -29,7 +29,7 @@ from typing import Any, TypedDict, cast
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
-from ms_access_mcp.adapters.odbc import OdbcAdapter  # type: ignore[import-untyped]
+from ms_access_mcp.adapters.odbc import OdbcAdapter  # noqa: E402
 
 
 class _Envelope(TypedDict):
@@ -370,7 +370,7 @@ def _connect_op(args: dict[str, Any]) -> dict[str, Any]:
     Python's connect_access returns the same shape on success; on failure
     it returns { success:false, error } (and may omit database/name).
     """
-    from ms_access_mcp.mcp.container import get_container  # type: ignore[import-untyped]
+    from ms_access_mcp.mcp.container import get_container  # noqa: E402
 
     db_path = os.environ["ACCESS_TEST_DB"]
     name = args.get("name", "default")
