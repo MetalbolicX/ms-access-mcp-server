@@ -110,6 +110,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 017 | Fix two pre-existing OdbcAdapterTest failures | 17 | STRICT TDD | P2 | S | - | DONE |
 | 018 | Amend plan 007 for ten parity-harness design holes | 18 | NEITHER | P1 | S | 015, 016, 022, 023, 024 | DONE |
 | 019 | Convert parity harness from .mjs to TypeScript (test-infra upgrade) | 19 | NEITHER | P2 | S | 007, 019-a | DONE |
+| 020 | Type-check parity driver with mypy strict (test-infra upgrade) | 20 | NEITHER | P2 | S | 019 | DONE |
 | 021 | Aggregator housekeeping + _importOdbc bug fix (catch-up commit) | 21 | NEITHER | P1 | S | - | DONE |
 | 022 | Reconcile insertData/exportData drift (dict<JSON.t> + mutationResult) | 22 | STRICT TDD | P1 | XS | 021 | DONE (drift closed by plan 023/024; fresh-build gate passed) |
 | 023 | Finish plan 022 — CsvWriter ~header fix + commit + fresh-build verify | 23 | STRICT TDD | P1 | XS | 021 | DONE |
