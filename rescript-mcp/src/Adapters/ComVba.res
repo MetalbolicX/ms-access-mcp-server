@@ -744,7 +744,7 @@ let _vbaListProcedures: (ComInterfaces.sessionHandles, string) => Promise.t<arra
                                                               | _ => 1
                                                               }
                                                               let info: vbProcedureInfo = {name: pName, procType: pt, startLine: sl, lineCount: lc}
-                                                              gather(line + 1, Belt.Array.concat(acc, [info]))
+                                                              gather(line + 1, Array.concat(acc, [info]))
                                                             })
                                                             ->Promise.catch(_ => gather(line + 1, acc))
                                                         })
@@ -831,39 +831,39 @@ let _saveDatabase: ComInterfaces.sessionHandles => Promise.t<saveResult> = (
                                                   Bindings.Winax.WINAX_BINDING.get(app, "DoCmd")
                                                     ->Promise.then(docmdResult => {
                                                       switch docmdResult {
-                                                      | Error(_) => loop(i + 1, saved, Belt.Array.concat(errs, [mName ++ ": Cannot get DoCmd"]))
+                                                      | Error(_) => loop(i + 1, saved, Array.concat(errs, [mName ++ ": Cannot get DoCmd"]))
                                                       | Ok(docmd) => {
                                                           let docmdObj = _toComObject(docmd)
                                                           Bindings.Winax.WINAX_BINDING.invoke(docmdObj, "Save", [ComInterfaces.VInt(_ACMODULE), ComInterfaces.VStr(mName)])
                                                             ->Promise.then(_ => loop(i + 1, saved + 1, errs))
                                                             ->Promise.catch(e => {
                                                               let msg = _exnMsg(e)
-                                                              loop(i + 1, saved, Belt.Array.concat(errs, [mName ++ ": " ++ msg]))
+                                                              loop(i + 1, saved, Array.concat(errs, [mName ++ ": " ++ msg]))
                                                             })
                                                         }
                                                       }
                                                     })
                                                     ->Promise.catch(e => {
                                                       let msg = _exnMsg(e)
-                                                      loop(i + 1, saved, Belt.Array.concat(errs, [mName ++ ": " ++ msg]))
+                                                      loop(i + 1, saved, Array.concat(errs, [mName ++ ": " ++ msg]))
                                                     })
                                                 })
                                                 ->Promise.catch(e => {
                                                   let msg = _exnMsg(e)
-                                                  loop(i + 1, saved, Belt.Array.concat(errs, [msg]))
+                                                  loop(i + 1, saved, Array.concat(errs, [msg]))
                                                 })
                                             }
                                           })
                                           ->Promise.catch(e => {
                                             let msg = _exnMsg(e)
-                                            loop(i + 1, saved, Belt.Array.concat(errs, [msg]))
+                                            loop(i + 1, saved, Array.concat(errs, [msg]))
                                           })
                                       }
                                     }
                                   })
                                   ->Promise.catch(e => {
                                     let msg = _exnMsg(e)
-                                    loop(i + 1, saved, Belt.Array.concat(errs, [msg]))
+                                    loop(i + 1, saved, Array.concat(errs, [msg]))
                                   })
                               }
                             }

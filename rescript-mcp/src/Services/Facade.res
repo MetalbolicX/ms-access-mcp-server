@@ -84,7 +84,7 @@ let _bindingForName = (
   facade: t,
   name: string,
 ): option<binding> => {
-  Belt.Array.getBy(facade.bindings, ((n, _b)) => n == name)->Option.map(((_n, b)) => b)
+  Array.find(facade.bindings, ((n, _b)) => n == name)->Option.map(((_n, b)) => b)
 }
 
 // adapterForName: get the dataAdapterInstance for a named connection
@@ -143,15 +143,15 @@ let _validateDatabasePath = (
   if String.startsWith(dbPath, "\\\\") || String.startsWith(dbPath, "//") {
     Error(Errors.pathGuardError("UNC paths not allowed"))
   } else {
-    let segments = Js.String.split("/", dbPath)->Belt.Array.concat(
+    let segments = Js.String.split("/", dbPath)->Array.concat(
       Js.String.split("\\", dbPath)
     )
-    if Belt.Array.some(segments, s => s == "..") {
+    if Array.some(segments, s => s == "..") {
       Error(Errors.pathGuardError("Path traversal not allowed"))
     } else {
       let resolved = NodeJs.Path.resolve([dbPath])
-      if !Belt.Array.some(allowed, dir => String.startsWith(resolved, dir)) {
-        let msg = "database_path: path not allowed: " ++ dbPath ++ ". Allowed directories: [" ++ Belt.Array.joinWith(allowed, ",", s => s) ++ "]"
+      if !Array.some(allowed, dir => String.startsWith(resolved, dir)) {
+        let msg = "database_path: path not allowed: " ++ dbPath ++ ". Allowed directories: [" ++ Array.join(allowed, ", ") ++ "]"
         Error(Errors.pathGuardError(msg))
       } else {
         Ok(resolved)
@@ -173,12 +173,12 @@ let make = (
   ~allowedDirs: option<(unit => array<string>)>=?,
 ): t => {
   {
-    pool: pool->Belt.Option.getWithDefault(ConnectionPool.make()),
+    pool: pool->Option.getWithDefault(ConnectionPool.make()),
     bindings: [],
     factory: factory,
-    comAvailable: comAvailable->Belt.Option.getWithDefault(false),
-    readonly: readonly->Belt.Option.getWithDefault(() => false),
-    allowedDirs: allowedDirs->Belt.Option.getWithDefault(() => [NodeJs.Os.homedir()]),
+    comAvailable: comAvailable->Option.getWithDefault(false),
+    readonly: readonly->Option.getWithDefault(() => false),
+    allowedDirs: allowedDirs->Option.getWithDefault(() => [NodeJs.Os.homedir()]),
   }
 }
 
@@ -201,14 +201,14 @@ let connectAccess = (
   ~password: option<string>=?,
   ~backend: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
-  let connPassword = password->Belt.Option.getWithDefault("")
+  let connName = name->Option.getWithDefault("default")
+  let connPassword = password->Option.getWithDefault("")
 
   // Step 1: Validate path
   switch _validateDatabasePath(facade, dbPath) {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(resolvedPath) => {
-      let resolvedBackend = _resolveBackend(~backend=backend, ~useCom=useCom->Belt.Option.getWithDefault(false))
+      let resolvedBackend = _resolveBackend(~backend=backend, ~useCom=useCom->Option.getWithDefault(false))
 
       // Step 2: Call factory to get binding
       facade.factory(~backend=resolvedBackend, ~dbPath=resolvedPath, ~password=connPassword)
@@ -230,7 +230,7 @@ let connectAccess = (
                       | Error(err) => Promise.resolve(shapeErr(err))
                       | Ok(_state) => {
                           // Step 5: Register binding
-                          facade.bindings = Belt.Array.concat(facade.bindings, [(connName, binding)])
+                          facade.bindings = Array.concat(facade.bindings, [(connName, binding)])
                           // Step 6: Return success shape (B4: adapter_type is always "odbc")
                           let result = Dict.fromArray([
                             ("success", JSON.Boolean(true)),
@@ -261,7 +261,7 @@ let disconnectAccess = (
   facade: t,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
 
   switch _bindingForName(facade, connName) {
   | None =>
@@ -277,7 +277,7 @@ let disconnectAccess = (
     }
   | Some(_binding) => {
       // Remove from facade.bindings first
-      facade.bindings = Belt.Array.keep(facade.bindings, ((n, _b)) => n != connName)
+      facade.bindings = Array.filter(facade.bindings, ((n, _b)) => n != connName)
       ConnectionPool.disconnect(facade.pool, ~name=connName)
         ->Promise.then(_result => {
           Promise.resolve(Dict.fromArray([
@@ -298,7 +298,7 @@ let listConnections = (facade: t): dict<JSON.t> => {
   let poolConnections = ConnectionPool.list(facade.pool)
   let connectionsDict = Dict.make()
 
-  Belt.Array.forEach(poolConnections, ((connName, state)) => {
+  Array.forEach(poolConnections, ((connName, state)) => {
     switch _bindingForName(facade, connName) {
     | Some(binding) => {
         let info = Dict.fromArray([
@@ -320,7 +320,7 @@ let listConnections = (facade: t): dict<JSON.t> => {
     }
   })
 
-  let count = Belt.Array.length(poolConnections)
+  let count = Array.length(poolConnections)
   let active = ConnectionPool.get_active(facade.pool)
 
   Dict.fromArray([
@@ -341,7 +341,7 @@ let isConnected = (
   facade: t,
   ~name: option<string>=?,
 ): dict<JSON.t> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
 
   let poolConnected = switch ConnectionPool.isConnected(facade.pool, ~name=connName) {
   | Ok(c) => c
@@ -407,7 +407,7 @@ let queryData = (
   ~params: option<array<JSON.t>>=?,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   switch adapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
@@ -416,12 +416,12 @@ let queryData = (
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
         | Ok(q) => {
-            let rowsJson = JSON.Array(Belt.Array.map(q.rows, r => JSON.Object(r)))
-            let colsJson = JSON.Array(Belt.Array.map(q.columns, c => JSON.String(c)))
+            let rowsJson = JSON.Array(Array.map(q.rows, r => JSON.Object(r)))
+            let colsJson = JSON.Array(Array.map(q.columns, c => JSON.String(c)))
             let result = Dict.make()
             Dict.set(result, "success", JSON.Boolean(true))
             Dict.set(result, "rows", rowsJson)
-            Dict.set(result, "count", JSON.Number(Int.toFloat(Belt.Array.length(q.rows))))
+            Dict.set(result, "count", JSON.Number(Int.toFloat(Array.length(q.rows))))
             Dict.set(result, "columns", colsJson)
             Dict.set(result, "error", JSON.Null)
             Promise.resolve(result)
@@ -443,7 +443,7 @@ let insertData = (
   ~data: JSON.t,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   // Guard 1: readonly (mutating op)
   switch assertNotReadonly(facade, ~opName="insert_data") {
   | Error(err) => Promise.resolve(shapeErr(err))
@@ -456,7 +456,7 @@ let insertData = (
       let dataDicts: array<dict<JSON.t>> = switch data {
       | JSON.Object(d) => [d]
       | JSON.Array(arr) =>
-        Belt.Array.map(arr, item => {
+        Array.map(arr, item => {
           switch item {
           | JSON.Object(d) => d
           | _ => Dict.make()
@@ -470,14 +470,14 @@ let insertData = (
         remaining: array<dict<JSON.t>>,
         ~acc: int,
       ): Promise.t<dict<JSON.t>> => {
-        if Belt.Array.length(remaining) == 0 {
+        if Array.length(remaining) == 0 {
           let result = Dict.make()
           Dict.set(result, "success", JSON.Boolean(true))
           Dict.set(result, "affected", JSON.Number(Int.toFloat(acc)))
           Promise.resolve(result)
         } else {
-          let head = Belt.Array.getUnsafe(remaining, 0)
-          let tail = Belt.Array.sliceToEnd(remaining, 1)
+          let head = Array.getUnsafe(remaining, 0)
+          let tail = Array.slice(remaining, ~start=1)
           adapter.insertData(table, head)
             ->Promise.then(r => {
               switch r {
@@ -507,7 +507,7 @@ let updateData = (
   ~confirm: bool=false,
   ~dryRun: bool=false,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   // Guard 1: readonly (mutating op)
   switch assertNotReadonly(facade, ~opName="update_data") {
   | Error(err) => Promise.resolve(shapeErr(err))
@@ -519,7 +519,7 @@ let updateData = (
           // Guard 3: mass-update (only when whereDict is absent/empty)
           let whereIsEmpty = switch whereDict {
           | None => true
-          | Some(d) => Belt.Array.length(Js.Dict.entries(d)) == 0
+          | Some(d) => Array.length(Js.Dict.entries(d)) == 0
           }
           if whereIsEmpty {
             if dryRun {
@@ -531,7 +531,7 @@ let updateData = (
               let msg = "confirm=True required for update_data"
               Promise.resolve(shapeErr(Errors.validationError(msg)))
             } else {
-adapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.Object(d))->Belt.Option.map(v => Some(v)))
+adapter.updateData(table, setDict, ~where=?whereDict->Option.map(d => JSON.Object(d))->Option.map(v => Some(v)))
               ->Promise.then(r => {
                 switch r {
                 | Error(e) => Promise.resolve(shapeErr(e))
@@ -546,7 +546,7 @@ adapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.
             }
           } else {
             // Targeted update (whereDict present) — no confirm required
-            adapter.updateData(table, setDict, ~where=?whereDict->Belt.Option.map(d => JSON.Object(d))->Belt.Option.map(v => Some(v)))
+            adapter.updateData(table, setDict, ~where=?whereDict->Option.map(d => JSON.Object(d))->Option.map(v => Some(v)))
               ->Promise.then(r => {
                 switch r {
                 | Error(e) => Promise.resolve(shapeErr(e))
@@ -579,7 +579,7 @@ let deleteData = (
   ~confirm: bool=false,
   ~dryRun: bool=false,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   // Guard 1: readonly (mutating op)
   switch assertNotReadonly(facade, ~opName="delete_data") {
   | Error(err) => Promise.resolve(shapeErr(err))
@@ -590,7 +590,7 @@ let deleteData = (
     | Ok(adapter) => {
         // Guard 3: WHERE must be non-empty (always required for delete)
         let whereEntries = Js.Dict.entries(whereDict)
-        if Belt.Array.length(whereEntries) == 0 {
+        if Array.length(whereEntries) == 0 {
           let msg = "DELETE requires non-empty WHERE clause"
           Promise.resolve(shapeErr(Errors.validationError(msg)))
         } else if dryRun {
@@ -602,7 +602,7 @@ let deleteData = (
           let msg = "confirm=True required for delete_data"
           Promise.resolve(shapeErr(Errors.validationError(msg)))
         } else {
-          adapter.deleteData(table, ~where=?Some(JSON.Object(whereDict))->Belt.Option.map(v => Some(v)))
+          adapter.deleteData(table, ~where=?Some(JSON.Object(whereDict))->Option.map(v => Some(v)))
             ->Promise.then(r => {
               switch r {
               | Error(e) => Promise.resolve(shapeErr(e))
@@ -631,7 +631,7 @@ let getTables = (
   facade: t,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
@@ -642,10 +642,10 @@ let getTables = (
         | Ok(tables) => {
             let result = Dict.make()
             Dict.set(result, "success", JSON.Boolean(true))
-            Dict.set(result, "tables", JSON.Array(Belt.Array.map(tables, t => {
+            Dict.set(result, "tables", JSON.Array(Array.map(tables, t => {
               let d = Dict.make()
               Dict.set(d, "name", JSON.String(t.name))
-              Dict.set(d, "fields", JSON.Array(Belt.Array.map(t.fields, f => {
+              Dict.set(d, "fields", JSON.Array(Array.map(t.fields, f => {
                 let fd = Dict.make()
                 Dict.set(fd, "name", JSON.String(f.name))
                 Dict.set(fd, "type", JSON.String(f.type_))
@@ -661,12 +661,12 @@ let getTables = (
               })))
               Dict.set(d, "recordCount", JSON.Number(Int.toFloat(t.recordCount)))
               Dict.set(d, "primaryKey", switch t.primaryKey {
-                | Some(pk) => JSON.Array(Belt.Array.map(pk, s => JSON.String(s)))
+                | Some(pk) => JSON.Array(Array.map(pk, s => JSON.String(s)))
                 | None => JSON.Null
               })
               JSON.Object(d)
             })))
-            Dict.set(result, "count", JSON.Number(Int.toFloat(Belt.Array.length(tables))))
+            Dict.set(result, "count", JSON.Number(Int.toFloat(Array.length(tables))))
             Promise.resolve(result)
           }
         }
@@ -686,7 +686,7 @@ let getTableSchema = (
   ~table: string,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
@@ -695,12 +695,12 @@ let getTableSchema = (
         switch r {
         | Error(e) => Promise.resolve(shapeErr(e))
         | Ok(tables) =>
-          switch Belt.Array.getBy(tables, t => t.name == table) {
+          switch Array.find(tables, t => t.name == table) {
           | None => Promise.resolve(shapeErr(Errors.validationError("Table '" ++ table ++ "' not found")))
           | Some(t) => {
               let d = Dict.make()
               Dict.set(d, "name", JSON.String(t.name))
-              Dict.set(d, "fields", JSON.Array(Belt.Array.map(t.fields, f => {
+              Dict.set(d, "fields", JSON.Array(Array.map(t.fields, f => {
                 let fd = Dict.make()
                 Dict.set(fd, "name", JSON.String(f.name))
                 Dict.set(fd, "type", JSON.String(f.type_))
@@ -716,7 +716,7 @@ let getTableSchema = (
               })))
               Dict.set(d, "recordCount", JSON.Number(Int.toFloat(t.recordCount)))
               Dict.set(d, "primaryKey", switch t.primaryKey {
-                | Some(pk) => JSON.Array(Belt.Array.map(pk, s => JSON.String(s)))
+                | Some(pk) => JSON.Array(Array.map(pk, s => JSON.String(s)))
                 | None => JSON.Null
               })
               let result = Dict.make()
@@ -741,7 +741,7 @@ let getRelationships = (
   facade: t,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
@@ -752,17 +752,17 @@ let getRelationships = (
         | Ok(rels) => {
             let result = Dict.make()
             Dict.set(result, "success", JSON.Boolean(true))
-            Dict.set(result, "relationships", JSON.Array(Belt.Array.map(rels, rel => {
+            Dict.set(result, "relationships", JSON.Array(Array.map(rels, rel => {
               let d = Dict.make()
               Dict.set(d, "name", JSON.String(rel.name))
               Dict.set(d, "table", JSON.String(rel.table))
               Dict.set(d, "foreignTable", JSON.String(rel.foreignTable))
               Dict.set(d, "attributes", JSON.String(rel.attributes))
-              Dict.set(d, "columns", JSON.Array(Belt.Array.map(rel.columns, s => JSON.String(s))))
-              Dict.set(d, "foreignColumns", JSON.Array(Belt.Array.map(rel.foreignColumns, s => JSON.String(s))))
+              Dict.set(d, "columns", JSON.Array(Array.map(rel.columns, s => JSON.String(s))))
+              Dict.set(d, "foreignColumns", JSON.Array(Array.map(rel.foreignColumns, s => JSON.String(s))))
               JSON.Object(d)
             })))
-            Dict.set(result, "count", JSON.Number(Int.toFloat(Belt.Array.length(rels))))
+            Dict.set(result, "count", JSON.Number(Int.toFloat(Array.length(rels))))
             Promise.resolve(result)
           }
         }
@@ -781,7 +781,7 @@ let getQueries = (
   facade: t,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
@@ -792,14 +792,14 @@ let getQueries = (
         | Ok(queries) => {
             let result = Dict.make()
             Dict.set(result, "success", JSON.Boolean(true))
-            Dict.set(result, "queries", JSON.Array(Belt.Array.map(queries, q => {
+            Dict.set(result, "queries", JSON.Array(Array.map(queries, q => {
               let d = Dict.make()
               Dict.set(d, "name", JSON.String(q.name))
               Dict.set(d, "sql", JSON.String(q.sql))
               Dict.set(d, "type", JSON.String(q.type_))
               JSON.Object(d)
             })))
-            Dict.set(result, "count", JSON.Number(Int.toFloat(Belt.Array.length(queries))))
+            Dict.set(result, "count", JSON.Number(Int.toFloat(Array.length(queries))))
             Promise.resolve(result)
           }
         }
@@ -818,7 +818,7 @@ let getDatabaseStatistics = (
   facade: t,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
   | Error(err) => Promise.resolve(shapeErr(err))
   | Ok(adapter) =>
@@ -830,7 +830,7 @@ let getDatabaseStatistics = (
             let result = Dict.make()
             Dict.set(result, "success", JSON.Boolean(true))
             // Merge stats dict directly (objects/file/system structure from adapter)
-            Js.Dict.entries(stats)->Belt.Array.forEach(((k, v)) => {
+            Js.Dict.entries(stats)->Array.forEach(((k, v)) => {
               Dict.set(result, k, v)
             })
             Promise.resolve(result)
@@ -854,7 +854,7 @@ let executeRawSql = (
   ~confirm: bool=false,
   ~dryRun: bool=false,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   // Guard 1: readonly (unconditional — dry_run does not bypass)
   switch assertNotReadonly(facade, ~opName="execute_raw_sql") {
   | Error(err) => Promise.resolve(shapeErr(err))
@@ -918,15 +918,15 @@ let _validateExportPath = (
   if String.startsWith(filePath, "\\\\") || String.startsWith(filePath, "//") {
     Error(Errors.pathGuardError("UNC paths not allowed"))
   } else {
-    let segments = Js.String.split("/", filePath)->Belt.Array.concat(
+    let segments = Js.String.split("/", filePath)->Array.concat(
       Js.String.split("\\", filePath)
     )
-    if Belt.Array.some(segments, s => s == "..") {
+    if Array.some(segments, s => s == "..") {
       Error(Errors.pathGuardError("Path traversal not allowed"))
     } else {
       let resolved = NodeJs.Path.resolve([filePath])
-      if !Belt.Array.some(allowed, dir => String.startsWith(resolved, dir)) {
-        let msg = "file_path: path not allowed: " ++ filePath ++ ". Allowed directories: [" ++ Belt.Array.joinWith(allowed, ",", s => s) ++ "]"
+      if !Array.some(allowed, dir => String.startsWith(resolved, dir)) {
+        let msg = "file_path: path not allowed: " ++ filePath ++ ". Allowed directories: [" ++ Array.join(allowed, ", ") ++ "]"
         Error(Errors.pathGuardError(msg))
       } else {
         Ok(resolved)
@@ -956,7 +956,7 @@ let exportData = (
   ~header: option<bool>=?,
   ~name: option<string>=?,
 ): Promise.t<dict<JSON.t>> => {
-  let connName = name->Belt.Option.getWithDefault("default")
+  let connName = name->Option.getWithDefault("default")
   // Guard 1: readonly
   switch assertNotReadonly(facade, ~opName="export_data") {
   | Error(err) => Promise.resolve(shapeErr(err))
@@ -981,16 +981,16 @@ let exportData = (
                     | Error(e) => Promise.resolve(shapeErr(e))
                     | Ok(q) => {
                         // Build rows as array<array<string>> for CSV serialization
-                        let rows: array<array<string>> = Belt.Array.map(q.rows, rowDict => {
-                          Belt.Array.map(q.columns, col => {
+                        let rows: array<array<string>> = Array.map(q.rows, rowDict => {
+                          Array.map(q.columns, col => {
                             switch Js.Dict.get(rowDict, col) {
                             | Some(v) => _jsonValueToString(v)
                             | None => ""
                             }
                           })
                         })
-                        let csvDelimiter = delimiter->Belt.Option.getWithDefault(",")
-                        let csvHeader = header->Belt.Option.getWithDefault(true)
+                        let csvDelimiter = delimiter->Option.getWithDefault(",")
+                        let csvHeader = header->Option.getWithDefault(true)
                         let content = if format == "csv" {
                           Adapters.CsvWriter.serializeWithHeaders(
                             q.columns,
@@ -999,13 +999,13 @@ let exportData = (
                           )
                         } else {
                           // JSON format
-                          JSON.stringify(JSON.Array(Belt.Array.map(q.rows, r => JSON.Object(r))))
+                          JSON.stringify(JSON.Array(Array.map(q.rows, r => JSON.Object(r))))
                         }
                         // Write file
                         let _ = NodeJs.Fs.writeFileSync(resolvedPath, NodeJs.Buffer.fromString(content))
                         let result = Dict.make()
                         Dict.set(result, "success", JSON.Boolean(true))
-                        Dict.set(result, "rows_exported", JSON.Number(Int.toFloat(Belt.Array.length(q.rows))))
+                        Dict.set(result, "rows_exported", JSON.Number(Int.toFloat(Array.length(q.rows))))
                         Dict.set(result, "file_path", JSON.String(resolvedPath))
                         Dict.set(result, "format", JSON.String(format))
                         Promise.resolve(result)

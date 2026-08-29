@@ -30,7 +30,7 @@ let getVersion = (): string => {
   switch Js.Json.decodeObject(json) {
   | Some(obj) =>
     switch Js.Dict.get(obj, "version") {
-    | Some(v) => Js.Json.decodeString(v)->Belt.Option.getWithDefault("0.0.0")
+    | Some(v) => Js.Json.decodeString(v)->Option.getWithDefault("0.0.0")
     | None => "0.0.0"
     }
   | None => "0.0.0"
@@ -393,7 +393,7 @@ let registerTools = (server: mcpServer, facade: Facade.t): unit => {
     ),
   ]
 
-  Belt.Array.forEach(tools, ((name, description, inputSchema, callback)) => {
+  Array.forEach(tools, ((name, description, inputSchema, callback)) => {
     ignore(McpSdk.registerTool(
       server,
       name,
@@ -411,11 +411,11 @@ let shutdown = (server: mcpServer, facade: Facade.t): Promise.t<unit> => {
   let connections = Facade.listConnections(facade)
   let connNames = Js.Dict.keys(connections)
   let rec disconnectAll = (names: array<string>): Promise.t<unit> => {
-    if Belt.Array.length(names) == 0 {
+    if Array.length(names) == 0 {
       Promise.resolve()
     } else {
-      let name = names[0]->Belt.Option.getWithDefault("default")
-      let rest = Belt.Array.sliceToEnd(names, 1)
+      let name = names[0]->Option.getWithDefault("default")
+      let rest = Array.slice(names, ~start=1)
       Facade.disconnectAccess(facade, ~name)
         ->Promise.then(_ => disconnectAll(rest))
     }

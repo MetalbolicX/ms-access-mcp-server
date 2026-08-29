@@ -75,7 +75,7 @@ let transcribeJson: JSON.t => JSON.t = input => {
   JSON.Object(dict{
     "isError": JSON.Boolean(r.isError),
     "content": JSON.Array(
-      r.content->Belt.Array.map(b =>
+      r.content->Array.map(b =>
         JSON.Object(dict{
           "type": JSON.String(b.type_),
           "text": JSON.String(b.text),

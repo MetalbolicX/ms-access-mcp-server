@@ -242,7 +242,7 @@ test("ControlInfo has name, controlType, properties fields", () => {
   | {name, controlType, properties} => {
       let n = name == "txtName"
       let t = controlType == "TextBox"
-      let p = Belt.Array.size(Dict.keysToArray(properties)) == 0
+      let p = Array.length(Dict.keysToArray(properties)) == 0
       assertion(~operator="equal", (a, b) => a == b, n && t && p, true)
     }
   }

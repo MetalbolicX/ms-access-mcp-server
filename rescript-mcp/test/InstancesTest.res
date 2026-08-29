@@ -58,7 +58,7 @@ testAsync("FakeOdbcAdapter.asInstance: connect passthrough records call in log",
   let instance = Fakes.FakeOdbcAdapter.asInstance(fake)
   ignore(instance.connect("/tmp/test.accdb"))
   let calls = Fakes.CallLog.connectCalls()
-  let count = Belt.List.length(calls)
+  let count = List.length(calls)
   assertion(~operator="equal", (a, b) => a == b, count, 1)
   cb(~planned=1, ())
 })
@@ -93,7 +93,7 @@ testAsync("FakeSchemaAdapter.asInstance: connect passthrough records call in log
   let instance = Fakes.FakeSchemaAdapter.asInstance(fake)
   ignore(instance.connect("/tmp/test.accdb"))
   let calls = Fakes.CallLog.schemaCalls()
-  let count = Belt.List.length(calls)
+  let count = List.length(calls)
   assertion(~operator="equal", (a, b) => a == b, count, 1)
   cb(~planned=1, ())
 })
@@ -105,7 +105,7 @@ testAsync("FakeSchemaAdapter.asInstance: getTables returns Ok([]) with no fake t
     ->Promise.then(r => {
       Promise.resolve(
         switch r {
-        | Ok(tables) => assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(tables), 0)
+        | Ok(tables) => assertion(~operator="equal", (a, b) => a == b, Array.length(tables), 0)
         | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
         }
       )

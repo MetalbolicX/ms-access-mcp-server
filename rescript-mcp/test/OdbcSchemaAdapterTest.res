@@ -121,9 +121,9 @@ module FakeConnectionSchema = {
       }))
     } else if String.includes(sql, "INFORMATION_SCHEMA.VIEWS") {
       viewsQueryCalled.contents = true
-      let rows: array<oDBcRow> = Belt.Array.map(viewsResponse, row => {
+      let rows: array<oDBcRow> = Array.map(viewsResponse, row => {
         let entries: array<(string, oDBcValue)> = %raw("d => Object.entries(d)")(row)
-        let mapped = Belt.Array.map(entries, ((k, v)) => {
+        let mapped = Array.map(entries, ((k, v)) => {
           let converted: oDBcValue = switch v {
           | Bindings.Odbc.Str(s) => Bindings.Odbc.Str(s)
           | other => other
@@ -136,7 +136,7 @@ module FakeConnectionSchema = {
       Promise.resolve(Ok({
         rows: rows,
         columns: ["TABLE_NAME", "VIEW_DEFINITION"],
-        count: Belt.Array.length(rows),
+        count: Array.length(rows),
         statement: Some(sql),
       }))
     } else {

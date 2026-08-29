@@ -26,7 +26,6 @@ type connectionState = {
 
 // ---------------------------------------------------------------------------
 // Pool — internal state for the connection pool
-// Uses Belt.MapString for string-keyed map (remove returns new map)
 // ---------------------------------------------------------------------------
 
 type pool = {
@@ -51,7 +50,7 @@ let _findConnection = (
   connections: array<(string, connectionState)>,
   name: string,
 ): option<connectionState> => {
-  Belt.Array.getBy(connections, ((n, _state)) => n == name)->Option.map(((_n, state)) => state)
+  Array.find(connections, ((n, _state)) => n == name)->Option.map(((_n, state)) => state)
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +78,7 @@ let connect = (
         password: password,
         createdAt: Date.toISOString(Date.make()),
       }
-      p.connections = Belt.Array.concat(p.connections, [(name, state)])
+      p.connections = Array.concat(p.connections, [(name, state)])
       Promise.resolve(Ok(state))
     }
   }
@@ -107,7 +106,7 @@ let disconnect = (
   | Some(state) => {
       state.connected = false
       state.dbPath = None
-      p.connections = Belt.Array.keep(p.connections, ((n, _state)) => n != target)
+      p.connections = Array.filter(p.connections, ((n, _state)) => n != target)
       Promise.resolve(Ok(()))
     }
   }
@@ -227,7 +226,7 @@ let _findAlias = (
   aliases: array<(string, string)>,
   alias: string,
 ): option<string> => {
-  Belt.Array.getBy(aliases, ((a, _n)) => a == alias)->Option.map(((_a, n)) => n)
+  Array.find(aliases, ((a, _n)) => a == alias)->Option.map(((_a, n)) => n)
 }
 
 let _aliasExistsForDifferentName = (
@@ -255,7 +254,7 @@ let registerAlias = (
   if _aliasExistsForDifferentName(p.aliases, alias, name) {
     Error(poolAliasError("Alias '" ++ alias ++ "' already registered for a different connection"))
   } else {
-    p.aliases = Belt.Array.concat(p.aliases, [(alias, name)])
+    p.aliases = Array.concat(p.aliases, [(alias, name)])
     Ok(())
   }
 }

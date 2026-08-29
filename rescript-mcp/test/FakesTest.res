@@ -21,7 +21,7 @@ testAsync("FakeSchemaAdapter: make().getTables() returns Ok([])", cb => {
     ->Promise.then(r => {
       Promise.resolve(
         switch r {
-        | Ok(tables) => assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(tables), 0)
+        | Ok(tables) => assertion(~operator="equal", (a, b) => a == b, Array.length(tables), 0)
         | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
         }
       )

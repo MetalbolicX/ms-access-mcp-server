@@ -72,7 +72,7 @@ let capture: unit => Promise.t<result<array<trustedLocation>, Errors.t>> = (
                               | _ => false
                               }
                               let loc: trustedLocation = {path: path, allowSubFolders: false, isUser: isUser}
-                              makeArray(i + 1, Belt.Array.concat(acc, [loc]))
+                              makeArray(i + 1, Array.concat(acc, [loc]))
                             }
                           | _ => makeArray(i + 1, acc)
                           }

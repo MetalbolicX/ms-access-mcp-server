@@ -420,7 +420,7 @@ let buildTestHarness = (): Promise.t<(Bindings.McpSdk.inMemoryTransport, Binding
         ("execute_raw_sql", "Execute arbitrary SQL (including DDL) with safety guards.", Mcp.Tools.executeRawSqlSchema, makeExecuteRawSqlCallback(facade)),
       ]
 
-      Belt.Array.forEach(allTools, ((name, description, inputSchema, callback)) => {
+      Array.forEach(allTools, ((name, description, inputSchema, callback)) => {
         let envelopeCallback: toolCallback = (. args) => {
           callback(args)
             ->Promise.then(result => Promise.resolve(Mcp.Envelope.transcribeJson(result)))
@@ -588,13 +588,13 @@ testAsync("MCP server: tools/list returns exactly 12 tools with Python-verbatim 
           }
 
           let countOk = switch toolsArr {
-          | Some(a) => Belt.Array.length(a) == 12
+          | Some(a) => Array.length(a) == 12
           | None => false
           }
 
           // Extract names
           let names = switch toolsArr {
-          | Some(a) => Belt.Array.map(a, item => {
+          | Some(a) => Array.map(a, item => {
               switch item {
               | JSON.Object(o) => {
                   switch Dict.get(o, "name") {
@@ -613,8 +613,8 @@ testAsync("MCP server: tools/list returns exactly 12 tools with Python-verbatim 
             "get_tables", "get_table_schema", "get_queries", "execute_raw_sql",
           ]
 
-          let namesMatch = Belt.Array.every(expected, e => {
-            Belt.Array.some(names, n => n == Some(e))
+          let namesMatch = Array.every(expected, e => {
+            Array.some(names, n => n == Some(e))
           })
 
           // Assert published JSON Schema properties rather than merely checking
@@ -718,7 +718,7 @@ testAsync("MCP server: tools/call get_tables returns content[0].type=text, isErr
             // content[0].type === "text"
             let firstType = switch contentArr {
             | Some(a) => {
-                switch Belt.Array.get(a, 0) {
+                switch Array.get(a, 0) {
                 | Some(JSON.Object(item)) => {
                     switch Dict.get(item, "type") {
                     | Some(JSON.String(t)) => Some(t) | _ => None
@@ -808,7 +808,7 @@ testAsync("MCP server: tools/call connect_access returns content text with succe
             }
             let textContent = switch contentArr {
             | Some(a) => {
-                switch Belt.Array.get(a, 0) {
+                switch Array.get(a, 0) {
                 | Some(JSON.Object(item)) => {
                     switch Dict.get(item, "text") {
                     | Some(JSON.String(t)) => Some(t) | _ => None

@@ -9,7 +9,7 @@ module FakeConnectionDdl = {
   let failOnSql: ref<option<string>> = ref(None)
   let reset = () => { executedSql.contents = []; failOnSql.contents = None }
   let query = (sql: string, _params: array<JSON.t>): Promise.t<result<oDBcResult, Errors.t>> => {
-    executedSql.contents = Belt.Array.concat(executedSql.contents, [sql])
+    executedSql.contents = Array.concat(executedSql.contents, [sql])
     switch failOnSql.contents {
     | Some(pattern) if String.includes(sql, pattern) => Promise.resolve(Error(Errors.databaseError("Driver error")))
     | _ => Promise.resolve(Ok({rows: [], columns: [], count: 0, statement: Some(sql)}))
@@ -52,7 +52,7 @@ test("DDL sync: createTable, deleteTable, alterTable (add/drop/modify) each capt
     d
   }
   let eq = (expected: string) => {
-    let actual = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) {
+    let actual = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) {
       | Some(s) => s | None => ""
     }
     if actual != expected { raise(Invalid_argument("Expected: " ++ expected ++ ", Got: " ++ actual)) }
@@ -94,7 +94,7 @@ testAsync("DDL async success: createTable captures SQL matching SqlBuilder.creat
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -121,7 +121,7 @@ testAsync("DDL async success: deleteTable captures SQL matching SqlBuilder.dropT
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -150,7 +150,7 @@ testAsync("DDL async success: alterTable AddColumn captures SQL matching SqlBuil
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -177,7 +177,7 @@ testAsync("DDL async success: createQuery captures SQL matching SqlBuilder.creat
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -204,7 +204,7 @@ testAsync("DDL async success: deleteQuery captures SQL matching SqlBuilder.dropV
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -233,8 +233,8 @@ testAsync("DDL async success: setQuerySql captures [dropSql, createSql] in order
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
           let sqls = FakeConnectionDdl.executedSql.contents
-          let captured0 = switch Belt.Array.get(sqls, 0) { | Some(s) => s | None => "" }
-          let captured1 = switch Belt.Array.get(sqls, 1) { | Some(s) => s | None => "" }
+          let captured0 = switch Array.get(sqls, 0) { | Some(s) => s | None => "" }
+          let captured1 = switch Array.get(sqls, 1) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured0, dropSql)
           assertion(~operator="equal", (a, b) => a == b, captured1, createSql)
         }
@@ -445,8 +445,8 @@ testAsync("setQuerySql: executes DROP VIEW then CREATE VIEW in order via SqlBuil
   ignore(OdbcAdapter.setQuerySql(adapter, "qryOrders", "SELECT ID FROM Orders")
     ->Promise.then(_result => {
       let sqls = FakeConnectionDdl.executedSql.contents
-      let captured0 = switch Belt.Array.get(sqls, 0) { | Some(s) => s | None => "" }
-      let captured1 = switch Belt.Array.get(sqls, 1) { | Some(s) => s | None => "" }
+      let captured0 = switch Array.get(sqls, 0) { | Some(s) => s | None => "" }
+      let captured1 = switch Array.get(sqls, 1) { | Some(s) => s | None => "" }
       assertion(~operator="equal", (a, b) => a == b, captured0, dropSql)
       assertion(~operator="equal", (a, b) => a == b, captured1, createSql)
       Promise.resolve()
@@ -520,7 +520,7 @@ testAsync("getIndexes: returns Ok([]) when connected (contract)", cb => {
   ignore(OdbcAdapter.getIndexes(adapter, "Orders")
     ->Promise.then(result => {
       switch result {
-      | Ok(indexes) => assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(indexes), 0)
+      | Ok(indexes) => assertion(~operator="equal", (a, b) => a == b, Array.length(indexes), 0)
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
@@ -541,7 +541,7 @@ testAsync("getIndexes: returns Ok([]) when disconnected (contract)", cb => {
   ignore(OdbcAdapter.getIndexes(adapter, "Orders")
     ->Promise.then(result => {
       switch result {
-      | Ok(indexes) => assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(indexes), 0)
+      | Ok(indexes) => assertion(~operator="equal", (a, b) => a == b, Array.length(indexes), 0)
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
       Promise.resolve()
@@ -570,7 +570,7 @@ testAsync("DDL async success: createIndex basic captures SQL matching SqlBuilder
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -597,7 +597,7 @@ testAsync("DDL async success: createIndex UNIQUE captures SQL matching SqlBuilde
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -624,7 +624,7 @@ testAsync("DDL async success: createIndex UNIQUE+IGNORE NULL captures SQL with W
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -652,7 +652,7 @@ testAsync("DDL async success: createIndex ignoreNulls without UNIQUE omits WITH 
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -679,7 +679,7 @@ testAsync("DDL async success: dropIndex captures SQL matching SqlBuilder.dropInd
       switch result {
       | Ok(ddl) => {
           assertion(~operator="equal", (a, b) => a == b, ddl.success, true)
-          let captured = switch Belt.Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
+          let captured = switch Array.get(FakeConnectionDdl.executedSql.contents, 0) { | Some(s) => s | None => "" }
           assertion(~operator="equal", (a, b) => a == b, captured, expectedSql)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)

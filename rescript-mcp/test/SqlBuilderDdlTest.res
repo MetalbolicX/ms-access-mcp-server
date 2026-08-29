@@ -26,7 +26,7 @@ test("ODBC_TYPE_MAP all known types", () => {
     ("text", "VARCHAR"), ("varchar", "VARCHAR"), ("long integer", "INT"),
     ("boolean", "BIT"), ("single", "REAL"),
   ]
-  Belt.Array.forEach(cases, ((input, expected)) => {
+  Array.forEach(cases, ((input, expected)) => {
     let result = odbcTypeMap(input)
     assertion(~operator="equal", (a, b) => a == b, result, expected)
   })
@@ -37,7 +37,7 @@ test("ODBC_TYPE_MAP empty string", () => {
 })
 
 test("ODBC_TYPE_MAP unknown types default to VARCHAR", () => {
-  Belt.Array.forEach(["Hyperlink", "Custom", "Foo"], input =>
+  Array.forEach(["Hyperlink", "Custom", "Foo"], input =>
     assertion(~operator="equal", (a, b) => a == b, odbcTypeMap(input), "VARCHAR")
   )
 })
@@ -170,7 +170,7 @@ test("alterTable add column", () => {
     ("Users", {name: "Email", colType: "Text", size: 100, nullable: true}, "ALTER TABLE [Users] ADD COLUMN [Email] VARCHAR(100) NULL"),
     ("People", {name: "Age", colType: "Long Integer", size: 0, nullable: false}, "ALTER TABLE [People] ADD COLUMN [Age] INT NOT NULL"),
   ]
-  Belt.Array.forEach(cases, ((table, col, expected)) => {
+  Array.forEach(cases, ((table, col, expected)) => {
     switch alterTable(table, AddColumn(col)) {
     | Some(sql) => assertion(~operator="equal", (a, b) => a == b, sql, expected)
     | None => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -187,7 +187,7 @@ test("alterTable modify column", () => {
     ("Users", {name: "Email", colType: "Text", size: 255, nullable: false}, "ALTER TABLE [Users] ALTER COLUMN [Email] VARCHAR(255) NOT NULL"),
     ("Orders", {name: "Qty", colType: "Long Integer", size: 0, nullable: false}, "ALTER TABLE [Orders] ALTER COLUMN [Qty] INT NOT NULL"),
   ]
-  Belt.Array.forEach(cases, ((table, col, expected)) => {
+  Array.forEach(cases, ((table, col, expected)) => {
     switch alterTable(table, ModifyColumn(col)) {
     | Some(sql) => assertion(~operator="equal", (a, b) => a == b, sql, expected)
     | None => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -364,7 +364,7 @@ test("createRelationship brackets embedded ]", () => {
 
 test("createRelationship name exceeds 64 chars returns Error", () => {
   // "FK_" + 62 X's = 3 + 62 = 65 chars (> 64)
-  let longName = "FK_" ++ Belt.Array.make(62, "X")->Belt.Array.reduce("", (acc, _) => acc ++ "X")
+  let longName = "FK_" ++ Array.make(~length=62, "X")->Array.reduce("", (acc, _) => acc ++ "X")
   switch createRelationship(
     ~relationshipName=longName,
     ~table="Orders",
@@ -379,7 +379,7 @@ test("createRelationship name exceeds 64 chars returns Error", () => {
 
 test("createRelationship child table exceeds 64 chars returns Error", () => {
   // "Table_" + 58 X's = 6 + 58 = 64 chars exactly; use 59 X's for > 64
-  let longTable = "Table_" ++ Belt.Array.make(59, "X")->Belt.Array.reduce("", (acc, _) => acc ++ "X")
+  let longTable = "Table_" ++ Array.make(~length=59, "X")->Array.reduce("", (acc, _) => acc ++ "X")
   switch createRelationship(
     ~relationshipName="FK_Test",
     ~table=longTable,

@@ -748,7 +748,7 @@ test("insert_data handler: batch of records calls facadeOps with data array", ()
   assertion(~operator="equal", (a, b) => a == b, spy.called, true)
   let dataVal = spy.lastArgs->Dict.get("data")
   switch dataVal {
-  | Some(JSON.Array(arr)) => assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(arr), 2)
+  | Some(JSON.Array(arr)) => assertion(~operator="equal", (a, b) => a == b, Array.length(arr), 2)
   | _ => assertion(~operator="equal", (a, b) => a == b, false, true)
   }
 })
@@ -815,8 +815,8 @@ test("update_data handler: object where_dict passed through to facadeOps", () =>
         "setDict": JSON.Object(setDict),
         "whereDict": switch whereDict { | Some(d) => JSON.Object(d) | None => JSON.Null },
         "name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null },
-        "confirm": JSON.Boolean(confirm->Belt.Option.getWithDefault(false)),
-        "dryRun": JSON.Boolean(dryRun->Belt.Option.getWithDefault(false)),
+        "confirm": JSON.Boolean(confirm->Option.getWithDefault(false)),
+        "dryRun": JSON.Boolean(dryRun->Option.getWithDefault(false)),
       }
       spy.response
     }),
@@ -1029,8 +1029,8 @@ test("delete_data handler: object where_dict passed through to facadeOps", () =>
         "table": JSON.String(table),
         "whereDict": JSON.Object(whereDict),
         "name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null },
-        "confirm": JSON.Boolean(confirm->Belt.Option.getWithDefault(false)),
-        "dryRun": JSON.Boolean(dryRun->Belt.Option.getWithDefault(false)),
+        "confirm": JSON.Boolean(confirm->Option.getWithDefault(false)),
+        "dryRun": JSON.Boolean(dryRun->Option.getWithDefault(false)),
       }
       spy.response
     }),
@@ -1646,8 +1646,8 @@ test("execute_raw_sql handler: happy path INSERT calls facadeOps without confirm
       spy.lastArgs = dict{
         "sql": JSON.String(sql),
         "name": switch name { | Some(n) => JSON.String(n) | None => JSON.Null },
-        "confirm": JSON.Boolean(confirm->Belt.Option.getWithDefault(false)),
-        "dryRun": JSON.Boolean(dryRun->Belt.Option.getWithDefault(false)),
+        "confirm": JSON.Boolean(confirm->Option.getWithDefault(false)),
+        "dryRun": JSON.Boolean(dryRun->Option.getWithDefault(false)),
       }
       spy.response
     }),

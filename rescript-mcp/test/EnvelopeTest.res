@@ -7,7 +7,7 @@ open Test
 // Test helper: get first element from array (safe, since we check length first)
 // ---------------------------------------------------------------------------
 
-let getFirst: array<'a> => option<'a> = arr => Belt.Array.get(arr, 0)
+let getFirst: array<'a> => option<'a> = arr => Array.get(arr, 0)
 
 // ---------------------------------------------------------------------------
 // T4.1 — {success: true, rows: [...]} → isError: false, content with JSON text
@@ -22,7 +22,7 @@ test("transcribe: success:true dict returns isError:false with JSON content", ()
   let result = Mcp.Envelope.transcribe(JSON.Object(input))
 
   assertion(~operator="equal", (a, b) => a == b, result.isError, false)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.content), 1)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.content), 1)
   switch getFirst(result.content) {
   | Some(block) => {
       assertion(~operator="equal", (a, b) => a == b, block.type_, "text")
@@ -46,7 +46,7 @@ test("transcribe: success:false dict returns isError:true with JSON content", ()
   let result = Mcp.Envelope.transcribe(JSON.Object(input))
 
   assertion(~operator="equal", (a, b) => a == b, result.isError, true)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.content), 1)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.content), 1)
   switch getFirst(result.content) {
   | Some(block) => {
       assertion(~operator="equal", (a, b) => a == b, block.type_, "text")
@@ -72,7 +72,7 @@ test("transcribe: dry_run:true dict returns isError:false (not treated as error)
   let result = Mcp.Envelope.transcribe(JSON.Object(input))
 
   assertion(~operator="equal", (a, b) => a == b, result.isError, false)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.content), 1)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.content), 1)
   switch getFirst(result.content) {
   | Some(block) => assertion(~operator="equal", (a, b) => a == b, block.type_, "text")
   | None => assertion(~operator="equal", (a, b) => a == b, false, true)
@@ -89,7 +89,7 @@ test("transcribe: empty dict returns isError:false with '{}' text", () => {
   let result = Mcp.Envelope.transcribe(JSON.Object(input))
 
   assertion(~operator="equal", (a, b) => a == b, result.isError, false)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.content), 1)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.content), 1)
   switch getFirst(result.content) {
   | Some(block) => {
       assertion(~operator="equal", (a, b) => a == b, block.type_, "text")
@@ -123,7 +123,7 @@ test("transcribe: nested complex dict preserves all fields in JSON text", () => 
   let result = Mcp.Envelope.transcribe(JSON.Object(input))
 
   assertion(~operator="equal", (a, b) => a == b, result.isError, false)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.content), 1)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.content), 1)
   switch getFirst(result.content) {
   | Some(block) => {
       assertion(~operator="equal", (a, b) => a == b, block.type_, "text")

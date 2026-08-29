@@ -266,10 +266,10 @@ test("propertyCategories: all four dict fields present", () => {
     project: Dict.make(),
     all: Dict.make(),
   }
-  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.startup)->Belt.Array.length, 0)
-  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.app)->Belt.Array.length, 0)
-  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.project)->Belt.Array.length, 0)
-  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.all)->Belt.Array.length, 0)
+  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.startup)->Array.length, 0)
+  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.app)->Array.length, 0)
+  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.project)->Array.length, 0)
+  assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(cats.all)->Array.length, 0)
 })
 
 test("versioningEntry: type_ and name fields", () => {
@@ -280,10 +280,10 @@ test("versioningEntry: type_ and name fields", () => {
 
 test("versioningCompareResult: all four arrays start empty", () => {
   let result: versioningCompareResult = {new: [], missing: [], changed: [], unchanged: []}
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.new), 0)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.missing), 0)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.changed), 0)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.unchanged), 0)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.new), 0)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.missing), 0)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.changed), 0)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.unchanged), 0)
 })
 
 test("versioningExportResult: success=false + zero counts on failure", () => {
@@ -335,7 +335,7 @@ testAsync("getDatabaseProperties: not-connected returns empty categories", cb =>
       ->Promise.then(result => {
         Promise.resolve(
           assertion(~operator="equal", (a, b) => a == b,
-            Belt.Array.length(Dict.keysToArray(result.startup)), 0)
+            Array.length(Dict.keysToArray(result.startup)), 0)
         )
       })
       ->Promise.then(() => {
@@ -528,10 +528,10 @@ testAsync("compareVersioning: not-connected returns all-empty arrays", cb => {
           assertion(
             ~operator="equal",
             (a, b) => a == b,
-            Belt.Array.length(result.new) == 0 &&
-            Belt.Array.length(result.missing) == 0 &&
-            Belt.Array.length(result.changed) == 0 &&
-            Belt.Array.length(result.unchanged) == 0,
+            Array.length(result.new) == 0 &&
+            Array.length(result.missing) == 0 &&
+            Array.length(result.changed) == 0 &&
+            Array.length(result.unchanged) == 0,
             true
           )
         )
@@ -623,7 +623,7 @@ testAsync("integration getDatabaseProperties: startup property 'AllowFullMenus' 
     getDatabaseProperties({accessApp: None, daoDb: None, adoConn: None}, None)
       ->Promise.then(result => {
         Promise.resolve(
-          assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(result.startup)->Belt.Array.length >= 0, true)
+          assertion(~operator="equal", (a, b) => a == b, Dict.keysToArray(result.startup)->Array.length >= 0, true)
         )
       })
       ->Promise.then(() => {
@@ -725,7 +725,7 @@ testAsync("integration compareVersioning: unchanged entry has type_ and name", c
     )
       ->Promise.then(result => {
         Promise.resolve(
-          assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(result.unchanged) >= 0, true)
+          assertion(~operator="equal", (a, b) => a == b, Array.length(result.unchanged) >= 0, true)
         )
       })
       ->Promise.then(() => {

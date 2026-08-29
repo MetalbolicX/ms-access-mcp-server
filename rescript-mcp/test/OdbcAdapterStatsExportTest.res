@@ -42,7 +42,7 @@ module FakeExportConnection = {
 let _tmpCounter: ref<int> = ref(0)
 let makeTmpPath = (ext: string): string => {
   _tmpCounter := _tmpCounter.contents + 1
-  NodeJs.Os.tmpdir() ++ "/mcp-export-" ++ Belt.Int.toString(_tmpCounter.contents) ++ "." ++ ext
+  NodeJs.Os.tmpdir() ++ "/mcp-export-" ++ Int.toString(_tmpCounter.contents) ++ "." ++ ext
 }
 let fsExistsSync = (p: string): bool => NodeJs.Fs.existsSync(p)
 let fsReadFileSync = (p: string): string => NodeJs.Fs.readFileSync(p)->NodeJs.Buffer.toStringWithEncoding(NodeJs.StringEncoding.utf8)

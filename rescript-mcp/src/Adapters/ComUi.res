@@ -301,7 +301,7 @@ let _collectionItemNames: (ComInterfaces.sessionHandles, string) => Promise.t<ar
                                   ->Promise.then(nmResult => {
                                     let nm = switch nmResult { | Ok(JSON.String(s)) => s | _ => "" }
                                     let entry: formSummary = {name: nm, recordSource: ""}
-                                    gather(i + 1, total, Belt.Array.concat(acc, [entry]))
+                                    gather(i + 1, total, Array.concat(acc, [entry]))
                                   })
                                   ->Promise.catch(_ => gather(i + 1, total, acc))
                               }
@@ -518,7 +518,7 @@ let getReports: ComInterfaces.sessionHandles => Promise.t<array<reportSummary>> 
                                     ->Promise.then(nmResult => {
                                       let nm = switch nmResult { | Ok(JSON.String(s)) => s | _ => "" }
                                       let entry: reportSummary = {name: nm, recordSource: ""}
-                                      gather(i + 1, total, Belt.Array.concat(acc, [entry]))
+                                      gather(i + 1, total, Array.concat(acc, [entry]))
                                     })
                                     ->Promise.catch(_ => gather(i + 1, total, acc))
                                 }
@@ -636,7 +636,7 @@ let getMacros: ComInterfaces.sessionHandles => Promise.t<array<macroSummary>> = 
                                     ->Promise.then(nmResult => {
                                       let nm = switch nmResult { | Ok(JSON.String(s)) => s | _ => "" }
                                       let entry: macroSummary = {name: nm, macroType: "Macro"}
-                                      gather(i + 1, total, Belt.Array.concat(acc, [entry]))
+                                      gather(i + 1, total, Array.concat(acc, [entry]))
                                     })
                                     ->Promise.catch(_ => gather(i + 1, total, acc))
                                 }

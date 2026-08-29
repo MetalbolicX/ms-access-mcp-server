@@ -79,11 +79,11 @@ test("Config.allowedDirs: ACCESS_MCP_ALLOWED_DIRS semicolon-split", () => {
   NodeJs.Process.process.env->Dict.set("ACCESS_MCP_ALLOWED_DIRS", "")
   // Should parse to array of 3 dirs (order preserved)
   let expected = ["/a", "/b", "/c"]
-  let lenMatch = Belt.Array.length(result) == Belt.Array.length(expected)
+  let lenMatch = Array.length(result) == Array.length(expected)
   // Check each index matches
-  let i0 = Belt.Array.get(result, 0) == Belt.Array.get(expected, 0)
-  let i1 = Belt.Array.get(result, 1) == Belt.Array.get(expected, 1)
-  let i2 = Belt.Array.get(result, 2) == Belt.Array.get(expected, 2)
+  let i0 = Array.get(result, 0) == Array.get(expected, 0)
+  let i1 = Array.get(result, 1) == Array.get(expected, 1)
+  let i2 = Array.get(result, 2) == Array.get(expected, 2)
   assertion(~operator="equal", (a, b) => a == b, lenMatch && i0 && i1 && i2, true)
 })
 
@@ -92,7 +92,7 @@ test("Config.allowedDirs: empty string defaults to [userHome]", () => {
   let result = Config.allowedDirs()
   // Should default to user's home directory
   let home = NodeJs.Os.homedir()
-  let matches = Belt.Array.length(result) == 1 && Belt.Array.get(result, 0) == Some(home)
+  let matches = Array.length(result) == 1 && Array.get(result, 0) == Some(home)
   assertion(~operator="equal", (a, b) => a == b, matches, true)
 })
 
@@ -102,7 +102,7 @@ test("Config.allowedDirs: trims whitespace from each dir", () => {
   NodeJs.Process.process.env->Dict.set("ACCESS_MCP_ALLOWED_DIRS", "")
   // Should trim each entry — verify no leading/trailing whitespace
   // A trimmed string equals itself when whitespace is stripped from both ends
-  let allTrimmed = Belt.Array.every(result, dir => {
+  let allTrimmed = Array.every(result, dir => {
     let trimmed = String.trim(dir)
     dir == trimmed
   })

@@ -31,7 +31,7 @@ module CallLog = {
   }
 
   let connectCalls = () => {
-    Belt.List.keep(entries.contents, e =>
+    List.filter(entries.contents, e =>
       switch e {
       | Connect(_) => true
       | _ => false
@@ -40,7 +40,7 @@ module CallLog = {
   }
 
   let disconnectCalls = () => {
-    Belt.List.keep(entries.contents, e =>
+    List.filter(entries.contents, e =>
       switch e {
       | Disconnect(_) => true
       | _ => false
@@ -49,7 +49,7 @@ module CallLog = {
   }
 
   let schemaCalls = () => {
-    Belt.List.keep(entries.contents, e =>
+    List.filter(entries.contents, e =>
       switch e {
       | SchemaCall(_) => true
       | _ => false
@@ -71,7 +71,7 @@ module FakeOdbcAdapter = {
   }
 
   let make = (~name: option<string>=?) => {
-    {connected: false, dbPath: None, name: name->Belt.Option.getWithDefault("fake-odbc")}
+    {connected: false, dbPath: None, name: name->Option.getWithDefault("fake-odbc")}
   }
 
   let connect = (
@@ -187,7 +187,7 @@ module FakeComAdapter = {
   }
 
   let make = (~name: option<string>=?) => {
-    {connected: false, dbPath: None, name: name->Belt.Option.getWithDefault("fake-com")}
+    {connected: false, dbPath: None, name: name->Option.getWithDefault("fake-com")}
   }
 
   let connect = (
@@ -299,7 +299,7 @@ module FakeSchemaAdapter = {
     {
       connected: false,
       dbPath: None,
-      name: name->Belt.Option.getWithDefault("fake-schema"),
+      name: name->Option.getWithDefault("fake-schema"),
       fakeTables: [],
       fakeRelationships: [],
       fakeQueries: [],
@@ -505,7 +505,7 @@ testAsync("FakeOdbcAdapter: connect records call in log", cb => {
   let adapter = FakeOdbcAdapter.make(~name="test-pool")
   ignore(adapter->FakeOdbcAdapter.connect("/tmp/test.accdb"))
   let calls = CallLog.connectCalls()
-  let count = Belt.List.length(calls)
+  let count = List.length(calls)
   assertion(~operator="equal", (a, b) => a == b, count, 1)
   cb(~planned=1, ())
 })
@@ -516,7 +516,7 @@ testAsync("FakeOdbcAdapter: disconnect records call in log", cb => {
   ignore(adapter->FakeOdbcAdapter.connect("/tmp/test.accdb"))
   ignore(adapter->FakeOdbcAdapter.disconnect)
   let calls = CallLog.disconnectCalls()
-  let count = Belt.List.length(calls)
+  let count = List.length(calls)
   assertion(~operator="equal", (a, b) => a == b, count, 1)
   cb(~planned=1, ())
 })
@@ -573,7 +573,7 @@ testAsync("FakeComAdapter: same interface as FakeOdbcAdapter", cb => {
   let adapter = FakeComAdapter.make(~name="test-com")
   ignore(adapter->FakeComAdapter.connect("/tmp/test.accdb"))
   let calls = CallLog.connectCalls()
-  let count = Belt.List.length(calls)
+  let count = List.length(calls)
   // Only FakeComAdapter connect call (FakeOdbcAdapter was reset)
   assertion(~operator="equal", (a, b) => a == b, count, 1)
   cb(~planned=1, ())

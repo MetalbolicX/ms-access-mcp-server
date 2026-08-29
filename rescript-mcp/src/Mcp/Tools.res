@@ -173,7 +173,7 @@ let normalizeWhereDict = (whereDictArg: option<JSON.t>): result<dict<JSON.t>, di
       }
   | Some(JSON.Object(d)) =>
       let entries = Js.Dict.entries(d)
-      if Belt.Array.length(entries) == 0 {
+      if Array.length(entries) == 0 {
         Error(dict{"success": JSON.Boolean(false), "error": JSON.String("Invalid arguments: where_dict is required (non-empty object or non-empty raw WHERE string)")})
       } else {
         Ok(d)
@@ -589,7 +589,7 @@ let makeTools = (ops: facadeOps): array<toolDef> => [
 
 let registerAll = (server: McpSdk.mcpServer, ops: facadeOps): unit => {
   let toolDefs = makeTools(ops)
-  Belt.Array.forEach(toolDefs, def => {
+  Array.forEach(toolDefs, def => {
     // Use %raw to create the SDK callback from the handler.
     // The SDK's registerTool expects (args: JSON.t) => JSON.t.
     // Our handler takes (args: dict<JSON.t>) => JSON.t.

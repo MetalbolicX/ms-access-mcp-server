@@ -20,9 +20,9 @@ let _needsQuoting = (field: string): bool => {
 // ---------------------------------------------------------------------------
 
 let escapeField = (field: string): string => {
-  field->Js.String2.split("")->Belt.Array.map(c => {
+  field->Js.String2.split("")->Array.map(c => {
     if c == "\"" { "\"\"" } else { c }
-  })->Belt.Array.reduce("", (acc, c) => acc ++ c)
+  })->Array.reduce("", (acc, c) => acc ++ c)
 }
 
 // ---------------------------------------------------------------------------
@@ -31,14 +31,14 @@ let escapeField = (field: string): string => {
 // ---------------------------------------------------------------------------
 
 let serializeRow = (fields: array<string>, ~delimiter: string=","): string => {
-  if Belt.Array.length(fields) == 0 {
+  if Array.length(fields) == 0 {
     ""
   } else {
     let rec loop = (i: int, ~acc: string): string => {
-      if i >= Belt.Array.length(fields) {
+      if i >= Array.length(fields) {
         acc
       } else {
-        let field = Belt.Array.getUnsafe(fields, i)
+        let field = Array.getUnsafe(fields, i)
         let escaped = _needsQuoting(field) ? "\"" ++ escapeField(field) ++ "\"" : field
         let newAcc = i == 0 ? escaped : acc ++ delimiter ++ escaped
         loop(i + 1, ~acc=newAcc)
@@ -53,14 +53,14 @@ let serializeRow = (fields: array<string>, ~delimiter: string=","): string => {
 // ---------------------------------------------------------------------------
 
 let serializeRows = (rows: array<array<string>>, ~delimiter: string=","): string => {
-  if Belt.Array.length(rows) == 0 {
+  if Array.length(rows) == 0 {
     ""
   } else {
     let rec loop = (i: int, ~acc: string): string => {
-      if i >= Belt.Array.length(rows) {
+      if i >= Array.length(rows) {
         acc
       } else {
-        let row = Belt.Array.getUnsafe(rows, i)
+        let row = Array.getUnsafe(rows, i)
         let line = serializeRow(row, ~delimiter)
         let newAcc = i == 0 ? line : acc ++ "\r\n" ++ line
         loop(i + 1, ~acc=newAcc)

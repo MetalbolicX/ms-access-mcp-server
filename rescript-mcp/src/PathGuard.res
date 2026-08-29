@@ -23,7 +23,7 @@ let pathArgNames: array<string> = [
 // ---------------------------------------------------------------------------
 
 let _isKnownPathArg = (argName: string): bool => {
-  Belt.Array.getBy(pathArgNames, n => n == argName) != None
+  Array.find(pathArgNames, n => n == argName) != None
 }
 
 // ---------------------------------------------------------------------------
@@ -43,10 +43,10 @@ let _isUncPath = (path: string): bool => {
 // ---------------------------------------------------------------------------
 
 let _hasTraversal = (path: string): bool => {
-  let segments = Js.String.split("/", path)->Belt.Array.concat(
+  let segments = Js.String.split("/", path)->Array.concat(
     Js.String.split("\\", path)
   )
-  Belt.Array.some(segments, s => s == "..")
+  Array.some(segments, s => s == "..")
 }
 
 // ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ let _hasTraversal = (path: string): bool => {
 
 let _isInsideAllowedDir = (path: string, allowedDirs: array<string>): bool => {
   let resolved = NodeJs.Path.resolve([path])
-  Belt.Array.some(allowedDirs, allowed => {
+  Array.some(allowedDirs, allowed => {
     String.startsWith(resolved, allowed)
   })
 }
@@ -86,7 +86,7 @@ let validatePath = (
   }
   // Step 4: Allowed-dir check
   else if !_isInsideAllowedDir(value, allowedDirs) {
-    let msg = argName ++ ": path not allowed: " ++ value ++ ". Allowed directories: [" ++ Belt.Array.joinWith(allowedDirs, ",", s => s) ++ "]"
+    let msg = argName ++ ": path not allowed: " ++ value ++ ". Allowed directories: [" ++ Array.join(allowedDirs, ", ") ++ "]"
     Error(Errors.pathGuardError(msg))
   }
   // Step 5: Return resolved absolute path on success

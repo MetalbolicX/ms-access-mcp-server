@@ -178,8 +178,8 @@ let detectDaoType: string => (string, int) = (
       // Digit-only positive integer → Long
       let isDigitOnly = String.length(value) > 0 && {
         let digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
-        let allDigits = Belt.Array.every(String.split(value, ""), (ch) =>
-          Belt.Array.some(digits, (d) => d == ch)
+        let allDigits = Array.every(String.split(value, ""), (ch) =>
+          Array.some(digits, (d) => d == ch)
         )
         allDigits
       }
@@ -431,7 +431,7 @@ let _APP_PROP_NAMES: array<string> = [
 let _inSet: (string, array<string>) => bool = (
   (name, set) => {
     let lowered = String.toLowerCase(name)
-    Belt.Array.some(set, (s) => s == lowered)
+    Array.some(set, (s) => s == lowered)
   }
 )
 
@@ -481,7 +481,7 @@ let getDatabaseProperties: (
 
           // Copy result.startup to startup dict
           let startupKeys = Dict.keysToArray(result.startup)
-          Belt.Array.reduce(startupKeys, (), (_, k) => {
+          Array.reduce(startupKeys, (), (_, k) => {
             let v = Dict.get(result.startup, k)
             switch v {
               | Some(s) => Dict.set(startup, k, s)
@@ -492,7 +492,7 @@ let getDatabaseProperties: (
 
           // Copy result.app to appDict
           let appKeys = Dict.keysToArray(result.app)
-          Belt.Array.reduce(appKeys, (), (_, k) => {
+          Array.reduce(appKeys, (), (_, k) => {
             let v = Dict.get(result.app, k)
             switch v {
               | Some(s) => Dict.set(appDict, k, s)
@@ -503,7 +503,7 @@ let getDatabaseProperties: (
 
           // Copy result.project to projectDict
           let projectKeys = Dict.keysToArray(result.project)
-          Belt.Array.reduce(projectKeys, (), (_, k) => {
+          Array.reduce(projectKeys, (), (_, k) => {
             let v = Dict.get(result.project, k)
             switch v {
               | Some(s) => Dict.set(projectDict, k, s)
@@ -514,7 +514,7 @@ let getDatabaseProperties: (
 
           // Copy result.all to allDict
           let allKeys = Dict.keysToArray(result.all)
-          Belt.Array.reduce(allKeys, (), (_, k) => {
+          Array.reduce(allKeys, (), (_, k) => {
             let v = Dict.get(result.all, k)
             switch v {
               | Some(s) => Dict.set(allDict, k, s)
@@ -715,7 +715,7 @@ let exportAllVersioning: (
       // Export forms
       getFormsFn()
         ->Promise.then(forms => {
-          Belt.Array.reduce(forms, Promise.resolve(), (p, form) => {
+          Array.reduce(forms, Promise.resolve(), (p, form) => {
             p->Promise.then(() => {
               let safeName = safeFilename(form.name)
               let outPath = formsDir ++ "/" ++ "forms_" ++ safeName ++ ".txt"
@@ -729,7 +729,7 @@ let exportAllVersioning: (
                       let _ = _writeFileText(outPath, content)
                       ()
                     }
-                    if !skipped { Belt.Array.push(exportedForms, form.name) }
+                    if !skipped { Array.push(exportedForms, form.name) }
                     Promise.resolve()
                   }
                 })
@@ -740,7 +740,7 @@ let exportAllVersioning: (
             // Export reports
             getReportsFn()
               ->Promise.then(reports => {
-                Belt.Array.reduce(reports, Promise.resolve(), (p, report) => {
+                Array.reduce(reports, Promise.resolve(), (p, report) => {
                   p->Promise.then(() => {
                     let safeName = safeFilename(report.name)
                     let outPath = reportsDir ++ "/" ++ "reports_" ++ safeName ++ ".txt"
@@ -754,7 +754,7 @@ let exportAllVersioning: (
                             let _ = _writeFileText(outPath, content)
                             ()
                           }
-                          if !skipped { Belt.Array.push(exportedReports, report.name) }
+                          if !skipped { Array.push(exportedReports, report.name) }
                           Promise.resolve()
                         }
                       })
@@ -765,7 +765,7 @@ let exportAllVersioning: (
                   // Export modules (in-memory code, not SaveAsText)
                   getModulesFn()
                     ->Promise.then(modules => {
-                      Belt.Array.reduce(modules, Promise.resolve(), (p, mod) => {
+                      Array.reduce(modules, Promise.resolve(), (p, mod) => {
                         p->Promise.then(() => {
                           let safeName = safeFilename(mod.name)
                           let outPath = modulesDir ++ "/" ++ "modules_" ++ safeName ++ moduleExt
@@ -776,7 +776,7 @@ let exportAllVersioning: (
                             let _ = _writeFileText(outPath, content)
                             ()
                           }
-                          if !skipped { Belt.Array.push(exportedModules, mod.name) }
+                          if !skipped { Array.push(exportedModules, mod.name) }
                           Promise.resolve()
                         })
                       })
@@ -784,7 +784,7 @@ let exportAllVersioning: (
                         // Export macros
                         getMacrosFn()
                           ->Promise.then(macros => {
-                            Belt.Array.reduce(macros, Promise.resolve(), (p, macro) => {
+                            Array.reduce(macros, Promise.resolve(), (p, macro) => {
                               p->Promise.then(() => {
                                 let safeName = safeFilename(macro.name)
                                 let outPath = macrosDir ++ "/" ++ "macros_" ++ safeName ++ ".txt"
@@ -796,7 +796,7 @@ let exportAllVersioning: (
                                   let _ = _writeFileText(outPath, content)
                                   ()
                                 }
-                                if !skipped { Belt.Array.push(exportedMacros, macro.name) }
+                                if !skipped { Array.push(exportedMacros, macro.name) }
                                 Promise.resolve()
                               })
                             })
@@ -804,7 +804,7 @@ let exportAllVersioning: (
                               // Export queries
                               getQueriesFn()
                                 ->Promise.then(queries => {
-                                  Belt.Array.reduce(queries, Promise.resolve(), (p, query) => {
+                                  Array.reduce(queries, Promise.resolve(), (p, query) => {
                                     p->Promise.then(() => {
                                       let safeName = safeFilename(query.name)
                                       let outPath = queriesDir ++ "/" ++ "queries_" ++ safeName ++ ".txt"
@@ -818,7 +818,7 @@ let exportAllVersioning: (
                                               let _ = _writeFileText(outPath, content)
                                               ()
                                             }
-                                            if !skipped { Belt.Array.push(exportedQueries, query.name) }
+                                            if !skipped { Array.push(exportedQueries, query.name) }
                                             Promise.resolve()
                                           }
                                         })
@@ -826,11 +826,11 @@ let exportAllVersioning: (
                                     })
                                   })
                                   ->Promise.then(() => {
-                                    let total = Belt.Array.length(exportedForms)
-                                      + Belt.Array.length(exportedReports)
-                                      + Belt.Array.length(exportedModules)
-                                      + Belt.Array.length(exportedMacros)
-                                      + Belt.Array.length(exportedQueries)
+                                    let total = Array.length(exportedForms)
+                                      + Array.length(exportedReports)
+                                      + Array.length(exportedModules)
+                                      + Array.length(exportedMacros)
+                                      + Array.length(exportedQueries)
                                     Promise.resolve({
                                       success: true,
                                       exported: {
@@ -911,7 +911,7 @@ let compareVersioning: (
         (dir) => {
           if NodeJs.Fs.existsSync(dir) {
             let all = NodeJs.Fs.readdirSync(dir)
-            Belt.Array.keep(all, (f) => f->String.endsWith(".txt") || f->String.endsWith(".bas"))
+            Array.filter(all, (f) => f->String.endsWith(".txt") || f->String.endsWith(".bas"))
           } else {
             []
           }
@@ -924,12 +924,12 @@ let compareVersioning: (
           let dirPath = exportDir ++ "/forms"
           let exportedFiles: dict<string> = Dict.make()
           let files = _listDirFiles(dirPath)
-          Belt.Array.reduce(files, (), (_, fname) => {
+          Array.reduce(files, (), (_, fname) => {
             let cleanName = _extractName(fname)
             if cleanName != "" { Dict.set(exportedFiles, safeFilename(cleanName), fname) }
             ()
           })
-          Belt.Array.reduce(forms, Promise.resolve(), (p, form) => {
+          Array.reduce(forms, Promise.resolve(), (p, form) => {
             p->Promise.then(() => {
               let sfn = safeFilename(form.name)
               switch Dict.get(exportedFiles, sfn) {
@@ -939,19 +939,19 @@ let compareVersioning: (
                     exportFormToTextFn(form.name)
                       ->Promise.then(dbContent => {
                         if dbContent == fileContent {
-                          Belt.Array.push(unchanged, {type_: "forms", name: form.name})
+                          Array.push(unchanged, {type_: "forms", name: form.name})
                         } else {
-                          Belt.Array.push(changed, {type_: "forms", name: form.name})
+                          Array.push(changed, {type_: "forms", name: form.name})
                         }
                         Promise.resolve()
                       })
                       ->Promise.catch(_ => {
-                        Belt.Array.push(changed, {type_: "forms", name: form.name})
+                        Array.push(changed, {type_: "forms", name: form.name})
                         Promise.resolve()
                       })
                   }
                 | None => {
-                    Belt.Array.push(new, {type_: "forms", name: form.name})
+                    Array.push(new, {type_: "forms", name: form.name})
                     Promise.resolve()
                   }
               }
@@ -959,13 +959,13 @@ let compareVersioning: (
           })
           ->Promise.then(() => {
             let keys = Dict.keysToArray(exportedFiles)
-            Belt.Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
+            Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
               p->Promise.then(() => {
-                let found = Belt.Array.some(forms, (f) => safeFilename(f.name) == safeKey)
+                let found = Array.some(forms, (f) => safeFilename(f.name) == safeKey)
                 if !found {
                   let fname = switch Dict.get(exportedFiles, safeKey) { | Some(f) => f | None => "" }
                   let nameExtracted = _extractName(fname)
-                  Belt.Array.push(missing, {type_: "forms", name: nameExtracted})
+                  Array.push(missing, {type_: "forms", name: nameExtracted})
                 }
                 Promise.resolve()
               })
@@ -979,12 +979,12 @@ let compareVersioning: (
               let dirPath = exportDir ++ "/reports"
               let exportedFiles: dict<string> = Dict.make()
               let files = _listDirFiles(dirPath)
-              Belt.Array.reduce(files, (), (_, fname) => {
+              Array.reduce(files, (), (_, fname) => {
                 let cleanName = _extractName(fname)
                 if cleanName != "" { Dict.set(exportedFiles, safeFilename(cleanName), fname) }
                 ()
               })
-              Belt.Array.reduce(reports, Promise.resolve(), (p, report) => {
+              Array.reduce(reports, Promise.resolve(), (p, report) => {
                 p->Promise.then(() => {
                   let sfn = safeFilename(report.name)
                   switch Dict.get(exportedFiles, sfn) {
@@ -994,19 +994,19 @@ let compareVersioning: (
                         exportReportToTextFn(report.name)
                           ->Promise.then(dbContent => {
                             if dbContent == fileContent {
-                              Belt.Array.push(unchanged, {type_: "reports", name: report.name})
+                              Array.push(unchanged, {type_: "reports", name: report.name})
                             } else {
-                              Belt.Array.push(changed, {type_: "reports", name: report.name})
+                              Array.push(changed, {type_: "reports", name: report.name})
                             }
                             Promise.resolve()
                           })
                           ->Promise.catch(_ => {
-                            Belt.Array.push(changed, {type_: "reports", name: report.name})
+                            Array.push(changed, {type_: "reports", name: report.name})
                             Promise.resolve()
                           })
                       }
                     | None => {
-                        Belt.Array.push(new, {type_: "reports", name: report.name})
+                        Array.push(new, {type_: "reports", name: report.name})
                         Promise.resolve()
                       }
                   }
@@ -1014,13 +1014,13 @@ let compareVersioning: (
               })
               ->Promise.then(() => {
                 let keys = Dict.keysToArray(exportedFiles)
-                Belt.Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
+                Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
                   p->Promise.then(() => {
-                    let found = Belt.Array.some(reports, (r) => safeFilename(r.name) == safeKey)
+                    let found = Array.some(reports, (r) => safeFilename(r.name) == safeKey)
                     if !found {
                       let fname = switch Dict.get(exportedFiles, safeKey) { | Some(f) => f | None => "" }
                       let nameExtracted = _extractName(fname)
-                      Belt.Array.push(missing, {type_: "reports", name: nameExtracted})
+                      Array.push(missing, {type_: "reports", name: nameExtracted})
                     }
                     Promise.resolve()
                   })
@@ -1035,12 +1035,12 @@ let compareVersioning: (
               let dirPath = exportDir ++ "/modules"
               let exportedFiles: dict<string> = Dict.make()
               let files = _listDirFiles(dirPath)
-              Belt.Array.reduce(files, (), (_, fname) => {
+              Array.reduce(files, (), (_, fname) => {
                 let cleanName = _extractName(fname)
                 if cleanName != "" { Dict.set(exportedFiles, safeFilename(cleanName), fname) }
                 ()
               })
-              Belt.Array.reduce(modules, Promise.resolve(), (p, mod) => {
+              Array.reduce(modules, Promise.resolve(), (p, mod) => {
                 p->Promise.then(() => {
                   let sfn = safeFilename(mod.name)
                   switch Dict.get(exportedFiles, sfn) {
@@ -1048,14 +1048,14 @@ let compareVersioning: (
                         let filePath = dirPath ++ "/" ++ fname
                         let fileContent = _readFileText(filePath)
                         if fileContent == mod.code {
-                          Belt.Array.push(unchanged, {type_: "modules", name: mod.name})
+                          Array.push(unchanged, {type_: "modules", name: mod.name})
                         } else {
-                          Belt.Array.push(changed, {type_: "modules", name: mod.name})
+                          Array.push(changed, {type_: "modules", name: mod.name})
                         }
                         Promise.resolve()
                       }
                     | None => {
-                        Belt.Array.push(new, {type_: "modules", name: mod.name})
+                        Array.push(new, {type_: "modules", name: mod.name})
                         Promise.resolve()
                       }
                   }
@@ -1063,11 +1063,11 @@ let compareVersioning: (
               })
               ->Promise.then(() => {
                 let keys = Dict.keysToArray(exportedFiles)
-                Belt.Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
+                Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
                   p->Promise.then(() => {
-                    let found = Belt.Array.some(modules, (m) => safeFilename(m.name) == safeKey)
+                    let found = Array.some(modules, (m) => safeFilename(m.name) == safeKey)
                     if !found {
-                      Belt.Array.push(missing, {type_: "modules", name: safeKey})
+                      Array.push(missing, {type_: "modules", name: safeKey})
                     }
                     Promise.resolve()
                   })
@@ -1082,12 +1082,12 @@ let compareVersioning: (
               let dirPath = exportDir ++ "/macros"
               let exportedFiles: dict<string> = Dict.make()
               let files = _listDirFiles(dirPath)
-              Belt.Array.reduce(files, (), (_, fname) => {
+              Array.reduce(files, (), (_, fname) => {
                 let cleanName = _extractName(fname)
                 if cleanName != "" { Dict.set(exportedFiles, safeFilename(cleanName), fname) }
                 ()
               })
-              Belt.Array.reduce(macros, Promise.resolve(), (p, macro) => {
+              Array.reduce(macros, Promise.resolve(), (p, macro) => {
                 p->Promise.then(() => {
                   let sfn = safeFilename(macro.name)
                   switch Dict.get(exportedFiles, sfn) {
@@ -1097,19 +1097,19 @@ let compareVersioning: (
                         exportMacroToTextFn(macro.name)
                           ->Promise.then(dbContent => {
                             if dbContent == fileContent {
-                              Belt.Array.push(unchanged, {type_: "macros", name: macro.name})
+                              Array.push(unchanged, {type_: "macros", name: macro.name})
                             } else {
-                              Belt.Array.push(changed, {type_: "macros", name: macro.name})
+                              Array.push(changed, {type_: "macros", name: macro.name})
                             }
                             Promise.resolve()
                           })
                           ->Promise.catch(_ => {
-                            Belt.Array.push(changed, {type_: "macros", name: macro.name})
+                            Array.push(changed, {type_: "macros", name: macro.name})
                             Promise.resolve()
                           })
                       }
                     | None => {
-                        Belt.Array.push(new, {type_: "macros", name: macro.name})
+                        Array.push(new, {type_: "macros", name: macro.name})
                         Promise.resolve()
                       }
                   }
@@ -1117,13 +1117,13 @@ let compareVersioning: (
               })
               ->Promise.then(() => {
                 let keys = Dict.keysToArray(exportedFiles)
-                Belt.Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
+                Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
                   p->Promise.then(() => {
-                    let found = Belt.Array.some(macros, (m) => safeFilename(m.name) == safeKey)
+                    let found = Array.some(macros, (m) => safeFilename(m.name) == safeKey)
                     if !found {
                       let fname = switch Dict.get(exportedFiles, safeKey) { | Some(f) => f | None => "" }
                       let nameExtracted = _extractName(fname)
-                      Belt.Array.push(missing, {type_: "macros", name: nameExtracted})
+                      Array.push(missing, {type_: "macros", name: nameExtracted})
                     }
                     Promise.resolve()
                   })
@@ -1138,12 +1138,12 @@ let compareVersioning: (
               let dirPath = exportDir ++ "/queries"
               let exportedFiles: dict<string> = Dict.make()
               let files = _listDirFiles(dirPath)
-              Belt.Array.reduce(files, (), (_, fname) => {
+              Array.reduce(files, (), (_, fname) => {
                 let cleanName = _extractName(fname)
                 if cleanName != "" { Dict.set(exportedFiles, safeFilename(cleanName), fname) }
                 ()
               })
-              Belt.Array.reduce(queries, Promise.resolve(), (p, query) => {
+              Array.reduce(queries, Promise.resolve(), (p, query) => {
                 p->Promise.then(() => {
                   let sfn = safeFilename(query.name)
                   switch Dict.get(exportedFiles, sfn) {
@@ -1153,19 +1153,19 @@ let compareVersioning: (
                         exportQueryToTextFn(query.name)
                           ->Promise.then(dbContent => {
                             if dbContent == fileContent {
-                              Belt.Array.push(unchanged, {type_: "queries", name: query.name})
+                              Array.push(unchanged, {type_: "queries", name: query.name})
                             } else {
-                              Belt.Array.push(changed, {type_: "queries", name: query.name})
+                              Array.push(changed, {type_: "queries", name: query.name})
                             }
                             Promise.resolve()
                           })
                           ->Promise.catch(_ => {
-                            Belt.Array.push(changed, {type_: "queries", name: query.name})
+                            Array.push(changed, {type_: "queries", name: query.name})
                             Promise.resolve()
                           })
                       }
                     | None => {
-                        Belt.Array.push(new, {type_: "queries", name: query.name})
+                        Array.push(new, {type_: "queries", name: query.name})
                         Promise.resolve()
                       }
                   }
@@ -1173,13 +1173,13 @@ let compareVersioning: (
               })
               ->Promise.then(() => {
                 let keys = Dict.keysToArray(exportedFiles)
-                Belt.Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
+                Array.reduce(keys, Promise.resolve(), (p, safeKey) => {
                   p->Promise.then(() => {
-                    let found = Belt.Array.some(queries, (q) => safeFilename(q.name) == safeKey)
+                    let found = Array.some(queries, (q) => safeFilename(q.name) == safeKey)
                     if !found {
                       let fname = switch Dict.get(exportedFiles, safeKey) { | Some(f) => f | None => "" }
                       let nameExtracted = _extractName(fname)
-                      Belt.Array.push(missing, {type_: "queries", name: nameExtracted})
+                      Array.push(missing, {type_: "queries", name: nameExtracted})
                     }
                     Promise.resolve()
                   })
@@ -1240,7 +1240,7 @@ let importAllVersioning: (
           let dirPath = baseDir ++ "/" ++ typeKey
           let files = if NodeJs.Fs.existsSync(dirPath) {
             let all = NodeJs.Fs.readdirSync(dirPath)
-            Belt.Array.keep(all, (f) => {
+            Array.filter(all, (f) => {
               let prefix = typeKey ++ "_"
               f->String.startsWith(prefix) && (f->String.endsWith(ext1) || f->String.endsWith(ext2))
             })
@@ -1248,8 +1248,8 @@ let importAllVersioning: (
             []
           }
           // Sort for deterministic order (lexicographic, matching JS Array.sort behavior)
-          let sorted: array<string> = Belt.SortArray.stableSortBy(Belt.Array.copy(files), (a, b) => Float.toInt(String.compare(a, b)))
-          Belt.Array.map(sorted, (fname) => {
+          let sorted: array<string> = Array.toSorted(Array.copy(files), String.compare)
+          Array.map(sorted, (fname) => {
             // Extract name: typeKey_name.ext → name
             let idx = String.indexOf(fname, "_")
             let name = if idx >= 0 { String.substring(fname, ~start=idx + 1) } else { fname }
@@ -1271,17 +1271,17 @@ let importAllVersioning: (
       getModulesFn()
         ->Promise.then(_existingModules => {
           let moduleFiles = _listFiles(inputDir, "modules", ".bas", ".txt")
-          Belt.Array.reduce(moduleFiles, Promise.resolve(), (p, (name, path)) => {
+          Array.reduce(moduleFiles, Promise.resolve(), (p, (name, path)) => {
             p->Promise.then(() => {
               let data = _safeRead(path)
               setVbaCodeFn(name, data)
                 ->Promise.then(ok => {
-  if ok { Belt.Array.push(importedModules, name) }
-  else { Belt.Array.push(errors, "module " ++ name ++ ": set_vba_code failed") }
+  if ok { Array.push(importedModules, name) }
+  else { Array.push(errors, "module " ++ name ++ ": set_vba_code failed") }
                   Promise.resolve()
                 })
                   ->Promise.catch(_ => {
-                    Belt.Array.push(errors, "module " ++ name ++ ": set_vba_code failed")
+                    Array.push(errors, "module " ++ name ++ ": set_vba_code failed")
                     Promise.resolve()
                   })
             })
@@ -1289,24 +1289,24 @@ let importAllVersioning: (
           ->Promise.then(() => compileVbaFn())
           ->Promise.then(_compileResult => {
             if !_compileResult.success {
-              Belt.Array.push(errors, "VBA compile error after module import")
+              Array.push(errors, "VBA compile error after module import")
             }
             Promise.resolve()
           })
           ->Promise.then(() => {
             // Import forms
             let formFiles = _listFiles(inputDir, "forms", ".txt", ".txt")
-            Belt.Array.reduce(formFiles, Promise.resolve(), (p, (name, path)) => {
+            Array.reduce(formFiles, Promise.resolve(), (p, (name, path)) => {
               p->Promise.then(() => {
                 let data = _safeRead(path)
                 importFormFromTextFn(name, data)
                   ->Promise.then(ok => {
-                    if ok { Belt.Array.push(importedForms, name) }
-                    else { Belt.Array.push(errors, "form " ++ name ++ ": import failed") }
+                    if ok { Array.push(importedForms, name) }
+                    else { Array.push(errors, "form " ++ name ++ ": import failed") }
                     Promise.resolve()
                   })
                   ->Promise.catch(_ => {
-                    Belt.Array.push(errors, "form " ++ name ++ ": import failed")
+                    Array.push(errors, "form " ++ name ++ ": import failed")
                     Promise.resolve()
                   })
               })
@@ -1314,17 +1314,17 @@ let importAllVersioning: (
             ->Promise.then(() => {
               // Import reports
               let reportFiles = _listFiles(inputDir, "reports", ".txt", ".txt")
-              Belt.Array.reduce(reportFiles, Promise.resolve(), (p, (name, path)) => {
+              Array.reduce(reportFiles, Promise.resolve(), (p, (name, path)) => {
                 p->Promise.then(() => {
                   let data = _safeRead(path)
                   importReportFromTextFn(name, data)
                     ->Promise.then(ok => {
-                      if ok { Belt.Array.push(importedReports, name) }
-                      else { Belt.Array.push(errors, "report " ++ name ++ ": import failed") }
+                      if ok { Array.push(importedReports, name) }
+                      else { Array.push(errors, "report " ++ name ++ ": import failed") }
                       Promise.resolve()
                     })
                     ->Promise.catch(_ => {
-                      Belt.Array.push(errors, "report " ++ name ++ ": import failed")
+                      Array.push(errors, "report " ++ name ++ ": import failed")
                       Promise.resolve()
                     })
                 })
@@ -1332,17 +1332,17 @@ let importAllVersioning: (
               ->Promise.then(() => {
                 // Import macros
                 let macroFiles = _listFiles(inputDir, "macros", ".txt", ".txt")
-                Belt.Array.reduce(macroFiles, Promise.resolve(), (p, (name, path)) => {
+                Array.reduce(macroFiles, Promise.resolve(), (p, (name, path)) => {
                   p->Promise.then(() => {
                     let data = _safeRead(path)
                     importMacroFromTextFn(name, data)
                       ->Promise.then(ok => {
-                        if ok { Belt.Array.push(importedMacros, name) }
-                        else { Belt.Array.push(errors, "macro " ++ name ++ ": import failed") }
+                        if ok { Array.push(importedMacros, name) }
+                        else { Array.push(errors, "macro " ++ name ++ ": import failed") }
                         Promise.resolve()
                       })
                       ->Promise.catch(_ => {
-                        Belt.Array.push(errors, "macro " ++ name ++ ": import failed")
+                        Array.push(errors, "macro " ++ name ++ ": import failed")
                         Promise.resolve()
                       })
                   })
@@ -1350,25 +1350,25 @@ let importAllVersioning: (
                 ->Promise.then(() => {
                   // Import queries
                   let queryFiles = _listFiles(inputDir, "queries", ".txt", ".txt")
-                  Belt.Array.reduce(queryFiles, Promise.resolve(), (p, (name, path)) => {
+                  Array.reduce(queryFiles, Promise.resolve(), (p, (name, path)) => {
                     p->Promise.then(() => {
                       let data = _safeRead(path)
                       importQueryFromTextFn(name, data)
                         ->Promise.then(ok => {
-                          if ok { Belt.Array.push(importedQueries, name) }
-                          else { Belt.Array.push(errors, "query " ++ name ++ ": import failed") }
+                          if ok { Array.push(importedQueries, name) }
+                          else { Array.push(errors, "query " ++ name ++ ": import failed") }
                           Promise.resolve()
                         })
                         ->Promise.catch(_ => {
-                          Belt.Array.push(errors, "query " ++ name ++ ": import failed")
+                          Array.push(errors, "query " ++ name ++ ": import failed")
                           Promise.resolve()
                         })
                     })
                   })
                   ->Promise.then(() => {
                     Promise.resolve({
-                      success: Belt.Array.length(errors) == 0,
-                      error: if Belt.Array.length(errors) > 0 { Some(Array.join(errors, "; ")) } else { None },
+                      success: Array.length(errors) == 0,
+                      error: if Array.length(errors) > 0 { Some(Array.join(errors, "; ")) } else { None },
                       imported: {
                         forms: importedForms,
                         reports: importedReports,
@@ -1376,7 +1376,7 @@ let importAllVersioning: (
                         macros: importedMacros,
                         queries: importedQueries,
                       },
-                      errors: if Belt.Array.length(errors) > 0 { Some(errors) } else { None },
+                      errors: if Array.length(errors) > 0 { Some(errors) } else { None },
                     })
                   })
                 })
@@ -1416,8 +1416,8 @@ let exportSchemaDdl: (
       getTablesFn()
         ->Promise.then(tables => {
           // Build DDL tables SQL
-          let tableDdl = Belt.Array.map(tables, (table) => {
-            let colDefs = Belt.Array.map(table.fields, (field) => {
+          let tableDdl = Array.map(tables, (table) => {
+            let colDefs = Array.map(table.fields, (field) => {
               let nullable = if field.required { " NOT NULL" } else { " NULL" }
               "  [" ++ field.name ++ "] " ++ field.type_ ++ nullable
             })
@@ -1432,7 +1432,7 @@ let exportSchemaDdl: (
         ->Promise.then(tables => {
           getRelationshipsFn()
             ->Promise.then(rels => {
-              let relDdl = Belt.Array.map(rels, (rel) => {
+              let relDdl = Array.map(rels, (rel) => {
                 "-- Relationship: " ++ rel.name ++ "\n" ++
                 "-- Table: " ++ rel.table ++ ", Foreign Table: " ++ rel.foreignTable ++ "\n" ++
                 "-- Attributes: " ++ rel.attributes ++ "\n" ++
@@ -1447,8 +1447,8 @@ let exportSchemaDdl: (
                 error: None,
                 ddlTables: ddlTablesPath,
                 ddlRelationships: ddlRelsPath,
-                tablesExported: Belt.Array.length(tables),
-                relationshipsExported: Belt.Array.length(rels),
+                tablesExported: Array.length(tables),
+                relationshipsExported: Array.length(rels),
               })
             })
         })

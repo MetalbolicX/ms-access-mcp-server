@@ -11,7 +11,7 @@ open Services
 test("Pool: make creates empty pool", () => {
   let pool = ConnectionPool.make()
   let connections = ConnectionPool.list(pool)
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(connections), 0)
+  assertion(~operator="equal", (a, b) => a == b, Array.length(connections), 0)
 })
 
 test("Pool: get_active returns 'default' initially", () => {
@@ -57,7 +57,7 @@ testAsync("Pool: connect stores adapter in pool", cb => {
           switch r {
           | Ok(_) => {
               let connections = ConnectionPool.list(pool)
-              let hasProd = Belt.Array.some(connections, ((k, _v)) => k == "prod")
+              let hasProd = Array.some(connections, ((k, _v)) => k == "prod")
               assertion(~operator="equal", (a, b) => a == b, hasProd, true)
               cb(~planned=1, ())
             }
@@ -124,7 +124,7 @@ testAsync("Pool: disconnect removes connection from pool", cb => {
               switch r2 {
               | Ok(_) => {
                   let connections = ConnectionPool.list(pool)
-                  let hasProd = Belt.Array.some(connections, ((k, _v)) => k == "prod")
+                  let hasProd = Array.some(connections, ((k, _v)) => k == "prod")
                   assertion(~operator="equal", (a, b) => a == b, hasProd, false)
                   cb(~planned=1, ())
                   Promise.resolve()
@@ -251,8 +251,8 @@ testAsync("Pool: connect multiple different names", cb => {
                     switch r2 {
                     | Ok(_) => {
                         let connections = ConnectionPool.list(pool)
-                        let hasProd = Belt.Array.some(connections, ((k, _v)) => k == "prod")
-                        let hasDev = Belt.Array.some(connections, ((k, _v)) => k == "dev")
+                        let hasProd = Array.some(connections, ((k, _v)) => k == "prod")
+                        let hasDev = Array.some(connections, ((k, _v)) => k == "dev")
                         assertion(~operator="equal", (a, b) => a == b, hasProd, true)
                         assertion(~operator="equal", (a, b) => a == b, hasDev, true)
                         cb(~planned=2, ())
@@ -293,8 +293,8 @@ testAsync("Pool: disconnect one keeps other", cb => {
             ignore(ConnectionPool.connect(pool, "dev", "/tmp/dev.accdb", "odbc"))
             ignore(ConnectionPool.disconnect(pool, ~name="prod"))
             let connections = ConnectionPool.list(pool)
-let hasProd = Belt.Array.some(connections, ((k, _v)) => k == "prod")
-                        let hasDev = Belt.Array.some(connections, ((k, _v)) => k == "dev")
+let hasProd = Array.some(connections, ((k, _v)) => k == "prod")
+                        let hasDev = Array.some(connections, ((k, _v)) => k == "dev")
             assertion(~operator="equal", (a, b) => a == b, hasProd, false)
             assertion(~operator="equal", (a, b) => a == b, hasDev, true)
             cb(~planned=2, ())
@@ -419,7 +419,7 @@ testAsync("Pool: disconnectByAlias removes underlying connection", cb => {
                     switch r2 {
                     | Ok(_) => {
                         let connections = ConnectionPool.list(pool)
-                        let hasProd = Belt.Array.some(connections, ((k, _v)) => k == "prod")
+                        let hasProd = Array.some(connections, ((k, _v)) => k == "prod")
                         assertion(~operator="equal", (a, b) => a == b, hasProd, false)
                         cb(~planned=1, ())
                       }

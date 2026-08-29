@@ -183,7 +183,7 @@ testAsync("ComSession: forceKill constructs taskkill args as array — no string
   let args: array<string> = ["taskkill", "/F", "/PID", Int.toString(pid)]
   // Verify args are separate and PID is the last arg as integer string
   assertion(~operator="equal", (a, b) => a == b, Array.length(args), 4)
-  let pidStr = switch Belt.Array.get(args, 3) { | Some(s) => s | None => "" }
+  let pidStr = switch Array.get(args, 3) { | Some(s) => s | None => "" }
   assertion(~operator="equal", (a, b) => a == b, pidStr, "12345")
   cb(~planned=2, ())
 })

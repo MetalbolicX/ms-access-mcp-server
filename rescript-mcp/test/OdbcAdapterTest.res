@@ -29,11 +29,11 @@ module Fake = {
     callCount.contents = callCount.contents + 1
     lastSql.contents = sql
     lastParams.contents = params
-    allSql.contents = Belt.Array.concat(allSql.contents, [sql])
-    allParams.contents = Belt.Array.concat(allParams.contents, [params])
+    allSql.contents = Array.concat(allSql.contents, [sql])
+    allParams.contents = Array.concat(allParams.contents, [params])
     let idx = callCount.contents - 1
-    if idx < Belt.Array.length(overrides.contents) {
-      switch Belt.Array.getUnsafe(overrides.contents, idx) {
+    if idx < Array.length(overrides.contents) {
+      switch Array.getUnsafe(overrides.contents, idx) {
       | Ok(r) => {
           // Wrap the legacy {rows, columns, count, statement} shape into the
           // odbc v2 array-with-bookkeeping shape (rows IS the array; columns,
@@ -333,7 +333,7 @@ testAsync("duplicate JSON keys: last value wins (JS dict semantics)", cb => {
                 String.includes(Fake.lastSql.contents, "'Second'"),
                 true,
               )
-              assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(Fake.lastParams.contents), 0)
+              assertion(~operator="equal", (a, b) => a == b, Array.length(Fake.lastParams.contents), 0)
               cb(~planned=2, ())
             }
           | _ => cb(~planned=2, ())
@@ -597,9 +597,9 @@ testAsync("executeQuery happy path: rows, count from rows, columns from metadata
           switch r {
           | Ok({success: true, rows, count, columns, error: None}) => {
               // count is rows.length, NOT the native 999
-              assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(rows), 2)
+              assertion(~operator="equal", (a, b) => a == b, Array.length(rows), 2)
               assertion(~operator="equal", (a, b) => a == b, count, 2)
-              assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(columns), 2)
+              assertion(~operator="equal", (a, b) => a == b, Array.length(columns), 2)
               cb(~planned=3, ())
             }
           | _ => cb(~planned=0, ())
@@ -623,7 +623,7 @@ testAsync("executeQuery empty result set: success=true, count=0, columns from me
     ->Promise.then(r => {
       switch r {
       | Ok({success: true, rows: [], count: 0, columns, error: None}) => {
-          assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(columns), 2)
+          assertion(~operator="equal", (a, b) => a == b, Array.length(columns), 2)
           cb(~planned=1, ())
         }
       | _ => cb(~planned=0, ())
@@ -674,7 +674,7 @@ testAsync("executeQuery empty params array: unparameterized (no params issued)",
     adapter->OdbcAdapter.executeQuery("SELECT id FROM Products")
       ->Promise.then(_r => {
         // Empty params array → unparameterized → empty params passed to query
-        let emptyParams = Belt.Array.length(Fake.lastParams.contents) == 0
+        let emptyParams = Array.length(Fake.lastParams.contents) == 0
         assertion(~operator="equal", (a, b) => a == b, emptyParams, true)
         cb(~planned=1, ())
         Promise.resolve()
@@ -712,7 +712,7 @@ testAsync("updateData no-WHERE: builds UPDATE SQL and passes params", cb => {
               assertion(~operator="equal", (a, b) => a == b, String.includes(Fake.lastSql.contents, "UPDATE [Products]"), true)
               assertion(~operator="equal", (a, b) => a == b, String.includes(Fake.lastSql.contents, "[status]"), true)
               assertion(~operator="equal", (a, b) => a == b, String.includes(Fake.lastSql.contents, "'shipped'"), true)
-              assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(Fake.lastParams.contents), 0)
+              assertion(~operator="equal", (a, b) => a == b, Array.length(Fake.lastParams.contents), 0)
               cb(~planned=4, ())
             }
           | _ => cb(~planned=4, ())
@@ -926,7 +926,7 @@ testAsync("T6 no __raw__: existing dict behavior preserved ([key]=value AND ...)
               assertion(
                 ~operator="equal",
                 (a, b) => a == b,
-                Belt.Array.length(Fake.lastParams.contents),
+                Array.length(Fake.lastParams.contents),
                 0,
               )
               cb(~planned=4, ())

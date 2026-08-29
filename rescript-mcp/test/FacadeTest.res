@@ -384,7 +384,7 @@ describe("listConnections", () => {
     let count0 = getDictNum(result, "count") == Some(0.0)
     let activeDefault = getDictStr(result, "active") == Some("default")
     let connectionsEmpty = switch Js.Dict.get(result, "connections") {
-    | Some(JSON.Object(d)) => Js.Dict.keys(d)->Belt.Array.length == 0
+    | Some(JSON.Object(d)) => Js.Dict.keys(d)->Array.length == 0
     | _ => false
     }
     assertion(~operator="equal", (a, b) => a == b, successOk && count0 && activeDefault && connectionsEmpty, true)
@@ -1258,7 +1258,7 @@ let setupFakeSchemaTables = (facade: Facade.t, tables: array<Adapters.Interfaces
   | Ok(_) => {
       // Access raw fake via internal binding field
       let bindings = facade.bindings
-      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      switch Array.find(bindings, ((n, _b)) => n == "default") {
       | Some((_, b)) => {
           switch b._rawSchemaAdapter {
           | Some(raw) => {
@@ -1279,7 +1279,7 @@ let setupFakeSchemaRelationships = (facade: Facade.t, rels: array<Adapters.Inter
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
   | Ok(_) => {
       let bindings = facade.bindings
-      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      switch Array.find(bindings, ((n, _b)) => n == "default") {
       | Some((_, b)) => {
           switch b._rawSchemaAdapter {
           | Some(raw) => { raw.fakeRelationships = rels }
@@ -1297,7 +1297,7 @@ let setupFakeSchemaQueries = (facade: Facade.t, queries: array<Adapters.Interfac
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
   | Ok(_) => {
       let bindings = facade.bindings
-      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      switch Array.find(bindings, ((n, _b)) => n == "default") {
       | Some((_, b)) => {
           switch b._rawSchemaAdapter {
           | Some(raw) => { raw.fakeQueries = queries }
@@ -1315,7 +1315,7 @@ let setupFakeSchemaStats = (facade: Facade.t, stats: dict<JSON.t>) => {
   switch Facade.schemaAdapterForName(facade, ~name="default", ~notConnectedMsg="") {
   | Ok(_) => {
       let bindings = facade.bindings
-      switch Belt.Array.getBy(bindings, ((n, _b)) => n == "default") {
+      switch Array.find(bindings, ((n, _b)) => n == "default") {
       | Some((_, b)) => {
           switch b._rawSchemaAdapter {
           | Some(raw) => { raw.fakeDbStats = stats }
@@ -1403,7 +1403,7 @@ describe("getTables", () => {
               let successOk = getDictBool(result, "success") == Some(true)
               let count0 = getDictNum(result, "count") == Some(0.0)
               let tablesEmpty = switch Js.Dict.get(result, "tables") {
-              | Some(JSON.Array(arr)) => Belt.Array.length(arr) == 0
+              | Some(JSON.Array(arr)) => Array.length(arr) == 0
               | _ => false
               }
               assertion(~operator="equal", (a, b) => a == b, successOk && count0 && tablesEmpty, true)

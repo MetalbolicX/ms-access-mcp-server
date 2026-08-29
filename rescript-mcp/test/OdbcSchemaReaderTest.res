@@ -52,7 +52,7 @@ testAsync("readRelationships: single FK row maps to correct RelationshipInfo sha
     ->Promise.then(result => {
       switch result {
       | Ok(rels) => {
-          assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(rels), 1)
+          assertion(~operator="equal", (a, b) => a == b, Array.length(rels), 1)
         }
       | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       }
@@ -82,7 +82,7 @@ testAsync("readRelationships: FK name is FK_<child>_<parent>", cb => {
     ->Promise.then(result => {
       switch result {
       | Ok(rels) => {
-          switch Belt.Array.get(rels, 0) {
+          switch Array.get(rels, 0) {
           | Some(rel) => {
               assertion(~operator="equal", (a, b) => a == b, rel.name, "FK_Orders_Customers")
               assertion(~operator="equal", (a, b) => a == b, rel.table, "Orders")
@@ -125,8 +125,8 @@ testAsync("readRelationships: multi-column FK merges rows into one RelationshipI
     ->Promise.then(result => {
       switch result {
       | Ok(rels) => {
-          assertion(~operator="equal", (a, b) => a == b, Belt.Array.length(rels), 1)
-          switch Belt.Array.get(rels, 0) {
+          assertion(~operator="equal", (a, b) => a == b, Array.length(rels), 1)
+          switch Array.get(rels, 0) {
           | Some(rel) => {
               assertion(~operator="equal", (a, b) => a == b, rel.columns, ["OrderID", "ProductID"])
               assertion(~operator="equal", (a, b) => a == b, rel.foreignColumns, ["ID", "ID"])
@@ -168,7 +168,7 @@ testAsync("readRelationships: results sorted by name (deterministic)", cb => {
     ->Promise.then(result => {
       switch result {
       | Ok(rels) => {
-          switch (Belt.Array.get(rels, 0), Belt.Array.get(rels, 1)) {
+          switch (Array.get(rels, 0), Array.get(rels, 1)) {
           | (Some(r0), Some(r1)) => {
               // FK names: FK_<szObject>_<szReferencedObject>
               // "FK_Products_Categories" < "FK_Orders_Customers" alphabetically

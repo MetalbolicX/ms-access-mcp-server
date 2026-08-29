@@ -55,7 +55,7 @@ let _groupRows = (rows: array<dict<JSON.t>>): array<Interfaces.relationshipInfo>
   let buckets: ref<dict<(array<string>, array<string>)>> = ref(dict{})
 
   // Accumulate rows into buckets (mutable, in-place)
-  Belt.Array.forEach(rows, row => {
+  Array.forEach(rows, row => {
     let szObject = _jsonToString(_dictGet(row, "szObject"))
     let szColumn = _jsonToString(_dictGet(row, "szColumn"))
     let szReferencedObject = _jsonToString(_dictGet(row, "szReferencedObject"))
@@ -65,8 +65,8 @@ let _groupRows = (rows: array<dict<JSON.t>>): array<Interfaces.relationshipInfo>
       let key = _bucketKey(szObject, szReferencedObject)  // (child, parent) → parent|child
       switch Dict.get(buckets.contents, key) {
       | Some((cols, fcols)) => {
-          let newCols = Belt.Array.concat(cols, [szColumn])
-          let newFcols = Belt.Array.concat(fcols, [szReferencedColumn])
+          let newCols = Array.concat(cols, [szColumn])
+          let newFcols = Array.concat(fcols, [szReferencedColumn])
           let _ = Dict.set(buckets.contents, key, (newCols, newFcols))
           ()
         }
@@ -83,7 +83,7 @@ let _groupRows = (rows: array<dict<JSON.t>>): array<Interfaces.relationshipInfo>
   // Convert buckets to RelationshipInfo array
   // Explicitly sort keys for deterministic output (Object.entries order is not guaranteed)
   let sortedKeys: array<string> = %raw("Object.keys(buckets.contents).sort()")
-  let results: array<Interfaces.relationshipInfo> = Belt.Array.map(
+  let results: array<Interfaces.relationshipInfo> = Array.map(
     sortedKeys,
     (key) => {
       let (columns, foreignColumns) = switch Dict.get(buckets.contents, key) {
@@ -91,11 +91,11 @@ let _groupRows = (rows: array<dict<JSON.t>>): array<Interfaces.relationshipInfo>
       | None => ([], [])
       }
       let parts = String.split(key, "|")
-      let parentTable = switch Belt.Array.get(parts, 0) {
+      let parentTable = switch Array.get(parts, 0) {
         | Some(p) => p
         | None => ""
       }
-      let childTable = switch Belt.Array.get(parts, 1) {
+      let childTable = switch Array.get(parts, 1) {
         | Some(p) => p
         | None => ""
       }

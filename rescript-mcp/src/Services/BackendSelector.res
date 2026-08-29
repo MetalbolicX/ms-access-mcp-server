@@ -56,7 +56,7 @@ let _isComOnlyCapability = (cap: backendCapability): bool => {
 let _requiresCom = (caps: option<capabilities>): bool => {
   switch caps {
   | None => false
-  | Some(c) => Belt.List.some(c, _isComOnlyCapability)
+  | Some(c) => List.some(c, _isComOnlyCapability)
   }
 }
 

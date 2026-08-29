@@ -27,8 +27,8 @@ let readonly = (): bool => {
 let _parseDirs = (raw: string): array<string> => {
   let parts = Js.String.split(";", raw)
   parts
-    ->Belt.Array.map(s => String.trim(s))
-    ->Belt.Array.keep(s => s !== "")
+    ->Array.map(s => String.trim(s))
+    ->Array.filter(s => s !== "")
 }
 
 let allowedDirs = (): array<string> => {
@@ -36,7 +36,7 @@ let allowedDirs = (): array<string> => {
   | None | Some("") => [NodeJs.Os.homedir()]
   | Some(raw) => {
       let dirs = _parseDirs(raw)
-      if Belt.Array.length(dirs) == 0 {
+      if Array.length(dirs) == 0 {
         [NodeJs.Os.homedir()]
       } else {
         dirs

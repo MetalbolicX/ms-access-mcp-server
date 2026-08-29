@@ -194,7 +194,7 @@ let _normalizeQueryResult = (result: Bindings.Odbc.oDBcResult): Interfaces.query
     "r => { if (!Array.isArray(r)) return []; const skip = new Set(['columns','count','statement','parameters','return']); return r.filter(x => x && typeof x === 'object' && !Array.isArray(x)).map(row => { const obj = {}; for (const k of Object.keys(row)) { if (skip.has(k)) continue; const v = row[k]; if (v === null || v === undefined) { obj[k] = null; } else if (typeof v === 'string') { obj[k] = v; } else if (typeof v === 'number') { obj[k] = v; } else if (typeof v === 'boolean') { obj[k] = v; } else if (v instanceof Date) { obj[k] = v.toISOString(); } else if (Buffer.isBuffer(v)) { obj[k] = v.toString('base64'); } else { obj[k] = String(v); } } return obj; }); }"
   )(result)
   let columnDefs: array<dict<JSON.t>> = %raw("r => Array.isArray(r.columns) ? r.columns : []")(result)
-  let columnNames: array<string> = Belt.Array.map(columnDefs, c => {
+  let columnNames: array<string> = Array.map(columnDefs, c => {
     switch Dict.get(c, "name") {
     | Some(JSON.String(s)) => s
     | _ => ""
@@ -203,7 +203,7 @@ let _normalizeQueryResult = (result: Bindings.Odbc.oDBcResult): Interfaces.query
   {
     success: true,
     rows: jsonRows,
-    count: Belt.Array.length(jsonRows),
+    count: Array.length(jsonRows),
     columns: columnNames,
     error: None,
   }
@@ -221,7 +221,7 @@ let _normalizeMutationResult = (result: Bindings.Odbc.oDBcResult): Interfaces.mu
   let affected = if result.count >= 0 {
     result.count
   } else {
-    Belt.Array.length(rowsArr)
+    Array.length(rowsArr)
   }
   {
     success: true,
@@ -342,7 +342,7 @@ let _buildWhereClause = (whereOpt: option<JSON.t>): option<whereClause> => {
                       // Plain dict (e.g., {"a":1,"b":2}) — use props directly.
                       // Validate props is a non-empty object by checking its keys.
                       let keys: array<string> = %raw("p => Object.keys(p)")(props)
-                      if Belt.Array.length(keys) > 0 {
+                      if Array.length(keys) > 0 {
                         Some(Dict(props))
                       } else {
                         None
@@ -543,20 +543,20 @@ let exportData = (
           | Error(e) => Promise.resolve(Error(e))
           | Ok(r) => {
               let jsonRows = r.rows
-              let rowCount = Belt.Array.length(jsonRows)
+              let rowCount = Array.length(jsonRows)
               let columns = r.columns
               // Serialize based on format — unknown format returns Error
               let contentOpt: option<string> = if fmt == "csv" {
                 Some(
                   CsvWriter.serializeWithHeaders(
                     columns,
-                    Belt.Array.map(jsonRows, row => {
-                      Belt.Array.map(columns, col => {
+                    Array.map(jsonRows, row => {
+                      Array.map(columns, col => {
                         let v: option<Bindings.Odbc.oDBcValue> = Dict.get(row, col)
                         switch v {
                         | Some(Bindings.Odbc.Str(s)) => s
-                        | Some(Bindings.Odbc.Int(i)) => Belt.Int.toString(i)
-                        | Some(Bindings.Odbc.Float(f)) => Belt.Float.toString(f)
+                        | Some(Bindings.Odbc.Int(i)) => Int.toString(i)
+                        | Some(Bindings.Odbc.Float(f)) => Float.toString(f)
                         | Some(Bindings.Odbc.Null) => ""
                         | Some(Bindings.Odbc.Bool(b)) => b ? "true" : "false"
                         | Some(Bindings.Odbc.DateTime(d)) => Date.toISOString(d)
@@ -571,8 +571,8 @@ let exportData = (
                 Some(
                   JSON.stringify(
                     JSON.Array(
-                      Belt.Array.map(jsonRows, row => {
-                        let obj: dict<JSON.t> = Belt.Array.reduce(columns, Dict.make(), (acc, col) => {
+                      Array.map(jsonRows, row => {
+                        let obj: dict<JSON.t> = Array.reduce(columns, Dict.make(), (acc, col) => {
                           let v: option<Bindings.Odbc.oDBcValue> = Dict.get(row, col)
                           let jsonVal: JSON.t = switch v {
                           | Some(Bindings.Odbc.Null) => JSON.Null
@@ -725,7 +725,7 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
           | Error(e) => Promise.resolve(Error(e))
           | Ok(tableRows) => {
               // Filter out MSys* tables
-              let userTableRows = Belt.Array.keep(tableRows, row => {
+              let userTableRows = Array.filter(tableRows, row => {
                 let name = _rowString(row, "TABLE_NAME")
                 !String.startsWith(name, "MSys")
               })
@@ -735,7 +735,7 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
                 tables: array<Interfaces.tableInfo>,
                 remaining: array<Bindings.Odbc.oDBcRow>,
               ): Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> => {
-                switch Belt.Array.get(remaining, 0) {
+                switch Array.get(remaining, 0) {
                 | None => Promise.resolve(Ok(tables))
                 | Some(row) => {
                     let name = _rowString(row, "TABLE_NAME")
@@ -744,7 +744,7 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
                     _columnsFor(conn, name)
                       ->Promise.then(colResult => {
                         let fields = switch colResult {
-                        | Ok(colRows) => Belt.Array.map(colRows, _fieldInfoFromRow)
+                        | Ok(colRows) => Array.map(colRows, _fieldInfoFromRow)
                         | Error(_) => []
                         }
 
@@ -764,8 +764,8 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
                             primaryKey: None,
                           }
                           processTables(
-                            Belt.Array.concat(tables, [tableInfo]),
-                            Belt.Array.sliceToEnd(remaining, 1),
+                            Array.concat(tables, [tableInfo]),
+                            Array.slice(remaining, ~start=1),
                           )
                         })
                       })
@@ -778,8 +778,8 @@ let getTables = (adapter: t): Promise.t<result<array<Interfaces.tableInfo>, Erro
                           primaryKey: None,
                         }
                         processTables(
-                          Belt.Array.concat(tables, [tableInfo]),
-                          Belt.Array.sliceToEnd(remaining, 1),
+                          Array.concat(tables, [tableInfo]),
+                          Array.slice(remaining, ~start=1),
                         )
                       })
                   }
@@ -836,7 +836,7 @@ let getRelationships = (adapter: t): Promise.t<result<array<Interfaces.relations
             | Ok(r) => {
                 // odbc v2 returns plain JS values in rows; produce dict<JSON.t>
                 // for the schema reader by wrapping each cell in a JSON.t variant.
-                let jsonRows = Belt.Array.map(r.rows, row => {
+                let jsonRows = Array.map(r.rows, row => {
                   %raw("(row) => { const o = {}; for (const k of Object.keys(row)) { const v = row[k]; if (v == null) o[k] = null; else if (typeof v === 'string') o[k] = v; else if (typeof v === 'number') o[k] = v; else if (typeof v === 'boolean') o[k] = v; else o[k] = String(v); } return o; }")(row)
                 })
                 Promise.resolve(Ok(jsonRows))
@@ -874,8 +874,8 @@ let getTableSchemaPlan = (adapter: t): Promise.t<result<(array<Interfaces.tableS
           switch tablesResult {
           | Error(e) => Promise.resolve(Error(e))
           | Ok(tables) => {
-              let schemas = Belt.Array.map(tables, table => {
-                let columns = Belt.Array.map(table.fields, field => (
+              let schemas = Array.map(tables, table => {
+                let columns = Array.map(table.fields, field => (
                   {
                     name: field.name,
                     sourceType: field.type_,
@@ -928,7 +928,7 @@ let getQueries = (adapter: t): Promise.t<result<array<Interfaces.queryInfo>, Err
         ->Promise.then(result => {
           switch result {
           | Ok(r) => {
-              let queries = Belt.Array.map(r.rows, row => {
+              let queries = Array.map(r.rows, row => {
                 let name = _rowString(row, "TABLE_NAME")
                 let sqlText = _rowString(row, "VIEW_DEFINITION")
                 (
@@ -1038,7 +1038,7 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
               _tablesAll(conn)
                 ->Promise.then(tableResult => {
                   let tableCount = switch tableResult {
-                  | Ok(rows) => Belt.Array.length(rows)
+                  | Ok(rows) => Array.length(rows)
                   | Error(_) => 0
                   }
                   let (size, modified) = switch adapter.dbPath {
@@ -1104,7 +1104,7 @@ let getDatabaseStatistics = (adapter: t): Promise.t<result<dict<JSON.t>, Errors.
               let reports = ref(0)
               let macros = ref(0)
               let modules = ref(0)
-              let _procRows = Belt.Array.map(r.rows, row => {
+              let _procRows = Array.map(r.rows, row => {
                 let typeCode = _rowInt(row, "Type")
                 let count = _rowInt(row, "Count")
                 switch _mapMsysType(typeCode, count) {
@@ -1208,7 +1208,7 @@ let createTable = (
   switch _requireConnection(adapter) {
   | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
   | Some(conn) => {
-      let cols = Belt.Array.map(columns, _columnSchemaToColumnInfo)
+      let cols = Array.map(columns, _columnSchemaToColumnInfo)
       let sql = SqlBuilder.createTable(name, cols)
       conn.query(sql, [])
         ->Promise.then(result => {
@@ -1344,7 +1344,7 @@ let alterTable = (
       let rec processActions = (
         actionDicts: array<dict<JSON.t>>,
       ): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
-        switch Belt.Array.get(actionDicts, 0) {
+        switch Array.get(actionDicts, 0) {
         | None => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
         | Some(actionDict) => {
             let actionName = switch Dict.get(actionDict, "action") {
@@ -1359,7 +1359,7 @@ let alterTable = (
                     conn.query(sql, [])
                       ->Promise.then(result => {
                         switch result {
-                        | Ok(_) => processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                        | Ok(_) => processActions(Array.slice(actionDicts, ~start=1))
                         | Error(e) => Promise.resolve(Error(e))
                         }
                       })
@@ -1378,7 +1378,7 @@ let alterTable = (
                     conn.query(sql, [])
                       ->Promise.then(result => {
                         switch result {
-                        | Ok(_) => processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                        | Ok(_) => processActions(Array.slice(actionDicts, ~start=1))
                         | Error(e) => Promise.resolve(Error(e))
                         }
                       })
@@ -1397,7 +1397,7 @@ let alterTable = (
                     conn.query(sql, [])
                       ->Promise.then(result => {
                         switch result {
-                        | Ok(_) => processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                        | Ok(_) => processActions(Array.slice(actionDicts, ~start=1))
                         | Error(e) => Promise.resolve(Error(e))
                         }
                       })
@@ -1417,7 +1417,7 @@ let alterTable = (
               }
             | _ => {
                 // Unknown action — continue with remaining actions
-                processActions(Belt.Array.sliceToEnd(actionDicts, 1))
+                processActions(Array.slice(actionDicts, ~start=1))
               }
             }
           }

@@ -153,10 +153,10 @@ test("serializeWithHeaders header line first", () => {
   ]
   let result = serializeWithHeaders(headers, rows)
   let lines = result->String.split("\r\n")
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.get(lines, 0), Some("ID,Name"))
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.get(lines, 1), Some("1,Alice"))
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.get(lines, 2), Some("2,Bob"))
-  assertion(~operator="equal", (a, b) => a == b, Belt.Array.get(lines, 3), None)
+  assertion(~operator="equal", (a, b) => a == b, Array.get(lines, 0), Some("ID,Name"))
+  assertion(~operator="equal", (a, b) => a == b, Array.get(lines, 1), Some("1,Alice"))
+  assertion(~operator="equal", (a, b) => a == b, Array.get(lines, 2), Some("2,Bob"))
+  assertion(~operator="equal", (a, b) => a == b, Array.get(lines, 3), None)
 })
 
 test("serializeWithHeaders empty rows only header line", () => {

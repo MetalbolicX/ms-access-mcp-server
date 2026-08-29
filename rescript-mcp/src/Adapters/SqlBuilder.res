@@ -15,14 +15,14 @@ type whereClause =
 // ---------------------------------------------------------------------------
 
 let _strJoin = (arr: array<string>, sep: string): string => {
-  if Belt.Array.length(arr) == 0 {
+  if Array.length(arr) == 0 {
     ""
   } else {
     let rec loop = (i: int, ~acc: string) => {
-      if i >= Belt.Array.length(arr) {
+      if i >= Array.length(arr) {
         acc
       } else {
-        let ith = Belt.Array.getUnsafe(arr, i)
+        let ith = Array.getUnsafe(arr, i)
         let newAcc = acc == "" ? ith : acc ++ sep ++ ith
         loop(i + 1, ~acc=newAcc)
       }
@@ -58,7 +58,7 @@ let paramPlaceholders = (count: int): string => {
   if count <= 0 {
     "()"
   } else {
-    let parts = Belt.Array.make(count, "?")
+    let parts = Array.make(~length=count, "?")
     "(" ++ _strJoin(parts, ", ") ++ ")"
   }
 }
@@ -98,13 +98,13 @@ let _regexTest = (str: string, re: RegExp.t): bool => {
 
 let whereFromDict = (dict: dict<JSON.t>): (string, array<JSON.t>) => {
   let entries: array<(string, JSON.t)> = %raw("d => Object.entries(d)")(dict)
-  let len = Belt.Array.length(entries)
+  let len = Array.length(entries)
   if len == 0 {
     ("", [])
   } else {
-    let parts = Belt.Array.make(len, "")
-    let params: array<JSON.t> = Belt.Array.make(len, JSON.Null)
-    let _ = Belt.Array.forEachWithIndex(entries, (i, entry) => {
+    let parts = Array.make(~length=len, "")
+    let params: array<JSON.t> = Array.make(~length=len, JSON.Null)
+    let _ = Array.forEachWithIndex(entries, (entry, i) => {
       let (key, value) = entry
       parts[i] = bracket(key) ++ " = ?"
       params[i] = value
@@ -130,14 +130,14 @@ let whereFromRaw = (raw: string, dict: dict<JSON.t>): result<string, Errors.t> =
     Error(Errors.validationError("where_dict string contains disallowed characters"))
   } else {
     let entries: array<(string, JSON.t)> = %raw("d => Object.entries(d)")(dict)
-    let len = Belt.Array.length(entries)
+    let len = Array.length(entries)
     if len == 0 {
       // dict empty: return standalone "WHERE <raw>"
       Ok("WHERE " ++ raw)
     } else {
       // dict non-empty: build dict conditions, append raw
-      let parts = Belt.Array.make(len, "")
-      let _ = Belt.Array.forEachWithIndex(entries, (i, entry) => {
+      let parts = Array.make(~length=len, "")
+      let _ = Array.forEachWithIndex(entries, (entry, i) => {
         let (key, _value) = entry
         parts[i] = bracket(key) ++ " = ?"
       })
@@ -154,15 +154,15 @@ let whereFromRaw = (raw: string, dict: dict<JSON.t>): result<string, Errors.t> =
 
 let insert = (table: string, record: dict<JSON.t>): (string, array<JSON.t>) => {
   let entries: array<(string, JSON.t)> = %raw("d => Object.entries(d)")(record)
-  let len = Belt.Array.length(entries)
+  let len = Array.length(entries)
   if len == 0 {
     ("INSERT INTO " ++ bracket(table) ++ " () VALUES ()", [])
   } else {
-    let cols = Belt.Array.map(entries, entry => {
+    let cols = Array.map(entries, entry => {
       let (key, _) = entry
       bracket(key)
     })
-    let params = Belt.Array.map(entries, entry => {
+    let params = Array.map(entries, entry => {
       let (_key, value) = entry
       value
     })
@@ -179,15 +179,15 @@ let insert = (table: string, record: dict<JSON.t>): (string, array<JSON.t>) => {
 
 let _buildSetClause = (table: string, setDict: dict<JSON.t>): (string, array<JSON.t>) => {
   let entries: array<(string, JSON.t)> = %raw("d => Object.entries(d)")(setDict)
-  let len = Belt.Array.length(entries)
+  let len = Array.length(entries)
   if len == 0 {
     ("UPDATE " ++ bracket(table), [])
   } else {
-    let parts = Belt.Array.map(entries, entry => {
+    let parts = Array.map(entries, entry => {
       let (key, _value) = entry
       bracket(key) ++ " = ?"
     })
-    let params = Belt.Array.map(entries, entry => {
+    let params = Array.map(entries, entry => {
       let (_key, value) = entry
       value
     })
@@ -211,7 +211,7 @@ let update = (table: string, setDict: dict<JSON.t>, whereClause: option<whereCla
       if whereCond == "" {
         (baseClause, setParams)
       } else {
-        (baseClause ++ " WHERE " ++ whereCond, Belt.Array.concat(setParams, whereParams))
+        (baseClause ++ " WHERE " ++ whereCond, Array.concat(setParams, whereParams))
       }
     }
   | Some(Raw(raw)) => {
@@ -331,7 +331,7 @@ let _columnDefInternal = (col: columnInfo): string => {
     ""
   } else if odbcType == "VARCHAR" || odbcType == "CHAR" {
     // VARCHAR/CHAR: append size (default 255)
-    odbcType ++ "(" ++ Belt.Int.toString(size) ++ ")"
+    odbcType ++ "(" ++ Int.toString(size) ++ ")"
   } else {
     // TEXT (MEMO) and all other types: no size suffix
     odbcType
@@ -351,7 +351,7 @@ let columnDef = _columnDefInternal
 // ---------------------------------------------------------------------------
 
 let createTable = (table: string, columns: array<columnInfo>): string => {
-  let colDefs = Belt.Array.map(columns, _columnDefInternal)
+  let colDefs = Array.map(columns, _columnDefInternal)
   let colsStr = _strJoin(colDefs, ", ")
   "CREATE TABLE " ++ bracket(table) ++ " (" ++ colsStr ++ ")"
 }
@@ -387,7 +387,7 @@ let alterTable = (table: string, action: alterTableAction): option<string> => {
 
 let createIndex = (~name: string, ~table: string, ~columns: array<string>, ~unique: bool, ~ignore_nulls: bool=false): string => {
   let uniqueKw = if unique { "UNIQUE INDEX" } else { "INDEX" }
-  let colList = _strJoin(Belt.Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
+  let colList = _strJoin(Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
   let base = "CREATE " ++ uniqueKw ++ " [" ++ _bracketEscape(name) ++ "] ON [" ++ _bracketEscape(table) ++ "] (" ++ colList ++ ")"
   if unique && ignore_nulls {
     base ++ " WITH IGNORE NULL"
@@ -418,15 +418,15 @@ let createRelationship = (
   ~foreignTable: string,
   ~foreignColumns: array<string>,
 ): result<string, Errors.t> => {
-  if Belt.Array.length(columns) != Belt.Array.length(foreignColumns) {
+  if Array.length(columns) != Array.length(foreignColumns) {
     Error(Errors.validationError("columns and foreign_columns must have same length"))
   } else if String.length(relationshipName) > 64 {
     Error(Errors.validationError("Relationship name exceeds 64 characters"))
   } else if String.length(table) > 64 {
     Error(Errors.validationError("Child table name exceeds 64 characters"))
   } else {
-    let colList = _strJoin(Belt.Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
-    let foreignColList = _strJoin(Belt.Array.map(foreignColumns, fc => "[" ++ _bracketEscape(fc) ++ "]"), ", ")
+    let colList = _strJoin(Array.map(columns, c => "[" ++ _bracketEscape(c) ++ "]"), ", ")
+    let foreignColList = _strJoin(Array.map(foreignColumns, fc => "[" ++ _bracketEscape(fc) ++ "]"), ", ")
     Ok(
       "ALTER TABLE [" ++ _bracketEscape(table) ++
       "] ADD CONSTRAINT [" ++ _bracketEscape(relationshipName) ++
