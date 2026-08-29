@@ -1,5 +1,15 @@
 # Plan 019: Convert parity harness from `.mjs` to TypeScript (test-infra upgrade)
 
+> **Amendment (2026-08-28)**: Branch cuts from current `main`, NOT from
+> `rescript/007-parity-harness@e2e206f` — that branch was consolidated to
+> `main` by plan 024 (`bf8f9d0` merge). Parity baseline on current `main`
+> is `17 matched / 0 mismatched / 0 errored` (F-001..F-008 parity fixes
+> landed on `rescript/fix-parity-findings`), NOT the plan's stale
+> `9 matched / 7 mismatched / 1 errored`. Mutation-test gate must still
+> prove detection by mutating a CURRENT behavioral seam (the plan's
+> `Facade.res:327` site is stale; the executor must identify a current
+> seam that flips a parity case and document it in the commit).
+
 > **Executor instructions**: This plan converts `.mjs` files in
 > `rescript-mcp/parity/` to `.ts` and wires `tsc` into the build.
 > Behavior is preserved: same JSON envelopes, same mutation-test
