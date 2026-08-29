@@ -15,7 +15,8 @@
     "lint:cases": "node parity/lint-cases.mjs",
     "build:parity": "tsc -p parity/tsconfig.json",
     "parity": "node parity/dist/run.js",
-    "server": "node ./src/Mcp/main.mjs"
+    "server": "node ./src/Mcp/main.mjs",
+    "test:integration:odbc": "node test/odbc-integration/run.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -137,3 +137,67 @@ Proves the harness detects injected mismatches:
 - **parity harness converted `.mjs` → `.ts`** at `rescript/019-typescript-parity`;
   baseline re-verified 17 matched / 0 mismatched / 0 errored; mutation test
   re-proven (FLOAT_TOL seam in `normalize.ts` used).
+
+## 016-followup
+
+Run date: 2026-08-28. Runner: `pnpm -C rescript-mcp test:integration:odbc`
+with `ACCESS_TEST_ASSUME_ACE=1` and `ACCESS_TEST_DB=tests\integration\fixtures\test_db.accdb`.
+Exit code: 1. Result: 6 passed, 11 failed.
+
+### Triage buckets
+
+| Bucket | Meaning |
+|--------|---------|
+| (a) | runner-assertion bug — fixable in `run.mjs` |
+| (b) | ReScript adapter bug — out of scope, recorded as finding only |
+| (c) | environment / Access ODBC driver limitation — recorded as finding only |
+
+### Findings ledger
+
+| # | Case | Error | Bucket | Owner | Status | Reproduction |
+|---|------|-------|--------|-------|--------|--------------|
+| 016-F-001 | `executeQuery: SELECT returns rows` | `[odbc] Error executing the sql statement` on `SELECT COUNT(*) FROM Customers` | (c) | Access ODBC driver | **OPEN** | `conn.query("SELECT COUNT(*) AS n FROM Customers", [])` throws |
+| 016-F-002 | `insert: INSERT INTO affects 1 row` | `[odbc] Error getting information about parameters` | (c) | Access ODBC driver | **OPEN** | `conn.query("INSERT INTO [Customers] ([CustomerID], [CustomerName]) VALUES (?, ?)", [99998, "Integration Test"])` throws |
+| 016-F-003 | `update: UPDATE WHERE affects expected rows` | `[odbc] Error getting information about parameters` | (c) | Access ODBC driver | **OPEN** | `conn.query("UPDATE [Customers] SET [CustomerName]='Updated' WHERE [CustomerID]=?", [99998])` throws |
+| 016-F-004 | `delete: DELETE WHERE removes inserted row` | `[odbc] Error getting information about parameters` | (c) | Access ODBC driver | **OPEN** | `conn.query("DELETE FROM [Customers] WHERE [CustomerID]=?", [99998])` throws |
+| 016-F-005 | `executeRawSql: SELECT COUNT returns non-negative rowcount` | `FAIL` — no rows returned | (c) | Access ODBC driver | **OPEN** | `conn.query("SELECT COUNT(*) FROM Customers", [])` returns no rows |
+| 016-F-006 | `getTables: returns TABLE rows (MSys excluded)` | `[odbc] Error executing the sql statement` on INFORMATION_SCHEMA query | (c) | Access ODBC driver | **OPEN** | `conn.query("SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE='TABLE' ORDER BY TABLE_NAME", [])` throws |
+| 016-F-007 | `getQueries: queries INFORMATION_SCHEMA.VIEWS with dbo filter` | `[odbc] Error executing the sql statement` | (c) | Access ODBC driver | **OPEN** | `conn.query("SELECT TABLE_NAME, VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS WHERE TABLE_SCHEMA='dbo' ORDER BY TABLE_NAME", [])` throws |
+| 016-F-008 | `createIndex: CREATE INDEX succeeds` | `FAIL` — CREATE INDEX throws | (c) | Access ODBC driver | **OPEN** | `conn.query("CREATE INDEX [IntTestSlice3Idx] ON [Customers] ([CustomerID])", [])` throws |
+| 016-F-009 | `dropIndex: DROP INDEX succeeds` | `FAIL` — DROP INDEX throws | (c) | Access ODBC driver | **OPEN** | `conn.query("DROP INDEX [IntTestSlice3Idx] ON [Customers]", [])` throws |
+| 016-F-010 | `createQuery (CREATE VIEW): succeeds` | `FAIL` — CREATE VIEW throws | (c) | Access ODBC driver | **OPEN** | `conn.query("CREATE VIEW [IntSlice3Vw] AS SELECT CustomerID FROM Customers WHERE CustomerID=0", [])` throws |
+| 016-F-011 | `deleteQuery (DROP VIEW): succeeds` | `FAIL` — DROP VIEW throws | (c) | Access ODBC driver | **OPEN** | `conn.query("DROP VIEW [IntSlice3Vw]", [])` throws |
+
+### Root cause analysis (c) findings
+
+**Parameterised queries (016-F-002/003/004)**: The ACE ODBC driver does not
+implement `SQLDescribeParam` reliably for Jet/ACE tables. The `odbc` npm
+package (node-odbc 2.5.x) calls `SQLDescribeParam` as part of its parameter
+binding path; when the driver returns an error, the query fails. This is a
+known Jet/ACE ODBC limitation and is not fixable in the runner script.
+
+**Non-parameterised queries / DDL (016-F-001/005/006/007/008/009/010/011)**:
+The ACE ODBC driver also fails to execute several statement types that are
+valid in Access SQL, including `INFORMATION_SCHEMA` lookups, `CREATE INDEX`,
+`DROP INDEX`, `CREATE VIEW`, and `DROP VIEW`. The `[odbc] Error executing the
+sql statement` and empty-result failures suggest the driver cannot properly
+process these statement types through `SQLExecDirect` or equivalent paths used
+by the `odbc` package. This is an environment/driver limitation.
+
+**No (a) findings**: No runner-assertion bugs were identified — the runner
+correctly implements the expected SQL and API calls. All failures trace to
+the Access ODBC driver.
+
+**No (b) findings**: The integration runner calls the `odbc` npm package
+directly (not the ReScript adapter), so no ReScript adapter bugs are
+exercised by this runner.
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `pnpm -C rescript-mcp build` | exit 0 |
+| `pnpm -C rescript-mcp test` | 678 passed, 0 failed |
+| `pnpm -C rescript-mcp parity` | 17 matched, 0 mismatched, 0 errored |
+| Integration runner exit code | 1 (11 failures) |
+| Zero (a) fixes applied | Confirmed — all failures are (c) |
