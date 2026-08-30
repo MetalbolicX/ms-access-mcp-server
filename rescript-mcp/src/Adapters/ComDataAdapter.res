@@ -19,9 +19,7 @@ let _isWindows: unit => bool = () => {
 type comDataAdapterState = {
   mutable isConnected: bool,
   mutable dbPath: option<string>,
-  mutable accessApp: option<ComInterfaces.comObject>,
-  mutable daoDb: option<ComInterfaces.comObject>,
-  mutable dispatcher: option<ComDispatch.t>,
+  mutable session: option<ComSession.t>,
 }
 
 // ---------------------------------------------------------------------------
@@ -32,9 +30,7 @@ let _make: unit => comDataAdapterState = () => {
   {
     isConnected: false,
     dbPath: None,
-    accessApp: None,
-    daoDb: None,
-    dispatcher: None,
+    session: None,
   }
 }
 
@@ -124,52 +120,36 @@ module DaoAdapter = {
   // Mirrors Python wincom.py connect() lines 170-232
   // ---------------------------------------------------------------------------
 
-  let connect = (self: t, dbPath: string, ~password: option<string>=?): Promise.t<result<bool, Errors.t>> => {
+  let connect = (
+    self: t,
+    dbPath: string,
+    ~password: option<string>=?,
+  ): Promise.t<result<bool, Errors.t>> => {
     // Non-Windows: return platform error envelope
     if !_isWindows() {
       Promise.resolve(_platformError("COM automation requires Windows"))
     } else {
-      // Create the dispatcher for serializing COM calls
-      let dispatcher = ComDispatch.make()
-      self.dispatcher = Some(dispatcher)
-
-      // Enqueue the connect operation
-      ComDispatch.enqueue(dispatcher, () => {
-        // Step 1: Create Access.Application
-        Bindings.Winax.WINAX_BINDING.createObject("Access.Application")
-          ->Promise.then(appResult => {
-            switch appResult {
-            | Error(e) => Promise.resolve(Error(e))
-            | Ok(accessApp) => {
-                self.accessApp = Some(accessApp)
-
-                // Step 2: Set Visible = False
-                _setProperty(~obj=accessApp, ~property="Visible", ~value=ComInterfaces.VBool(false))
-                  ->Promise.then(_ => {
-                    // Step 3: Get DBEngine property
-                    _getProperty(~obj=accessApp, ~property="DBEngine")
-                      ->Promise.then(dbEngineResult => {
-                        switch dbEngineResult {
-                        | Error(e) => Promise.resolve(Error(e))
-                        | Ok(_) => {
-                            // Step 4: Mark as connected
-                            // Note: Full DAO database opening requires COM collection iteration
-                            // which the winax stubs don't support. We mark connected
-                            // based on having the Access app handle.
-                            self.isConnected = true
-                            self.dbPath = Some(dbPath)
-                            Promise.resolve(Ok(true))
-                          }
-                        }
-                      })
-                  })
+      if self.isConnected {
+        Promise.resolve(Error(Errors.databaseError("Already connected")))
+      } else {
+        // Create or reuse session
+        switch self.session {
+        | None => self.session = Some(ComSession.make())
+        | Some(_) => ()
+        }
+        let session = self.session->Option.getUnsafe
+        ComSession.connect(session, ~path=dbPath, ~password?)
+          ->Promise.then(result => {
+            switch result {
+            | Ok(b) => {
+                self.isConnected = b
+                self.dbPath = Some(dbPath)
+                Promise.resolve(Ok(b))
               }
+            | Error(e) => Promise.resolve(Error(e))
             }
           })
-          ->Promise.catch(e => {
-            Promise.resolve(Error(Errors.databaseError(_exnMessage(e))))
-          })
-      })
+      }
     }
   }
 
@@ -178,22 +158,15 @@ module DaoAdapter = {
   // ---------------------------------------------------------------------------
 
   let disconnect = (self: t): Promise.t<result<unit, Errors.t>> => {
-    if !self.isConnected {
-      Promise.resolve(Ok())
-    } else {
-      // Release handles in reverse order
-      switch self.accessApp {
-      | Some(app) => {
-          Bindings.Winax.WINAX_BINDING.release(app)->ignore
-          self.accessApp = None
-        }
-      | None => ()
-      }
-      self.daoDb = None
-      self.isConnected = false
-      self.dbPath = None
-      self.dispatcher = None
-      Promise.resolve(Ok())
+    switch self.session {
+    | None => Promise.resolve(Ok())
+    | Some(session) =>
+        ComSession.disconnect(session)
+          ->Promise.then(r => {
+            self.isConnected = false
+            self.dbPath = None
+            Promise.resolve(r)
+          })
     }
   }
 
@@ -241,15 +214,7 @@ module DaoAdapter = {
   // ---------------------------------------------------------------------------
 
   let executeQuery = (self: t, sql: string, ~params: option<array<JSON.t>>=?): Promise.t<result<Interfaces.queryResult, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => {
-        ComDispatch.enqueue(dispatch, () => _executeQueryImpl(self, sql))
-      }
-    | None => {
-        // No dispatcher means connect was not called through the dispatch path
-        _executeQueryImpl(self, sql)
-      }
-    }
+    _executeQueryImpl(self, sql)
   }
 
   // ---------------------------------------------------------------------------
@@ -320,40 +285,19 @@ module DaoAdapter = {
   }
 
   let insertData = (self: t, table: string, data: dict<JSON.t>): Promise.t<result<Interfaces.mutationResult, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _mutateImpl(self, "insert", table, data, None))
-    | None => _mutateImpl(self, "insert", table, data, None)
-    }
+    _mutateImpl(self, "insert", table, data, None)
   }
 
   let updateData = (self: t, table: string, data: dict<JSON.t>, ~where: option<JSON.t>=?): Promise.t<result<Interfaces.mutationResult, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _mutateImpl(self, "update", table, data, where))
-    | None => _mutateImpl(self, "update", table, data, where)
-    }
+    _mutateImpl(self, "update", table, data, where)
   }
 
   let deleteData = (self: t, table: string, ~where: option<JSON.t>=?): Promise.t<result<Interfaces.mutationResult, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _mutateImpl(self, "delete", table, Dict.make(), where))
-    | None => _mutateImpl(self, "delete", table, Dict.make(), where)
-    }
+    _mutateImpl(self, "delete", table, Dict.make(), where)
   }
 
   let executeRawSql = (self: t, sql: string): Promise.t<result<int, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => {
-        ComDispatch.enqueue(dispatch, () => {
-          if !self.isConnected {
-            Promise.resolve(Ok(0))
-          } else {
-            // Note: DAO SQL execution not fully implemented
-            Promise.resolve(Ok(0))
-          }
-        })
-      }
-    | None => Promise.resolve(Ok(0))
-    }
+    Promise.resolve(Ok(0))
   }
 
   let exportData = (self: t, query: string, filePath: string, ~format: option<string>=?, ~options: option<dict<JSON.t>>=?): Promise.t<result<Interfaces.mutationResult, Errors.t>> => {
@@ -378,17 +322,11 @@ module DaoAdapter = {
   }
 
   let getTables = (self: t): Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _getTablesImpl(self, false))
-    | None => _getTablesImpl(self, false)
-    }
+    _getTablesImpl(self, false)
   }
 
   let getSystemTables = (self: t): Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _getTablesImpl(self, true))
-    | None => _getTablesImpl(self, true)
-    }
+    _getTablesImpl(self, true)
   }
 
   let getObjectMetadata = (self: t, objectName: string): Promise.t<result<dict<JSON.t>, Errors.t>> => {
@@ -407,10 +345,7 @@ module DaoAdapter = {
   }
 
   let getRelationships = (self: t): Promise.t<result<array<Interfaces.relationshipInfo>, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _getRelationshipsImpl(self))
-    | None => _getRelationshipsImpl(self)
-    }
+    _getRelationshipsImpl(self)
   }
 
   let getTableSchemaPlan = (self: t): Promise.t<result<(array<Interfaces.tableSchema>, Interfaces.unknownMetadata), Errors.t>> => {
@@ -434,10 +369,7 @@ module DaoAdapter = {
   }
 
   let getDatabaseStatistics = (self: t): Promise.t<result<dict<JSON.t>, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _getDbStatsImpl(self))
-    | None => _getDbStatsImpl(self)
-    }
+    _getDbStatsImpl(self)
   }
 
   let _getQueriesImpl: t => Promise.t<result<array<Interfaces.queryInfo>, Errors.t>> = (self: t) => {
@@ -450,10 +382,7 @@ module DaoAdapter = {
   }
 
   let getQueries = (self: t): Promise.t<result<array<Interfaces.queryInfo>, Errors.t>> => {
-    switch self.dispatcher {
-    | Some(dispatch) => ComDispatch.enqueue(dispatch, () => _getQueriesImpl(self))
-    | None => _getQueriesImpl(self)
-    }
+    _getQueriesImpl(self)
   }
 
   let createQuery = (self: t, name: string, sql: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
