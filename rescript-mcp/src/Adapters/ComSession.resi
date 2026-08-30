@@ -5,6 +5,7 @@ type t = {
   mutable handles: ComInterfaces.sessionHandles,
   mutable isConnected: bool,
   mutable pid: option<int>,
+  mutable currentDb: option<ComInterfaces.comObject>,  // opened DAO Database (NOT DBEngine)
 }
 
 module type SESSION = {
@@ -12,6 +13,7 @@ module type SESSION = {
   let disconnect: t => Promise.t<result<unit, Errors.t>>
   let isConnected: t => Promise.t<result<bool, Errors.t>>
   let getHandles: t => ComInterfaces.sessionHandles
+  let getCurrentDb: t => option<ComInterfaces.comObject>
 }
 
 let make: unit => t
@@ -19,3 +21,4 @@ let connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, E
 let disconnect: t => Promise.t<result<unit, Errors.t>>
 let isConnected: t => Promise.t<result<bool, Errors.t>>
 let getHandles: t => ComInterfaces.sessionHandles
+let getCurrentDb: t => option<ComInterfaces.comObject>

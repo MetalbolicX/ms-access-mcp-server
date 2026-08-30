@@ -10,6 +10,7 @@ type t = {
   mutable handles: ComInterfaces.sessionHandles,
   mutable isConnected: bool,
   mutable pid: option<int>,  // PID of spawned MSACCESS process (for taskkill)
+  mutable currentDb: option<ComInterfaces.comObject>,  // opened DAO Database (NOT DBEngine)
 }
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ module type SESSION = {
   let disconnect: t => Promise.t<result<unit, Errors.t>>
   let isConnected: t => Promise.t<result<bool, Errors.t>>
   let getHandles: t => ComInterfaces.sessionHandles
+  let getCurrentDb: t => option<ComInterfaces.comObject>
 }
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,7 @@ let _make: unit => t = () => {
     },
     isConnected: false,
     pid: None,
+    currentDb: None,
   }
 }
 
@@ -100,6 +103,15 @@ let _releaseAccessApp: ComInterfaces.comObject => unit = (
   }
 )
 
+let _releaseHandle: option<ComInterfaces.comObject> => unit = (
+  handle => {
+    switch handle {
+    | Some(obj) => Bindings.Winax.WINAX_BINDING.release(obj)
+    | None => ()
+    }
+  }
+)
+
 // ---------------------------------------------------------------------------
 // connect — opens Access app, DAO DBEngine, OpenDatabase, OpenCurrentDatabase
 // Mirrors Python wincom.py _do_connect (wincom.py:228-259)
@@ -149,12 +161,14 @@ let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, 
                             ->Promise.then(dbOpenResult => {
                               switch dbOpenResult {
                               | Error(e) => {
-                                  _releaseAccessApp(accessApp)
-                                  session.handles.accessApp = None
+                                  _releaseHandle(session.handles.daoDb)
+                                  _releaseHandle(Some(accessApp))
                                   session.handles.daoDb = None
+                                  session.handles.accessApp = None
                                   Promise.resolve(Error(e))
                                 }
-                              | Ok(_currentDb) => {
+                              | Ok(currentDb) => {
+                                  session.currentDb = Some(currentDb)
                                   // Step 6: OpenCurrentDatabase on the Access app
                                   let openCurrArgs = switch password {
                                     | Some(p) => [ComInterfaces.VStr(path), ComInterfaces.VBool(false), ComInterfaces.VStr(p)]
@@ -164,9 +178,12 @@ let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, 
                                     ->Promise.then(ocdResult => {
                                       switch ocdResult {
                                       | Error(e) => {
-                                          _releaseAccessApp(accessApp)
-                                          session.handles.accessApp = None
+                                          _releaseHandle(session.currentDb)
+                                          _releaseHandle(session.handles.daoDb)
+                                          _releaseHandle(Some(accessApp))
+                                          session.currentDb = None
                                           session.handles.daoDb = None
+                                          session.handles.accessApp = None
                                           Promise.resolve(Error(e))
                                         }
                                       | Ok(_) => {
@@ -220,21 +237,14 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
       // Idempotent: already disconnected
       Promise.resolve(Ok())
     } else {
-      // Release in reverse order: adoConn → daoDb → accessApp
-      let releaseHandle: (option<ComInterfaces.comObject>, string) => unit = (
-        (handle, _name) => {
-          switch handle {
-          | Some(obj) => Bindings.Winax.WINAX_BINDING.release(obj)
-          | None => ()
-          }
-        }
-      )
-      // LIFO: adoConn first, then daoDb, then accessApp
-      releaseHandle(session.handles.adoConn, "adoConn")
+      // LIFO: adoConn → currentDb → daoDb → accessApp
+      _releaseHandle(session.handles.adoConn)
       session.handles.adoConn = None
-      releaseHandle(session.handles.daoDb, "daoDb")
+      _releaseHandle(session.currentDb)
+      session.currentDb = None
+      _releaseHandle(session.handles.daoDb)
       session.handles.daoDb = None
-      releaseHandle(session.handles.accessApp, "accessApp")
+      _releaseHandle(session.handles.accessApp)
       session.handles.accessApp = None
       session.isConnected = false
       session.pid = None
@@ -272,4 +282,5 @@ let connect = _connect
 let disconnect = _disconnect
 let isConnected = _isConnected
 let getHandles = _getHandles
+let getCurrentDb = (session: t) => session.currentDb
 let make = _make
