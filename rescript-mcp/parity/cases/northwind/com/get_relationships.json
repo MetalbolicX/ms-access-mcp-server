@@ -1,0 +1,8 @@
+{
+  "operation": "get_relationships",
+  "args": {
+    "connection_name": "northwind"
+  },
+  "variant": "com",
+  "mutating": false
+}

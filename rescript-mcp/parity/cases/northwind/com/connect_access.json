@@ -1,0 +1,8 @@
+{
+  "operation": "connect_access",
+  "args": {
+    "connection_name": "northwind"
+  },
+  "variant": "com",
+  "mutating": false
+}
