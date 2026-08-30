@@ -266,3 +266,74 @@ testAsync("ComSession: registry restore uses transaction semantics — all or no
   assertion(~operator="equal", (a, b) => a == b, anyFailed, false)
   cb(~planned=2, ())
 })
+
+// ---------------------------------------------------------------------------
+// Plan 028: connect lifecycle smoke tests
+// Verifies the public ComSession API surface (make, isConnected, getHandles,
+// connect, disconnect) is shaped correctly. Real binding calls require Windows
+// + Access; in this env we verify the structure and the file-not-found error.
+// ---------------------------------------------------------------------------
+
+testAsync("ComSession.make returns a fresh session with isConnected=false", cb => {
+  let session: ComSession.t = ComSession.make()
+  assertion(~operator="equal", (a, b) => a == b, session.isConnected, false)
+  assertion(~operator="equal", (a, b) => a == b, session.pid, None)
+  cb(~planned=2, ())
+})
+
+testAsync("ComSession.getHandles returns empty sessionHandles on fresh session", cb => {
+  let session: ComSession.t = ComSession.make()
+  let handles: ComInterfaces.sessionHandles = ComSession.getHandles(session)
+  assertion(~operator="equal", (a, b) => a == b, handles.accessApp, None)
+  assertion(~operator="equal", (a, b) => a == b, handles.daoDb, None)
+  assertion(~operator="equal", (a, b) => a == b, handles.adoConn, None)
+  cb(~planned=3, ())
+})
+
+testAsync("ComSession.connect with non-existent path returns Error", cb => {
+  // The file existence check happens BEFORE any binding call, so this works
+  // regardless of platform. The error message starts with "File not found: ".
+  let session: ComSession.t = ComSession.make()
+  ComSession.connect(session, ~path="/nonexistent/path/to/fake.accdb")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      | Error(e) => {
+          let msg = Errors._message(e)
+          let hasFileNotFound = String.includes(msg, "File not found")
+          assertion(~operator="equal", (a, b) => a == b, hasFileNotFound, true)
+        }
+      }
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("ComSession.disconnect on fresh session is idempotent and Ok", cb => {
+  let session: ComSession.t = ComSession.make()
+  ComSession.disconnect(session)
+    ->Promise.then(_ => {
+      ComSession.disconnect(session)
+        ->Promise.then(r2 => {
+          assertion(~operator="equal", (a, b) => a == b, r2, Ok())
+          cb(~planned=1, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("ComSession.isConnected reflects state on fresh session", cb => {
+  let session: ComSession.t = ComSession.make()
+  ComSession.isConnected(session)
+    ->Promise.then(r => {
+      switch r {
+      | Ok(b) => assertion(~operator="equal", (a, b) => a == b, b, false)
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})

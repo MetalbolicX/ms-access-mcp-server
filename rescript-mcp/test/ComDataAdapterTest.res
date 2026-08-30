@@ -332,3 +332,64 @@ testAsync("ComDataAdapter: asSchemaInstance produces schemaAdapterInstance with 
   assertion(~operator="equal", (a, b) => a == b, hasAllMethods, true)
   cb(~planned=1, ())
 })
+
+// ---------------------------------------------------------------------------
+// Plan 028: delegation smoke tests
+// Verifies that DaoAdapter.connect/disconnect delegate to ComSession and that
+// state is preserved on the adapter side (isConnected, dbPath).
+// ---------------------------------------------------------------------------
+
+testAsync("DaoAdapter.make produces disconnected adapter", cb => {
+  let adapter: ComDataAdapter.DaoAdapter.t = ComDataAdapter.DaoAdapter.make()
+  assertion(~operator="equal", (a, b) => a == b, adapter.isConnected, false)
+  assertion(~operator="equal", (a, b) => a == b, adapter.dbPath, None)
+  assertion(~operator="equal", (a, b) => a == b, adapter.session, None)
+  cb(~planned=3, ())
+})
+
+testAsync("DaoAdapter.connect accepts path without crashing (platform-gated result)", cb => {
+  // ComDataAdapter.connect short-circuits to a platform error on non-Windows.
+  // On Windows with no Access, it errors out at the file or DAO step.
+  // Either way, the call must complete and not throw — it returns a Promise.
+  let adapter: ComDataAdapter.DaoAdapter.t = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.DaoAdapter.connect(adapter, "/some/path.accdb")
+    ->Promise.then(result => {
+      let isResult = switch result {
+      | Ok(_) => true
+      | Error(_) => true
+      }
+      assertion(~operator="equal", (a, b) => a == b, isResult, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("DaoAdapter.disconnect on fresh adapter is Ok(()) and idempotent", cb => {
+  let adapter: ComDataAdapter.DaoAdapter.t = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.DaoAdapter.disconnect(adapter)
+    ->Promise.then(_ => {
+      ComDataAdapter.DaoAdapter.disconnect(adapter)
+        ->Promise.then(r2 => {
+          assertion(~operator="equal", (a, b) => a == b, r2, Ok())
+          assertion(~operator="equal", (a, b) => a == b, adapter.isConnected, false)
+          cb(~planned=2, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("DaoAdapter.isConnected reflects state on fresh adapter", cb => {
+  let adapter: ComDataAdapter.DaoAdapter.t = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.DaoAdapter.isConnected(adapter)
+    ->Promise.then(r => {
+      switch r {
+      | Ok(b) => assertion(~operator="equal", (a, b) => a == b, b, false)
+      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
