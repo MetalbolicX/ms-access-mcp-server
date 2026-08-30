@@ -11,6 +11,7 @@
     "build": "rescript",
     "dev": "rescript watch",
     "clean": "rescript clean",
+    "clean:all": "rescript clean && node -e \"const p=require.resolve('rescript-test/package.json');const{execSync}=require('child_process');const{dirname}=require('path');execSync('npx rescript',{cwd:dirname(p),stdio:'inherit'})\" && rescript",
     "test": "retest \"test/**/*.res.mjs\"",
     "lint:cases": "node parity/lint-cases.mjs",
     "build:parity": "tsc -p parity/tsconfig.json",

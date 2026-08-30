@@ -87,17 +87,6 @@ module FakeComDispatch = {
 }
 
 // ---------------------------------------------------------------------------
-// Injected fake bindings (replace real Bindings module during tests)
-// ---------------------------------------------------------------------------
-
-// Mutable ref to track whether we're in test mode
-let _testMode: ref<bool> = ref(false)
-
-let setTestMode = (enabled: bool) => {
-  _testMode.contents = enabled
-}
-
-// ---------------------------------------------------------------------------
 // ComDataAdapter tests
 // ---------------------------------------------------------------------------
 

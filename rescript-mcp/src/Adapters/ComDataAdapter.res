@@ -1,6 +1,7 @@
 // ComDataAdapter.res — DATA_ADAPTER + SCHEMA_ADAPTER implementation via winax/DAO
 // Mirrors Python win_com_adapter.py (ComDataAdapter -> WinComAdapter via DaoAdapter)
-// Every COM call goes through ComDispatch.enqueue for STA-thread safety.
+// COM calls run on Node's single-threaded event loop; ComDispatch (STA serializer)
+// is retained for future STA needs, currently test-only.
 
 open Interfaces
 
@@ -74,36 +75,6 @@ let _formatValue: JSON.t => string = (j: JSON.t): string => {
     }
   | JSON.Array(_) | JSON.Object(_) => "NULL"
   }
-}
-
-// ---------------------------------------------------------------------------
-// _setProperty — set a property on a COM object (stub — returns Ok)
-// ---------------------------------------------------------------------------
-
-let _setProperty: (
-  ~obj: ComInterfaces.comObject,
-  ~property: string,
-  ~value: ComInterfaces.variant,
-) => Promise.t<result<unit, Errors.t>> = (
-  ~obj: ComInterfaces.comObject,
-  ~property: string,
-  ~value: ComInterfaces.variant,
-) => {
-  Bindings.Winax.WINAX_BINDING.set(obj, property, value)
-}
-
-// ---------------------------------------------------------------------------
-// _getProperty — get a property from a COM object
-// ---------------------------------------------------------------------------
-
-let _getProperty: (
-  ~obj: ComInterfaces.comObject,
-  ~property: string,
-) => Promise.t<result<JSON.t, Errors.t>> = (
-  ~obj: ComInterfaces.comObject,
-  ~property: string,
-) => {
-  Bindings.Winax.WINAX_BINDING.get(obj, property)
 }
 
 // ---------------------------------------------------------------------------

@@ -37,10 +37,18 @@ uv run python -m ms_access_mcp.mcp.server      # same as stdio
 - **Integration tests skip on non-Windows** unless you mock pyodbc. Use SQLite-backed fixtures from `tests/integration/conftest.py` (`_sqlite_pyodbc_connect`, `pool_with_sqlite`, `pool_with_two_adapters`).
 - **Integration test db**: set `ACCESS_TEST_DB` env var or place a `.accdb` at `tests/integration/fixtures/test_db.accdb`
 - **CI guard** (`test_no_provider_sdk_in_core.py`): core must never import `openai`, `anthropic`, etc. Provider SDKs only in `adapters/llm_*.py`.
-- **Reset container** between tests: call `from ms_access_mcp.mcp.container import _reset_container; _reset_container()` then re-init globals (`_path_guard`, `_auth_middleware`).
+ - **Reset container** between tests: call `from ms_access_mcp.mcp.container import _reset_container; _reset_container()` then re-init globals (`_path_guard`, `_auth_middleware`).
 - **E2E HTTP tests**: Starlette `TestClient` with monkeypatched env. Reset server module globals before each fixture.
 - **LLM tools** (`ai_tools.py`): guarded by `LlmConfig.enabled` (default `False`). Returning `{"disabled": True}` dict, not raising errors.
 - **Formatting**: ruff line-length 100, double quotes, space indent. pyright strict with basic mode.
+- **`pnpm -C rescript-mcp clean` DOES clear rescript-test compiled output** inside `node_modules/.pnpm/rescript-test@*/`. Recovery after accidental `clean`: `pnpm -C rescript-mcp clean:all`. Use `clean:all` as the standard clean target; never `clean` alone.
+
+## Verification commands
+
+```bash
+pnpm -C rescript-mcp clean:all && pnpm -C rescript-mcp build && pnpm -C rescript-mcp test   # full suite
+npm run build && npm test     # root-level (delegates to pnpm -C rescript-mcp after clean:all setup)
+```
 
 ## Env Vars
 
