@@ -22,11 +22,13 @@
     "test:integration:northwind:stdio": "node ./test/northwind-stdio/run.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@rescript/runtime": "^12.0.0",
     "odbc": "^2.5.0",
     "rescript": "^12.2.0",
     "rescript-nodejs": "^17.0.0",
+    "winax": "^3.6.9",
     "zod": "^3.0.0"
   },
   "devDependencies": {
