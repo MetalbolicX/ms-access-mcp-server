@@ -7,6 +7,7 @@ module OdbcAdapter = OdbcAdapter
 module OdbcSchemaReader = OdbcSchemaReader
 module CsvWriter = CsvWriter
 module ComInterfaces = ComInterfaces
+module ComDispatch = ComDispatch
 module ComSession = ComSession
 module TrustedLocations = TrustedLocations
 module ComVba = ComVba
