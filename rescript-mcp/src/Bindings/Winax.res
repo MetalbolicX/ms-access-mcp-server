@@ -22,6 +22,9 @@ module type WINAX_BINDING = {
   let getItem: (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   let getCount: ComInterfaces.comObject => Promise.t<result<int, Errors.t>>
 
+  // invokeAsObject — for methods returning COM handles (OpenDatabase, OpenRecordset, etc.)
+  let invokeAsObject: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
+
   // Variant conversion
   let toVariant: ComInterfaces.variant => Promise.t<result<JSON.t, Errors.t>>
   let fromVariant: JSON.t => Promise.t<result<ComInterfaces.variant, Errors.t>>
@@ -121,8 +124,15 @@ module WINAX_BINDING: WINAX_BINDING = {
   // ------------------------------------------------------------------
 
   let release: ComInterfaces.comObject => unit = (
-    (_obj: ComInterfaces.comObject) => {
-      () // placeholder — real winax.release call in .mjs
+    (obj: ComInterfaces.comObject) => {
+      _importWinax(())
+        ->Promise.then(m => {
+          let rawMod = TsBridge.unwrapWinaxModule(m)
+          TsBridge.winaxRelease(rawMod, obj)
+          Promise.resolve()
+        })
+        ->Promise.catch(_ => Promise.resolve())
+        ->ignore
     }
   : ComInterfaces.comObject => unit
   )
@@ -152,8 +162,17 @@ module WINAX_BINDING: WINAX_BINDING = {
   // ------------------------------------------------------------------
 
   let set: (ComInterfaces.comObject, string, ComInterfaces.variant) => Promise.t<result<unit, Errors.t>> = (
-    (_obj: ComInterfaces.comObject, _property: string, _value: ComInterfaces.variant) => {
-      Promise.resolve(Ok())
+    (obj: ComInterfaces.comObject, property: string, value: ComInterfaces.variant) => {
+      _importWinax(())
+        ->Promise.then(m => {
+          let rawMod = TsBridge.unwrapWinaxModule(m)
+          TsBridge.winaxSetProperty(rawMod, obj, property, variantToJson(value))
+          Promise.resolve(Ok())
+        })
+        ->Promise.catch(e => {
+          let msg = exnMessage(e)
+          Promise.resolve(Error(mapDispatchError(msg, None, None, None)))
+        })
     }
   : (ComInterfaces.comObject, string, ComInterfaces.variant) => Promise.t<result<unit, Errors.t>>
   )
@@ -180,15 +199,25 @@ module WINAX_BINDING: WINAX_BINDING = {
   : (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<JSON.t, Errors.t>>
   )
 
-  // ------------------------------------------------------------------
-  // getItem — gets an item from a collection by index
-  // ------------------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // invokeAsObject — calls a method that returns a COM handle (not JSON data)
+  // --------------------------------------------------------------------------
 
-  let getItem: (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>> = (
-    (obj: ComInterfaces.comObject, _index: ComInterfaces.variant) => {
-      Promise.resolve(Ok(obj))
+  let invokeAsObject: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>> = (
+    (obj: ComInterfaces.comObject, method: string, args: array<ComInterfaces.variant>) => {
+      _importWinax(())
+        ->Promise.then(m => {
+          let rawMod = TsBridge.unwrapWinaxModule(m)
+          let rawArgs: array<JSON.t> = Array.map(args, v => variantToJson(v))
+          let result: ComInterfaces.comObject = TsBridge.winaxInvokeReturningObject(rawMod, obj, method, rawArgs)
+          Promise.resolve(Ok(result))
+        })
+        ->Promise.catch(e => {
+          let msg = exnMessage(e)
+          Promise.resolve(Error(mapDispatchError(msg, None, None, None)))
+        })
     }
-  : (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
+  : (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   )
 
   // ------------------------------------------------------------------
@@ -196,10 +225,27 @@ module WINAX_BINDING: WINAX_BINDING = {
   // ------------------------------------------------------------------
 
   let getCount: ComInterfaces.comObject => Promise.t<result<int, Errors.t>> = (
-    (_obj: ComInterfaces.comObject) => {
-      Promise.resolve(Ok(0))
+    (obj: ComInterfaces.comObject) => {
+      get(obj, "Count")
+        ->Promise.then(r => switch r {
+        | Ok(JSON.Number(n)) => Promise.resolve(Ok(Float.toInt(n)))
+        | Ok(JSON.String(s)) => Promise.resolve(Ok(Int.fromString(s)->Option.getOr(0)))
+        | Ok(_) => Promise.resolve(Error(Errors.databaseError("Count not numeric")))
+        | Error(e) => Promise.resolve(Error(e))
+        })
     }
   : ComInterfaces.comObject => Promise.t<result<int, Errors.t>>
+  )
+
+  // ------------------------------------------------------------------
+  // getItem — gets an item from a collection by index
+  // ------------------------------------------------------------------
+
+  let getItem: (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>> = (
+    (obj: ComInterfaces.comObject, index: ComInterfaces.variant) => {
+      invokeAsObject(obj, "Item", [index])
+    }
+  : (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   )
 
   // ------------------------------------------------------------------

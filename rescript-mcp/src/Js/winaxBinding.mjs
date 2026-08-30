@@ -11,3 +11,9 @@ export const createObject = (mod, progid) => mod.Object(progid);
 export const getProperty = (mod, obj, prop) => mod.cast(obj, prop);
 /** Invoke a method on a COM object with an array of arguments. */
 export const invokeMethod = (mod, obj, method, args) => mod.invoke(obj, method, args);
+/** Write a property on a COM object via direct assignment on the proxy. */
+export const setProperty = (mod, obj, prop, value) => { (obj)[prop] = value };
+/** Release one or more COM objects via winax.free function. */
+export const release = (mod, obj) => { if (typeof mod.release === "function") mod.release(obj) };
+/** Invoke a method that returns a COM object handle. */
+export const invokeReturningObject = (mod, obj, method, args) => mod.invoke(obj, method, args);

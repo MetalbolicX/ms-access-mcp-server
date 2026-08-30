@@ -17,6 +17,9 @@ module type WINAX_BINDING = {
   let getItem: (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   let getCount: ComInterfaces.comObject => Promise.t<result<int, Errors.t>>
 
+  // invokeAsObject — for methods returning COM handles (OpenDatabase, OpenRecordset, etc.)
+  let invokeAsObject: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
+
   // Variant conversion
   let toVariant: ComInterfaces.variant => Promise.t<result<JSON.t, Errors.t>>
   let fromVariant: JSON.t => Promise.t<result<ComInterfaces.variant, Errors.t>>

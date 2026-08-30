@@ -8,6 +8,7 @@ export interface WinaxModule {
   Object: (progid: string) => unknown
   cast: (obj: unknown, prop: string) => unknown
   invoke: (obj: unknown, method: string, args: unknown[]) => unknown
+  release: (...objects: unknown[]) => void
 }
 
 import { unwrapCjsDefault } from "./cjsInterop.mjs"
@@ -32,6 +33,36 @@ export const getProperty = (
 
 /** Invoke a method on a COM object with an array of arguments. */
 export const invokeMethod = (
+  mod: WinaxModule,
+  obj: unknown,
+  method: string,
+  args: unknown[],
+): unknown => mod.invoke(obj, method, args)
+
+/** Write a property on a COM object via direct assignment on the proxy. */
+export const setProperty = (
+  mod: WinaxModule,
+  obj: unknown,
+  prop: string,
+  value: unknown,
+): void => {
+  // winax COM proxies support direct property assignment on the JS wrapper.
+  (obj as Record<string, unknown>)[prop] = value
+}
+
+/** Release one or more COM objects via winax.free function. */
+export const release = (
+  mod: WinaxModule,
+  obj: unknown,
+): void => {
+  if (typeof mod.release === "function") {
+    mod.release(obj)
+  }
+}
+
+/** Invoke a method that returns a COM object handle (not JSON data).
+ *  Returns the raw COM proxy so the ReScript side can store it as comObject. */
+export const invokeReturningObject = (
   mod: WinaxModule,
   obj: unknown,
   method: string,

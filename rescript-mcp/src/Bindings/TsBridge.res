@@ -92,6 +92,15 @@ external winaxGetProperty: (JSON.t, 'a, string) => JSON.t = "getProperty"
 @module("../Js/winaxBinding.mjs")
 external winaxInvokeMethod: (JSON.t, 'a, string, array<JSON.t>) => JSON.t = "invokeMethod"
 
+@module("../Js/winaxBinding.mjs")
+external winaxSetProperty: (JSON.t, 'a, string, JSON.t) => unit = "setProperty"
+
+@module("../Js/winaxBinding.mjs")
+external winaxRelease: (JSON.t, 'a) => unit = "release"
+
+@module("../Js/winaxBinding.mjs")
+external winaxInvokeReturningObject: (JSON.t, 'a, string, array<JSON.t>) => ComInterfaces.comObject = "invokeReturningObject"
+
 // ---------------------------------------------------------------------------
 // odbcBinding.mts — typed odbc module unwrap helper
 // ---------------------------------------------------------------------------
