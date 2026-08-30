@@ -311,3 +311,41 @@ oracle on all Northwind cases.
 | 026-F-001 | SDK `StdioClientTransport` handshake hangs; use raw JSON-RPC stdio for smoke tests |
 | 026-F-002 | PathGuard rejects forward-slash paths on Windows; use backslashes for `connect_access` on Windows |
 | 026-F-003 | ODBC `get_relationships` returns `count: 0` (MSysRelationships SQL throws); Python COM returns full list. Northwind case uses `volatileFields: ["count", "relationships"]` until an ODBC fallback is implemented. |
+
+## 027-com-wiring (plan 027)
+
+Generated: 2026-08-29 by implementing steps 4-8 of plan 027.
+
+### Summary
+
+Steps 4-8 implement the COM data adapter wiring through the composition root and parity harness:
+
+- **Step 4**: ComDataAdapter unit tests added in `test/ComDataAdapterTest.res` with module-typed fakes (FakeWinaxBinding pattern, FakeComAdapter pattern).
+- **Step 5**: `Composition.res` now branches on backend - when `~comAvailable=true` AND resolved backend is `com`, builds `ComDataAdapter` + `ComDataAdapter.asSchemaInstance`. Server probe added via `Bindings.TsBridge.isWinaxAvailable()`.
+- **Step 6**: `variant` threaded through parity harness - `cases.schema.json` enum expanded to `["odbc", "com"]`, `run.ts` passes `PARITY_VARIANT` to children, `runRescript.ts` calls `Facade.connectAccess` with `backend="com"` when variant=com, `parity_driver.py` instantiates `WinComAdapter` when `PARITY_VARIANT=com`.
+- **Step 7**: COM parity corpus created in `parity/cases/northwind/com/` with 6 cases. Key difference: `get_relationships.json` has no `volatileFields` because COM returns all 4 Northwind relationships (the point of the COM path).
+
+### COM parity corpus
+
+| Case | Notes |
+|------|-------|
+| `connect_access.json` | backend: "com" |
+| `get_tables.json` | parity with ODBC |
+| `get_table_schema-Customers.json` | parity with ODBC |
+| `get_relationships.json` | **No volatileFields** - COM returns 4 relationships vs ODBC returns 0 |
+| `get_queries.json` | parity with ODBC |
+| `query_data-SelectTop5Customers.json` | parity with ODBC |
+
+### Script added
+
+```
+parity:northwind:com: pnpm build:parity && node parity/dist/run.js --cases-dir=rescript-mcp/parity/cases/northwind/com --require-read-only
+```
+
+### Findings ledger
+
+| # | Note |
+|---|------|
+| 027-F-001 | COM `getTableSchemaPlan` and `generateSql` return "Not available via COM" error envelope - per plan 027 step 3, these are stubbed with the ODBC "Not available" pattern |
+| 027-F-002 | Access installation not confirmed in this environment - COM parity corpus may need to be skipped if Access is not installed. See probe in `parity/findings.md` |
+| 026-F-003 COVERAGE | COM path provides full `get_relationships` with 4 entries (vs ODBC's 0). The COM corpus `get_relationships.json` does NOT use `volatileFields` because the Python COM oracle returns all relationships. |
