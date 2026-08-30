@@ -80,6 +80,7 @@ interface CaseFile {
   args?: Record<string, unknown>;
   mutating?: boolean;
   volatileFields?: string[];
+  variant?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,11 +232,14 @@ async function main() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const Facade = FacadeModule as FacadeModule;
 
+  const variant = (caseObj as CaseFile).variant ?? "odbc";
+  const useCom = variant === "com";
+
   const factory = Composition.realFactory as () => Promise<unknown>;
   const facade = Facade.make(
     undefined, // pool
     factory,   // factory
-    false,     // comAvailable
+    useCom,    // comAvailable — passed to Facade for instrumentation only
     undefined, // readonly
     () => allowedDirs, // allowedDirs
   );
@@ -258,7 +262,9 @@ async function main() {
     if (!dbPath) {
       throw new Error("ACCESS_TEST_DB not set");
     }
-    const connectResult = await Facade.connectAccess(facade, dbPath);
+    const connectResult = useCom
+      ? await Facade.connectAccess(facade, dbPath, undefined, undefined, undefined, "com")
+      : await Facade.connectAccess(facade, dbPath);
     if (!connectResult.success) {
       // Return the connect failure as the envelope so the differ can
       // compare failure shapes.

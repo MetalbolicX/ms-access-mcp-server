@@ -35,9 +35,9 @@
       "type": "object"
     },
     "variant": {
-      "description": "Adapter variant. v1 is ODBC-only; COM variants arrive with future facade phases.",
+      "description": "Adapter variant: odbc (pyodbc) or com (winax/DAO).",
       "type": "string",
-      "enum": ["odbc"]
+      "enum": ["odbc", "com"]
     },
     "mutating": {
       "description": "True iff the case mutates database state. The 5-op mutating registry (insert_data, update_data, delete_data, execute_raw_sql, export_data) covers the MUTATING operations; per-case `mutating: false` is allowed for non-mutating invocations (e.g. SELECT) of nominally-mutating ops. The runner uses this to decide between per-side fixture copies (mutating) and shared pristine fixture (non-mutating).",

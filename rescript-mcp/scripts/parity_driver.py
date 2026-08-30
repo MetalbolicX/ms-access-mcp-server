@@ -31,6 +31,13 @@ sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 
 from ms_access_mcp.adapters.odbc import OdbcAdapter  # noqa: E402
 
+# Import WinComAdapter for COM variant
+try:
+    from ms_access_mcp.adapters.win_com_adapter import WinComAdapter  # noqa: E402
+    _HAS_WINCOM = True
+except ImportError:
+    _HAS_WINCOM = False
+
 
 class _Envelope(TypedDict):
     success: bool
@@ -97,14 +104,19 @@ class _RawSqlEnvelope(TypedDict):
     rows_affected: int
 
 
-def _connect(name: str = "default") -> OdbcAdapter:
-    """Open an OdbcAdapter against ACCESS_TEST_DB.
+def _connect(name: str = "default"):
+    """Open an OdbcAdapter or WinComAdapter against ACCESS_TEST_DB.
 
     Mirrors the ReScript facade's connectAccess: the adapter opens a
-    pyodbc connection on the same .accdb file the ReScript side uses.
+    connection on the same .accdb file the ReScript side uses.
+    When PARITY_VARIANT=com, uses WinComAdapter (DAO) instead of OdbcAdapter (ODBC).
     """
     db_path = os.environ["ACCESS_TEST_DB"]
-    adapter = OdbcAdapter(db_path)
+    parity_variant = os.environ.get("PARITY_VARIANT", "odbc")
+    if parity_variant == "com" and _HAS_WINCOM:
+        adapter = WinComAdapter(db_path)
+    else:
+        adapter = OdbcAdapter(db_path)
     if not adapter.connect(db_path):
         raise RuntimeError(f"connect failed for {name} at {db_path}")
     return adapter

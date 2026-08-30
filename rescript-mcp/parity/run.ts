@@ -63,6 +63,7 @@ interface CaseFile {
   args?: Record<string, unknown>;
   mutating?: boolean;
   volatileFields?: string[];
+  variant?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,26 @@ const fixture = process.env.ACCESS_TEST_DB ?? REPO_FIXTURE;
 if (!existsSync(fixture)) {
   console.log(`parity: skipped (fixture not found at ${fixture})`);
   process.exit(0);
+}
+
+// COM variant: skip if winax is not available on this platform
+if (process.env.PARITY_VARIANT === "com") {
+  const hasWinax = (() => {
+    try {
+      require("winax");
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  if (!hasWinax) {
+    console.log("parity: skipped (PARITY_VARIANT=com but winax not available)");
+    process.exit(0);
+  }
+  if (process.platform !== "win32") {
+    console.log("parity: skipped (PARITY_VARIANT=com requires Windows)");
+    process.exit(0);
+  }
 }
 
 // Per plan 018 amendment 4: pin env for BOTH child processes.
@@ -150,8 +171,8 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
  * Run the Python driver against a specific fixture copy. The driver
  * reads ACCESS_TEST_DB internally.
  */
-function runPython(childFixturePath: string, casePath: string): DriverResult {
-  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir() };
+function runPython(childFixturePath: string, casePath: string, variant: string): DriverResult {
+  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant };
   return runChild(PYTHON, [PYTHON_DRIVER, casePath], env, "python");
 }
 
@@ -159,8 +180,8 @@ function runPython(childFixturePath: string, casePath: string): DriverResult {
  * Run the ReScript runner against a specific fixture copy. The runner
  * reads ACCESS_TEST_DB internally.
  */
-function runRescript(childFixturePath: string, casePath: string): DriverResult {
-  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir() };
+function runRescript(childFixturePath: string, casePath: string, variant: string): DriverResult {
+  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant };
   return runChild(NODE, [RS_RUNNER_JS, casePath], env, "rescript");
 }
 
@@ -223,6 +244,7 @@ for (const caseFile of caseFiles) {
   const caseObj: CaseFile = JSON.parse(readFileSync(casePath, "utf8"));
 
   const mutating = caseObj.mutating === true;
+  const variant = (caseObj as CaseFile).variant ?? "odbc";
   const needsConnect = caseObj.operation !== "connect_access";
 
   // Allocate per-side fixture copies for mutating cases. For non-
@@ -252,8 +274,8 @@ for (const caseFile of caseFiles) {
     );
   }
 
-  const pyResult = runPython(pyFixture, casePath);
-  const rsResult = runRescript(rsFixture, casePath);
+  const pyResult = runPython(pyFixture, casePath, variant);
+  const rsResult = runRescript(rsFixture, casePath, variant);
 
   // Driver-level errors (non-zero exit, bad JSON) are reported as
   // mismatches with a "DRIVER" prefix; they're actionable.
