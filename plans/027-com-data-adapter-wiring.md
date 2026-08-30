@@ -231,7 +231,7 @@ ALL must hold:
 
 Stop and report back (do not improvise) if:
 
-- `winax` is not in `rescript-mcp/package.json` dependencies or fails to load — the binding exists but the runtime package may be missing; report before installing anything.
+- `winax` cannot be added to `rescript-mcp/package.json`, installed, or loaded successfully — the binding exists but the runtime package is unavailable; stop and report the exact package-manager or load failure.
 - The `Interfaces` module types in `Current state` don't match the live code (drift).
 - The Python oracle's CRUD methods use parameter binding that DAO `QueryDef` cannot express from JavaScript — report the exact method and choose the oracle's exact fallback rather than inventing one.
 - `Facade.connectAccess` does not actually accept/route `~backend` or `~useCom` (evidence was from `Server.res` callback, not facade internals) — wiring the facade routing becomes part of the plan only after reporting.
