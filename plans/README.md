@@ -116,7 +116,8 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 023 | Finish plan 022 — CsvWriter ~header fix + commit + fresh-build verify | 23 | STRICT TDD | P1 | XS | 021 | DONE |
 | 024 | Repo hygiene — commit plans/tooling/artifacts + consolidate branch chain to main | 24 | NEITHER | P1 | S | 023, 025 | DONE |
 | 025 | Fix the test suite (stale test/.mjs cleanup + count-clamping fix) — pre-024 gate | 25 | NEITHER | P1 | S | 023 | DONE |
-| 026 | Establish Northwind read-only real-database baseline | 26 | NEITHER | P1 | M | 007, 008, 016, 019, 020 | TODO |
+| 026 | Establish Northwind read-only real-database baseline | 26 | NEITHER | P1 | M | 007, 008, 016, 019, 020 | DONE (db/northwind.accdb generated; 9 case files; CLI flags; stdio smoke passes; 8 tables confirmed; findings 026-F-001/002 recorded) |
+| 027 | Wire a COM-backed data adapter through the facade and parity harness | 27 | STRICT TDD | P1 | L | 026, 012, 003, 006 | TODO |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -176,6 +177,14 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   runner must have a `--require-read-only` guard. A red Northwind baseline is
   evidence, not license for scope expansion; record every mismatch/error as
   `026-F-xxx` with reproduction and owner.
+- **Plan 027 unblocks COM parity.** `Composition.res:116-143` ignores
+  `~comAvailable` and `Server.res:452-457` hardcodes `~comAvailable=false`;
+  tools parse `use_com` but never route it. The plan adds a
+  `ComDispatch`-serialized `ComDataAdapter` (winax/DAO) implementing
+  `Interfaces.DATA_ADAPTER` + `SCHEMA_ADAPTER`, threads the case-file `variant`
+  field (declared but unconsumed) through the parity harness, and adds a
+  read-only COM corpus against Northwind. COM mutation parity and
+  `generateSql`/`save_database`/`compile_vba` exposure are explicitly deferred.
 
 ## Findings considered and rejected
 
