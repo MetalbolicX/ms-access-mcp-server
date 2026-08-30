@@ -3,19 +3,6 @@
 // Accesses winax via Bindings.Winax.WINAX_BINDING (re-exported from Bindings.res)
 
 // ---------------------------------------------------------------------------
-// SESSION module type (must match ComSession.resi)
-// ---------------------------------------------------------------------------
-
-module type SESSION = {
-  type t
-
-  let connect: (t, ~path: string) => Promise.t<result<bool, Errors.t>>
-  let disconnect: t => Promise.t<result<unit, Errors.t>>
-  let isConnected: t => Promise.t<result<bool, Errors.t>>
-  let getHandles: t => ComInterfaces.sessionHandles
-}
-
-// ---------------------------------------------------------------------------
 // Session state — mutable record holding live handles and metadata
 // ---------------------------------------------------------------------------
 
@@ -23,6 +10,17 @@ type t = {
   mutable handles: ComInterfaces.sessionHandles,
   mutable isConnected: bool,
   mutable pid: option<int>,  // PID of spawned MSACCESS process (for taskkill)
+}
+
+// ---------------------------------------------------------------------------
+// SESSION module type (must match ComSession.resi)
+// ---------------------------------------------------------------------------
+
+module type SESSION = {
+  let connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, Errors.t>>
+  let disconnect: t => Promise.t<result<unit, Errors.t>>
+  let isConnected: t => Promise.t<result<bool, Errors.t>>
+  let getHandles: t => ComInterfaces.sessionHandles
 }
 
 // ---------------------------------------------------------------------------
@@ -87,52 +85,127 @@ let _forceKillImage: unit => Promise.t<ComInterfaces.hangStopResult> = (
 // Any failure triggers rollback (release all acquired handles) in finally
 // ---------------------------------------------------------------------------
 
-let _connect: (t, ~path: string) => Promise.t<result<bool, Errors.t>> = (
-  (session: t, ~path: string) => {
-    let _ = path
-    Bindings.Winax.WINAX_BINDING.createObject("Access.Application")
-      ->Promise.then(result => {
-        switch result {
-        | Error(e) => Promise.resolve(Error(e))
-        | Ok(accessApp) => {
-            session.handles.accessApp = Some(accessApp)
-            // Try to open DAO.DBEngine
-            Bindings.Winax.WINAX_BINDING.createObject("DAO.DBEngine.120")
-              ->Promise.then(daoResult => {
-                switch daoResult {
-                | Error(e) => {
-                    // Rollback: release accessApp in finally-style
-                    Bindings.Winax.WINAX_BINDING.release(accessApp)
-                    session.handles.accessApp = None
-                    Promise.resolve(Error(e))
-                  }
-                | Ok(daoDb) => {
-                    session.handles.daoDb = Some(daoDb)
-                    // ADO connection is optional — best-effort
-                    Bindings.Winax.WINAX_BINDING.createObject("ADODB.Connection")
-                      ->Promise.then(adoResult => {
-                        switch adoResult {
-                        | Error(_) => {
-                            // ADO failure is non-fatal — continue without it
-                            session.handles.adoConn = None
-                            session.isConnected = true
-                            Promise.resolve(Ok(true))
-                          }
-                        | Ok(adoConn) => {
-                            session.handles.adoConn = Some(adoConn)
-                            session.isConnected = true
-                            Promise.resolve(Ok(true))
-                          }
-                        }
-                      })
-                  }
-                }
-              })
-          }
-        }
-      })
+// ---------------------------------------------------------------------------
+// Best-effort helpers — swallow errors, never propagate
+// ---------------------------------------------------------------------------
+
+let _bestEffort = (thunk: unit => Promise.t<result<'a, Errors.t>>) => {
+  let _: Promise.t<result<'a, Errors.t>> = thunk()->Promise.catch(_ => { Promise.resolve(Ok()) })
+  ()
+}
+
+let _releaseAccessApp: ComInterfaces.comObject => unit = (
+  app => {
+    Bindings.Winax.WINAX_BINDING.release(app)
   }
-: (t, ~path: string) => Promise.t<result<bool, Errors.t>>
+)
+
+// ---------------------------------------------------------------------------
+// connect — opens Access app, DAO DBEngine, OpenDatabase, OpenCurrentDatabase
+// Mirrors Python wincom.py _do_connect (wincom.py:228-259)
+// ---------------------------------------------------------------------------
+
+let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, Errors.t>> = (
+  (session: t, ~path: string, ~password: option<string>=?) => {
+    // password is option<option<string>> (outer = ? default None, inner = the typed value)
+    // The interface signature `string=?` is sugar for `option<string>`.
+    // Step 1: file existence check
+    if !Bindings.TsBridge.fileExists(path) {
+      Promise.resolve(Error(Errors.databaseError("File not found: " ++ path)))
+    } else {
+      // Step 2: create Access.Application
+      Bindings.Winax.WINAX_BINDING.createObject("Access.Application")
+        ->Promise.then(appResult => {
+          switch appResult {
+          | Error(e) => Promise.resolve(Error(e))
+          | Ok(accessApp) => {
+              session.handles.accessApp = Some(accessApp)
+
+              // Step 3: Visible = False
+              Bindings.Winax.WINAX_BINDING.set(accessApp, "Visible", ComInterfaces.VBool(false))
+                ->Promise.then(_ => {
+                  // Step 4: create DAO.DBEngine.120
+                  Bindings.Winax.WINAX_BINDING.createObject("DAO.DBEngine.120")
+                    ->Promise.then(daoResult => {
+                      switch daoResult {
+                      | Error(e) => {
+                          _releaseAccessApp(accessApp)
+                          session.handles.accessApp = None
+                          Promise.resolve(Error(e))
+                        }
+                      | Ok(daoDb) => {
+                          session.handles.daoDb = Some(daoDb)
+
+                          // Step 5: OpenDatabase (readwrite, not exclusive, optionally with password)
+                          let daoConnect = switch password {
+                            | Some(p) => ";PWD=" ++ p
+                            | None => ""
+                          }
+                          Bindings.Winax.WINAX_BINDING.invokeAsObject(
+                            daoDb,
+                            "OpenDatabase",
+                            [ComInterfaces.VStr(path), ComInterfaces.VBool(false), ComInterfaces.VBool(false), ComInterfaces.VStr(daoConnect)]
+                          )
+                            ->Promise.then(dbOpenResult => {
+                              switch dbOpenResult {
+                              | Error(e) => {
+                                  _releaseAccessApp(accessApp)
+                                  session.handles.accessApp = None
+                                  session.handles.daoDb = None
+                                  Promise.resolve(Error(e))
+                                }
+                              | Ok(_currentDb) => {
+                                  // Step 6: OpenCurrentDatabase on the Access app
+                                  let openCurrArgs = switch password {
+                                    | Some(p) => [ComInterfaces.VStr(path), ComInterfaces.VBool(false), ComInterfaces.VStr(p)]
+                                    | None => [ComInterfaces.VStr(path), ComInterfaces.VBool(false)]
+                                  }
+                                  Bindings.Winax.WINAX_BINDING.invoke(accessApp, "OpenCurrentDatabase", openCurrArgs)
+                                    ->Promise.then(ocdResult => {
+                                      switch ocdResult {
+                                      | Error(e) => {
+                                          _releaseAccessApp(accessApp)
+                                          session.handles.accessApp = None
+                                          session.handles.daoDb = None
+                                          Promise.resolve(Error(e))
+                                        }
+                                      | Ok(_) => {
+                                          // Step 7: DoCmd.SetWarnings(False) — best-effort
+                                          _bestEffort(() => {
+                                            Bindings.Winax.WINAX_BINDING.get(accessApp, "DoCmd")
+                                              ->Promise.then(r => switch r {
+                                              | Ok(JSON.Object(_)) =>
+                                                  Bindings.Winax.WINAX_BINDING.set(accessApp, "SetWarnings", ComInterfaces.VBool(false))
+                                              | _ => Promise.resolve(Error(Errors.databaseError("no DoCmd")))
+                                              })
+                                          })
+
+                                          // Step 8: ADODB.Connection — best-effort
+                                          Bindings.Winax.WINAX_BINDING.createObject("ADODB.Connection")
+                                            ->Promise.then(adoResult => {
+                                              switch adoResult {
+                                              | Error(_) => { session.handles.adoConn = None }
+                                              | Ok(adoConn) => { session.handles.adoConn = Some(adoConn) }
+                                              }
+                                              session.isConnected = true
+                                              Promise.resolve(Ok(true))
+                                            })
+                                        }
+                                      }
+                                    })
+                                }
+                              }
+                            })
+                        }
+                      }
+                    })
+                })
+            }
+          }
+        })
+    }
+  }
+: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, Errors.t>>
 )
 
 // ---------------------------------------------------------------------------
@@ -190,3 +263,13 @@ let _getHandles: t => ComInterfaces.sessionHandles = (
   (session: t) => session.handles
 : t => ComInterfaces.sessionHandles
 )
+
+// ---------------------------------------------------------------------------
+// Public aliases — SESSION module type uses non-underscored names
+// ---------------------------------------------------------------------------
+
+let connect = _connect
+let disconnect = _disconnect
+let isConnected = _isConnected
+let getHandles = _getHandles
+let make = _make
