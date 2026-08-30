@@ -451,7 +451,7 @@ let run = (): Promise.t<unit> => {
   // ACCESS_MCP_ALLOWED_DIRS (semicolon-separated; defaults to user home).
   let facade = Facade.make(
     ~factory=Composition.realFactory,
-    ~comAvailable=false,
+    ~comAvailable=Composition.comAvailable,
     ~readonly=Config.readonly,
     ~allowedDirs=Config.allowedDirs,
   )

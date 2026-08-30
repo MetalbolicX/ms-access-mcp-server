@@ -7,6 +7,9 @@ external exnMessage: exn => option<string> = "exnMessage"
 external isWindows: unit => bool = "isWindows"
 
 @module("../Js/runtime.mjs")
+external isWinaxAvailable: unit => bool = "isWinaxAvailable"
+
+@module("../Js/runtime.mjs")
 external getTempDir: unit => string = "getTempDir"
 
 @module("../Js/runtime.mjs")

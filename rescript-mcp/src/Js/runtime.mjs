@@ -18,6 +18,16 @@ export const exnMessage = (e) => {
 };
 /** Check if running on Windows (process.platform === 'win32'). */
 export const isWindows = () => process.platform === "win32";
+/** Check if winax package is available (can be required on Windows). */
+export const isWinaxAvailable = () => {
+    try {
+        require("winax");
+        return true;
+    }
+    catch {
+        return false;
+    }
+};
 /** Get the system temp directory path. */
 export const getTempDir = () => tmpdir();
 /** Get an environment variable value.

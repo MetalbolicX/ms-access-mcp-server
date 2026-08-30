@@ -6,6 +6,13 @@
 open Adapters
 
 // ---------------------------------------------------------------------------
+// comAvailable — probe for winax availability on the current platform
+// Used by makeRealFactory and Server.res to determine which adapter to build
+// ---------------------------------------------------------------------------
+
+let comAvailable: bool = Bindings.TsBridge.isWindows() && Bindings.TsBridge.isWinaxAvailable()
+
+// ---------------------------------------------------------------------------
 // asSchemaInstance — wrap an OdbcAdapter.t as a 22-field schemaAdapterInstance
 // The same OdbcAdapter.t underlies both data and schema instances (shared state).
 // createRelationship/deleteRelationship: delegate to SqlBuilder + conn.query
@@ -115,35 +122,62 @@ let asSchemaInstance = (dataT: OdbcAdapter.t): Instances.schemaAdapterInstance =
 
 let makeRealFactory = (~comAvailable: bool): Facade.bindingFactory => {
   (~backend: option<BackendSelector.backend>, ~dbPath: string, ~password: string) => {
-    // For now, only ODBC backend is supported
-    let adapterType = "odbc"
-    let dataT: OdbcAdapter.t = {connection: None, dbPath: None}
-    let dataAdapter = OdbcAdapter.asInstance(dataT)
-    let schemaAdapter = asSchemaInstance(dataT)
-    // Build the ODBC connection string for the Access driver and open the
-    // connection eagerly so callers can immediately use the binding without
-    // having to wire the ODBC handle themselves (closes parity F-004).
-    let connStr = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=" ++ dbPath ++ ";"
-    dataAdapter.connect(connStr)
-      ->Promise.then(connectResult => {
-        switch connectResult {
-        | Ok(_) =>
-          Promise.resolve(Ok({
-            dataAdapter: dataAdapter,
-            schemaAdapter: schemaAdapter,
-            _rawDataAdapter: None,  // production: no fake adapter needed
-            _rawSchemaAdapter: None,  // production: no fake adapter needed
-            dbPath: dbPath,
-            adapterType: adapterType,
-          }: Facade.binding))
-        | Error(err) => Promise.resolve(Error(err))
-        }
-      })
+    // Resolve the backend: default to ODBC, honor "com" if available
+    let resolvedBackend = switch backend {
+    | Some(BackendSelector.COM) => BackendSelector.COM
+    | Some(BackendSelector.ODBC) | None => BackendSelector.ODBC
+    }
+    let useCom = resolvedBackend == BackendSelector.COM
+
+    if useCom && comAvailable {
+      // COM path: build ComDataAdapter + ComDataAdapter.asSchemaInstance
+      let adapterType = "com"
+      let dataT: ComDataAdapter.DaoAdapter.t = ComDataAdapter.DaoAdapter.make()
+      let dataAdapter = ComDataAdapter.asInstance(dataT)
+      let schemaAdapter = ComDataAdapter.asSchemaInstance(dataT)
+      dataAdapter.connect(dbPath, ~password=?Some(password))
+        ->Promise.then(connectResult => {
+          switch connectResult {
+          | Ok(_) =>
+            Promise.resolve(Ok({
+              dataAdapter: dataAdapter,
+              schemaAdapter: schemaAdapter,
+              _rawDataAdapter: None,
+              _rawSchemaAdapter: None,
+              dbPath: dbPath,
+              adapterType: adapterType,
+            }: Facade.binding))
+          | Error(err) => Promise.resolve(Error(err))
+          }
+        })
+    } else {
+      // ODBC path: unchanged — build OdbcAdapter + OdbcAdapter.asSchemaInstance
+      let adapterType = "odbc"
+      let dataT: OdbcAdapter.t = {connection: None, dbPath: None}
+      let dataAdapter = OdbcAdapter.asInstance(dataT)
+      let schemaAdapter = asSchemaInstance(dataT)
+      let connStr = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=" ++ dbPath ++ ";"
+      dataAdapter.connect(connStr)
+        ->Promise.then(connectResult => {
+          switch connectResult {
+          | Ok(_) =>
+            Promise.resolve(Ok({
+              dataAdapter: dataAdapter,
+              schemaAdapter: schemaAdapter,
+              _rawDataAdapter: None,
+              _rawSchemaAdapter: None,
+              dbPath: dbPath,
+              adapterType: adapterType,
+            }: Facade.binding))
+          | Error(err) => Promise.resolve(Error(err))
+          }
+        })
+    }
   }
 }
 
 // ---------------------------------------------------------------------------
-// realFactory — pre-built factory with comAvailable=false
+// realFactory — pre-built factory using the comAvailable probe
 // ---------------------------------------------------------------------------
 
-let realFactory: Facade.bindingFactory = makeRealFactory(~comAvailable=false)
+let realFactory: Facade.bindingFactory = makeRealFactory(~comAvailable)
