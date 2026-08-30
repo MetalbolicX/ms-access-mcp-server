@@ -334,7 +334,7 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
         if operation == "get_tables":
             return _shape_get_tables(adapter)
         if operation == "get_table_schema":
-            return _shape_get_table_schema(adapter, args["table"])
+            return _shape_get_table_schema(adapter, args["table_name"])
         if operation == "get_relationships":
             return _shape_get_relationships(adapter)
         if operation == "get_queries":

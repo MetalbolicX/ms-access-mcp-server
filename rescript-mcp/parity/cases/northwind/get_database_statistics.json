@@ -1,0 +1,9 @@
+{
+  "operation": "get_database_statistics",
+  "args": {
+    "connection_name": "northwind"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": ["modified", "size_bytes"]
+}

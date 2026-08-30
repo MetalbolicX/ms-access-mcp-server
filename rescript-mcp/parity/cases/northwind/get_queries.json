@@ -1,0 +1,9 @@
+{
+  "operation": "get_queries",
+  "args": {
+    "connection_name": "northwind"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": []
+}

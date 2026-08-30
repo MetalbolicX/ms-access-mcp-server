@@ -101,7 +101,7 @@ async function runOperation(facade, operation, args) {
       return await Facade.getTables(facade);
 
     case "get_table_schema":
-      return await Facade.getTableSchema(facade, args.table);
+      return await Facade.getTableSchema(facade, args.table_name);
 
     case "get_relationships":
       return await Facade.getRelationships(facade);

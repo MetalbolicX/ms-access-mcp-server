@@ -34,7 +34,28 @@ const PYTHON_DRIVER = join(__dirname, "..", "..", "scripts", "parity_driver.py")
 const NODE = process.execPath;
 const RS_RUNNER_JS = join(__dirname, "runRescript.js");
 // cases/ is at parity/cases, one level up from parity/dist/
-const CASES_DIR = join(__dirname, "..", "cases");
+const DEFAULT_CASES_DIR = join(__dirname, "..", "cases");
+
+// ---------------------------------------------------------------------------
+// CLI argument parsing
+// ---------------------------------------------------------------------------
+
+function parseArgs(argv: string[]): { casesDir: string; requireReadOnly: boolean } {
+  let casesDir = DEFAULT_CASES_DIR;
+  let requireReadOnly = false;
+
+  for (const arg of argv.slice(2)) {
+    if (arg.startsWith("--cases-dir=")) {
+      casesDir = resolve(REPO_ROOT, arg.slice("--cases-dir=".length));
+    } else if (arg === "--require-read-only") {
+      requireReadOnly = true;
+    }
+  }
+
+  return { casesDir, requireReadOnly };
+}
+
+const { casesDir, requireReadOnly } = parseArgs(process.argv);
 
 /** Case file shape (matches cases.schema.json) */
 interface CaseFile {
@@ -147,9 +168,26 @@ function runRescript(childFixturePath: string, casePath: string): DriverResult {
 // Main
 // ---------------------------------------------------------------------------
 
-const caseFiles = readdirSync(CASES_DIR)
+if (!existsSync(casesDir)) {
+  console.error(`parity: cases directory does not exist: ${casesDir}`);
+  process.exit(1);
+}
+
+const caseFiles = readdirSync(casesDir)
   .filter((f) => f.endsWith(".json"))
   .sort();
+
+// --require-read-only guard: abort before opening any DB if any case is mutating
+if (requireReadOnly) {
+  for (const caseFile of caseFiles) {
+    const casePath = join(casesDir, caseFile);
+    const caseObj: CaseFile = JSON.parse(readFileSync(casePath, "utf8"));
+    if (caseObj.mutating === true) {
+      console.error(`parity: --require-read-only: case ${caseFile} has mutating:true, aborting before DB open`);
+      process.exit(1);
+    }
+  }
+}
 
 let passed = 0;
 let mismatched = 0;
@@ -181,7 +219,7 @@ pinnedEnv.ACCESS_MCP_ALLOWED_DIRS = [
   .join(";");
 
 for (const caseFile of caseFiles) {
-  const casePath = join(CASES_DIR, caseFile);
+  const casePath = join(casesDir, caseFile);
   const caseObj: CaseFile = JSON.parse(readFileSync(casePath, "utf8"));
 
   const mutating = caseObj.mutating === true;
