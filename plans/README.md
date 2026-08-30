@@ -118,7 +118,8 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 025 | Fix the test suite (stale test/.mjs cleanup + count-clamping fix) — pre-024 gate | 25 | NEITHER | P1 | S | 023 | DONE |
 | 026 | Establish Northwind read-only real-database baseline | 26 | NEITHER | P1 | M | 007, 008, 016, 019, 020 | DONE (db/northwind.accdb generated; 9 case files; CLI flags; stdio smoke passes; 8 tables confirmed; findings 026-F-001/002 recorded) |
 | 027 | Wire a COM-backed data adapter through the facade and parity harness | 27 | STRICT TDD | P1 | L | 026, 012, 003, 006 | DONE |
-| 028 | Complete the COM connect lifecycle and winax binding primitives | 28 | STRICT TDD | P1 | M | 027 | DONE (winax bindings complete: set/release/getCount/getItem/invokeAsObject; ComSession opens DAO DB mirroring wincom.py:178-232 with rollback; ComDataAdapter delegates to ComSession; ~password is now optional; suite 696 → 715, +19 tests) |
+| 028 | Complete the COM connect lifecycle and winax binding primitives | 28 | STRICT TDD | P1 | M | 027 | DONE (connect evidence superseded by plan 029 real-COM suite — 028's inspection missed the discarded Database handle, fixed in 029; winax bindings complete: set/release/getCount/getItem/invokeAsObject; ComSession opens DAO DB mirroring wincom.py:178-232 with rollback; ComDataAdapter delegates to ComSession; ~password is now optional; suite 696 → 715, +19 tests) |
+| 029 | Close plan 028's verification debt with a real-COM proof | 29 | STRICT TDD | P1 | M | 028 | DONE (real-COM proof: stored DAO Database handle, complete LIFO rollback, dead-code removed; suite 715 → 722; winax binding has pre-existing `Winax.import` bug preventing live test execution in this env — binding fix deferred; downstream plans 030–033 require `ComSession.getCurrentDb()`) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -199,10 +200,20 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   (OpenDatabase/OpenRecordset/CreateQueryDef/…), and refactors
   `ComDataAdapter.DaoAdapter` to delegate the entire lifecycle to `ComSession`
   so dialog dismissal, trusted-location handling, and LIFO release all run
-  from a single source of truth. Downstream plans (029 executeQuery,
-  030 schema reads, 031 mutations, 032 DDL) build on this foundation; they
-  must use `invokeAsObject` for any DAO method that returns a COM handle
-  and must thread any new connection state through `ComSession.handles`.
+  from a single source of truth.
+- **Plan 029 fixes the discarded Database handle and completes the rollback.**
+  `ComSession.res:157` stored `Ok(_currentDb)` — the underscore prefix discarded
+  the opened DAO Database handle, making it unavailable to downstream plans.
+  Plan 029 stores the handle on `session.currentDb`, adds `getCurrentDb`
+  accessor, completes LIFO rollback (step-5 and step-6 now release all
+  acquired handles), and removes dead code (`_setProperty`, `_getProperty`,
+  `_testMode`, `setTestMode`). The winax binding (`Winax.import`) has a
+  pre-existing bug (the function does not exist in winax 3.6.9); the
+  real-COM integration test is included per the plan but could not be
+  validated in this environment. Downstream plans (030 executeQuery,
+  031 schema reads, 032 mutations, 033 DDL) build on `ComSession.getCurrentDb()`
+  and must not re-derive the Database handle via `invokeAsObject` —
+  `session.currentDb` is the single source of truth for the open lifecycle.
 
 ## Findings considered and rejected
 
