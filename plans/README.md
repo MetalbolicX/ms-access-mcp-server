@@ -120,6 +120,7 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 | 027 | Wire a COM-backed data adapter through the facade and parity harness | 27 | STRICT TDD | P1 | L | 026, 012, 003, 006 | DONE |
 | 028 | Complete the COM connect lifecycle and winax binding primitives | 28 | STRICT TDD | P1 | M | 027 | DONE (connect evidence superseded by plan 029 real-COM suite — 028's inspection missed the discarded Database handle, fixed in 029; winax bindings complete: set/release/getCount/getItem/invokeAsObject; ComSession opens DAO DB mirroring wincom.py:178-232 with rollback; ComDataAdapter delegates to ComSession; ~password is now optional; suite 696 → 715, +19 tests) |
 | 029 | Close plan 028's verification debt with a real-COM proof | 29 | STRICT TDD | P1 | M | 028 | DONE (real-COM proof: stored DAO Database handle, complete LIFO rollback, dead-code removed; suite 715 → 722; winax binding has pre-existing `Winax.import` bug preventing live test execution in this env — binding fix deferred; downstream plans 030–033 require `ComSession.getCurrentDb()`) |
+| 030 | Make the winax binding actually load and dispatch real COM calls | 30 | STRICT TDD | P0 | S | 029 | TODO (BLOCKS 031+ and 029's live acceptance: replace broken `Winax.import` external with Odbc.res `%raw` dynamic-import pattern; fix bridge — `mod.cast` is variant conversion NOT property access, `mod.invoke` does not exist, correct forms are `obj[prop]` and `obj[method](...args)`, all verified live against real Access; acceptance = ComIntegrationTest's 7 tests RUN and PASS) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -210,10 +211,18 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   `_testMode`, `setTestMode`). The winax binding (`Winax.import`) has a
   pre-existing bug (the function does not exist in winax 3.6.9); the
   real-COM integration test is included per the plan but could not be
-  validated in this environment. Downstream plans (030 executeQuery,
-  031 schema reads, 032 mutations, 033 DDL) build on `ComSession.getCurrentDb()`
+  validated in this environment. Downstream plans (031 executeQuery,
+  032 schema reads, 033 mutations, 034 DDL) build on `ComSession.getCurrentDb()`
   and must not re-derive the Database handle via `invokeAsObject` —
   `session.currentDb` is the single source of truth for the open lifecycle.
+- **Plan 030 is the true unblock; its evidence is load-bearing for everything
+  COM.** The live probes (2026-08-31) established: `import("winax")` exposes
+  real exports only via `.default` (`Object, cast, release, Variant, …` — no
+  `import`, no `invoke`); proxies support `obj[prop]` read, `obj.prop = v`
+  write, and direct `obj.method(args)` invocation; `winax.cast` is variant
+  type-conversion, NOT property access; Access teardown after `Quit()` takes
+  ~2–3 s (orphan checks must wait). Plans 031+ must use only the
+  `WINAX_BINDING` primitives and never call `winax.cast` for property access.
 
 ## Findings considered and rejected
 
