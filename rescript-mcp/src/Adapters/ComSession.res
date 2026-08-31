@@ -237,18 +237,36 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
       // Idempotent: already disconnected
       Promise.resolve(Ok())
     } else {
+      // Best-effort: close the Access application and its DAO DB before
+      // releasing the underlying COM proxies — winax's release() only calls
+      // IUnknown.Release() and leaves MSACCESS.EXE running otherwise.
+      // Mirrors com_dispatcher.py _release_com_safe (CloseCurrentDatabase + Quit).
+      let _gracefulShutdown = () => {
+        switch session.handles.accessApp {
+        | Some(a) =>
+            // Close the current database, then quit the application.
+            // Both calls are best-effort — winax proxy errors don't propagate.
+            let _ = Bindings.Winax.WINAX_BINDING.invoke(a, "CloseCurrentDatabase", [])
+            let _ = Bindings.Winax.WINAX_BINDING.invoke(a, "Quit", [])
+            Promise.resolve()
+        | None => Promise.resolve()
+        }
+      }
       // LIFO: adoConn → currentDb → daoDb → accessApp
-      _releaseHandle(session.handles.adoConn)
-      session.handles.adoConn = None
-      _releaseHandle(session.currentDb)
-      session.currentDb = None
-      _releaseHandle(session.handles.daoDb)
-      session.handles.daoDb = None
-      _releaseHandle(session.handles.accessApp)
-      session.handles.accessApp = None
-      session.isConnected = false
-      session.pid = None
-      Promise.resolve(Ok())
+      _gracefulShutdown()
+        -> Promise.then(_ => {
+          _releaseHandle(session.handles.adoConn)
+          session.handles.adoConn = None
+          _releaseHandle(session.currentDb)
+          session.currentDb = None
+          _releaseHandle(session.handles.daoDb)
+          session.handles.daoDb = None
+          _releaseHandle(session.handles.accessApp)
+          session.handles.accessApp = None
+          session.isConnected = false
+          session.pid = None
+          Promise.resolve(Ok())
+        })
     }
   }
 : t => Promise.t<result<unit, Errors.t>>

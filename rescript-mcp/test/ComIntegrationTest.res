@@ -27,8 +27,10 @@ testAsync("ComIntegration: Access.Application probe", cb => {
             Promise.resolve()
           }
         | Ok(anim) => {
+            // Quit() before release — otherwise MSACCESS.EXE persists
+            let _ = Bindings.Winax.WINAX_BINDING.invoke(anim, "Quit", [])
             Bindings.Winax.WINAX_BINDING.release(anim)
-            cb(~planned=1, ())
+            cb(~planned=0, ())
             Promise.resolve()
           }
         }
