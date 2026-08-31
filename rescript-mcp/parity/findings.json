@@ -11,12 +11,12 @@
     }
   },
   {
-    "operation": "get_table_schema",
-    "case": "get_table_schema-Customers.json",
+    "operation": "get_relationships",
+    "case": "get_relationships.json",
     "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "rescript: Table 'Customers' not found"
+      "path": "$.count",
+      "expected": 4,
+      "actual": 0
     }
   }
 ]
