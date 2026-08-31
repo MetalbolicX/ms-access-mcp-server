@@ -32,3 +32,40 @@ are now meaningful COM errors rather than "binding incomplete" stubs.
 **Impact on baseline**: Parity baseline 6/0/3 is unchanged in count. The error
 messages for the 3 errored cases may now reflect actual COM behavior rather than
 the stub message, which is the correct diagnostic state.
+
+## 032-F-001: Schema Reads — Partial Delivery
+
+**Finding ID**: 032-F-001
+**Phase**: Plan 032 DAO Schema Reads
+**Discovered**: Plan 032 (2026-08-31), at commit `e43bb71` (before 032 work)
+**Severity**: Incomplete — sub-delivery accepted, follow-up required
+
+**Summary**: Plan 032 implemented `_getTablesImpl` (full DAO TableDefs iteration),
+`getSystemTables`, and stubbed-but-functional returns for `getRelationships`,
+`getQueries`, `getIndexes`. The `getTableSchemaPlan` per-table schema lookup
+function remains a stub returning `Ok(([], {primaryKeys: false, ...}))`.
+
+**Real status**:
+- `getTables` / `getSystemTables`: WORKING (live-COM verified — returns
+  `[customers, orders, products, type_test]` from test_db.accdb)
+- `getIndexes` / `getRelationships` / `getQueries`: stubbed Ok([])
+- `getTableSchemaPlan`: stubbed — `get_table_schema` MCP tool returns empty
+  schema, which is why COM parity case `get_table_schema-Customers.json`
+  (in `cases/northwind/com/`) still ERRORS rather than matching.
+
+**Parity impact**:
+- Default `cases/northwind/` run (ODBC variant): 6 matched / 0 mismatched /
+  3 errored — UNCHANGED. The 3 errored cases are still the schema cases
+  (but now backed by stub schema reads, not stub `executeQuery`).
+- COM subset (`cases/northwind/com/`): 4 matched / 1 mismatched / 1 errored.
+  - `get_tables` PASSES (COM implementation works).
+  - `get_queries` / `get_relationships` / `query_data-SelectTop5Customers` PASS.
+  - `connect_access` MISMATCH (diff at `$` — likely timing/output format; not
+    a schema-read issue).
+  - `get_table_schema-Customers` ERRORS — driver failure (per-table schema
+    stub returns empty).
+
+**Follow-up**: Per-table schema (`getTableSchemaPlan`) needs real DAO field
+iteration. Belongs in a follow-up plan (032b or merged into plan 033 mutations
+since both touch TableDef). For now, plan 032 ships the broader schema-read
+foundation.

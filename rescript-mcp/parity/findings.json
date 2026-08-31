@@ -1,29 +1,22 @@
 [
   {
+    "operation": "connect_access",
+    "case": "connect_access.json",
+    "diff": {
+      "path": "$",
+      "expected": "missing",
+      "actual": [
+        "adapter_type"
+      ]
+    }
+  },
+  {
     "operation": "get_table_schema",
     "case": "get_table_schema-Customers.json",
     "diff": {
       "path": "DRIVER",
       "expected": null,
       "actual": "rescript: Table 'Customers' not found"
-    }
-  },
-  {
-    "operation": "get_table_schema",
-    "case": "get_table_schema-Orders.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "rescript: Table 'Orders' not found"
-    }
-  },
-  {
-    "operation": "get_table_schema",
-    "case": "get_table_schema-Products.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "rescript: Table 'Products' not found"
     }
   }
 ]
