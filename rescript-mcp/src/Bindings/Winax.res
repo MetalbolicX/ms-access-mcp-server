@@ -42,8 +42,14 @@ module WINAX_BINDING: WINAX_BINDING = {
   // Lazy dynamic import — side-effect-free at module load time
   // ------------------------------------------------------------------
 
-  @module("winax")
-  external _importWinax: unit => Promise.t<dict<JSON.t>> = "import"
+  // _importWinax — dynamic-import the winax package as a JS Promise.
+  // Was `@module("winax") external … = "import"` which compiled to
+  // `Winax.import()` (a named export that does not exist on the winax CJS
+  // module). The %raw escape hatch delegates to a real dynamic
+  // `import("winax")`. Mirrors Bindings/Odbc.res (D11/REQ-D11).
+  let _importWinax: unit => Promise.t<dict<JSON.t>> = () => {
+    %raw("(p) => import(p)")("winax")->Promise.resolve
+  }
 
   // ------------------------------------------------------------------
   // Helpers

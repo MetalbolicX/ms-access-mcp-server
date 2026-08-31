@@ -3,11 +3,10 @@
 // COM object handles as parameters.  No winax types are referenced here.
 
 /** Minimal interface for the winax module shape we actually use.
- *  The injected `mod` is the CJS winax namespace (may have .default). */
+ *  winax.cast is variant type-conversion (not property access); winax.invoke does not exist.
+ *  Property/method access on COM proxies is direct bracket/dot access. */
 export interface WinaxModule {
   Object: (progid: string) => unknown
-  cast: (obj: unknown, prop: string) => unknown
-  invoke: (obj: unknown, method: string, args: unknown[]) => unknown
   release: (...objects: unknown[]) => void
 }
 
@@ -24,20 +23,20 @@ export const createObject = (
   progid: string,
 ): unknown => mod.Object(progid)
 
-/** Read a property from a COM object via winax.cast. */
+/** Read a property from a COM object — direct bracket access on winax proxy; winax.cast is variant type-conversion, not property access. */
 export const getProperty = (
   mod: WinaxModule,
   obj: unknown,
   prop: string,
-): unknown => mod.cast(obj, prop)
+): unknown => (obj as Record<string, unknown>)[prop]
 
-/** Invoke a method on a COM object with an array of arguments. */
+/** Invoke a method on a COM object — direct call on the winax proxy. */
 export const invokeMethod = (
   mod: WinaxModule,
   obj: unknown,
   method: string,
   args: unknown[],
-): unknown => mod.invoke(obj, method, args)
+): unknown => (obj as Record<string, unknown>)[method](...args)
 
 /** Write a property on a COM object via direct assignment on the proxy. */
 export const setProperty = (
@@ -60,11 +59,10 @@ export const release = (
   }
 }
 
-/** Invoke a method that returns a COM object handle (not JSON data).
- *  Returns the raw COM proxy so the ReScript side can store it as comObject. */
+/** Invoke a method that returns a COM object — direct call on the winax proxy (same body as invokeMethod; return contract differs). */
 export const invokeReturningObject = (
   mod: WinaxModule,
   obj: unknown,
   method: string,
   args: unknown[],
-): unknown => mod.invoke(obj, method, args)
+): unknown => (obj as Record<string, unknown>)[method](...args)
