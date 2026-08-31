@@ -124,7 +124,7 @@ testAsync("ComExecuteQuery: SELECT id, name FROM Customers returns rows", cb => 
                   | None => assertion(~operator="equal", (a, b) => a == b, false, true)
                   }
                   ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => {
-                    cb(~planned=6, ())
+                    cb(~planned=7, ())
                     Promise.resolve()
                   })
                 }
