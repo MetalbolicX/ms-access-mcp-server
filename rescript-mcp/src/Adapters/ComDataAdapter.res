@@ -154,6 +154,11 @@ module DaoAdapter = {
   // Returns { success, rows, count, columns, error }
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // _executeQueryImpl — internal executeQuery via DAO.OpenRecordset
+  // Mirrors Python wincom.py:256-307
+  // ---------------------------------------------------------------------------
+
   let _executeQueryImpl: (t, string) => Promise.t<result<Interfaces.queryResult, Errors.t>> = (
     self: t,
     sql: string,
@@ -167,16 +172,239 @@ module DaoAdapter = {
         error: Some("Not connected"),
       }))
     } else {
-      // Note: Full implementation would use DAO Recordset via winax
-      // The winax stubs don't support collection iteration (getCount always returns 0)
-      // Return a not-available error matching the ODBC adapter's pattern
-      Promise.resolve(Ok({
-        success: false,
-        rows: [],
-        count: 0,
-        columns: [],
-        error: Some("COM executeQuery not yet fully implemented: winax binding incomplete"),
-      }))
+      switch self.session {
+      | None => Promise.resolve(Ok({
+          success: false,
+          rows: [],
+          count: 0,
+          columns: [],
+          error: Some("Not connected"),
+        }))
+      | Some(session) =>
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({
+            success: false,
+            rows: [],
+            count: 0,
+            columns: [],
+            error: Some("Database not open"),
+          }))
+        | Some(currentDb) => {
+            let sqlArg = ComInterfaces.VStr(sql)
+            Bindings.Winax.WINAX_BINDING.invokeAsObject(currentDb, "OpenRecordset", [sqlArg])
+              ->Promise.then(rsResult => {
+                switch rsResult {
+                | Error(e) => Promise.resolve(Error(e))
+                | Ok(rs) => {
+                    Bindings.Winax.WINAX_BINDING.get(rs, "EOF")
+                      ->Promise.then(eofResult => {
+                        switch eofResult {
+                        | Ok(JSON.Boolean(true)) => {
+                            Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                            Promise.resolve(Ok({
+                              success: true,
+                              rows: [],
+                              count: 0,
+                              columns: [],
+                              error: None,
+                            }))
+                          }
+                        | Ok(_) => {
+                            Bindings.Winax.WINAX_BINDING.get(rs, "Fields")
+                              ->Promise.then(fieldsResult => {
+                                switch fieldsResult {
+                                | Error(e) => {
+                                    Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                                    Promise.resolve(Error(e))
+                                  }
+                                | Ok(fields) => {
+                                    // Wrap fields COM object in envelope for getCount/getItem
+                                    let fieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(fields)
+                                    Bindings.Winax.WINAX_BINDING.getCount(fieldsHandle)
+                                      ->Promise.then(countResult => {
+                                        switch countResult {
+                                        | Error(e) => {
+                                            Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                                            Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
+                                            Promise.resolve(Error(e))
+                                          }
+                                        | Ok(fieldCount) => {
+                                            // Build column names array iteratively using for loop + promise chain
+                                            let columnNames: array<string> = []
+                                            let colIdx = ref(0)
+                                            let rec colCollect: unit => Promise.t<result<array<string>, Errors.t>> = (
+                                              (),
+                                            ) => {
+                                              if colIdx.contents >= fieldCount {
+                                                Promise.resolve(Ok(columnNames))
+                                              } else {
+                                                let idxVar = ComInterfaces.VInt(colIdx.contents)
+                                                Bindings.Winax.WINAX_BINDING.getItem(fieldsHandle, idxVar)
+                                                  ->Promise.then(itemResult => {
+                                                    switch itemResult {
+                                                    | Error(e) => Promise.resolve(Error(e))
+                                                    | Ok(fieldHandle) => {
+                                                        Bindings.Winax.WINAX_BINDING.get(fieldHandle, "Name")
+                                                          ->Promise.then(nameResult => {
+                                                            Bindings.Winax.WINAX_BINDING.release(fieldHandle)->ignore
+                                                            switch nameResult {
+                                                            | Ok(JSON.String(colName)) => {
+                                                                columnNames->Array.push(colName)->ignore
+                                                                colIdx.contents = colIdx.contents + 1
+                                                                colCollect()
+                                                              }
+                                                            | Ok(_) => {
+                                                                colIdx.contents = colIdx.contents + 1
+                                                                colCollect()
+                                                              }
+                                                            | Error(e) => Promise.resolve(Error(e))
+                                                            }
+                                                          })
+                                                      }
+                                                    }
+                                                  })
+                                              }
+                                            }
+                                            colCollect()
+                                              ->Promise.then(colsResult => {
+                                                Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
+                                                switch colsResult {
+                                                | Error(e) => {
+                                                    Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                                                    Promise.resolve(Error(e))
+                                                  }
+                                                | Ok(columns) => {
+                                                    // Iterate all rows and collect results
+                                                    let allRows: array<dict<JSON.t>> = []
+                                                    let rec rowCollect: unit => Promise.t<result<array<dict<JSON.t>>, Errors.t>> = (
+                                                      (),
+                                                    ) => {
+                                                      Bindings.Winax.WINAX_BINDING.get(rs, "EOF")
+                                                        ->Promise.then(eofChk => {
+                                                          switch eofChk {
+                                                          | Ok(JSON.Boolean(true)) => Promise.resolve(Ok(allRows))
+                                                          | Ok(_) => {
+                                                              Bindings.Winax.WINAX_BINDING.get(rs, "Fields")
+                                                                ->Promise.then(rfResult => {
+                                                                  switch rfResult {
+                                                                  | Error(e) => Promise.resolve(Error(e))
+                                                                  | Ok(rowFieldsRaw) => {
+                                                                      let rowFieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(rowFieldsRaw)
+                                                                      Bindings.Winax.WINAX_BINDING.getCount(rowFieldsHandle)
+                                                                        ->Promise.then(rfcResult => {
+                                                                          switch rfcResult {
+                                                                          | Error(e) => {
+                                                                              Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                                                                              Bindings.Winax.WINAX_BINDING.release(rowFieldsHandle)->ignore
+                                                                              Promise.resolve(Error(e))
+                                                                            }
+                                                                          | Ok(rfc) => {
+                                                                            let rowDict: dict<JSON.t> = Dict.make()
+                                                                            let cIdx = ref(0)
+                                                                            let rec cCollect: unit => Promise.t<result<dict<JSON.t>, Errors.t>> = (
+                                                                                (),
+                                                                              ) => {
+                                                                                if cIdx.contents >= rfc {
+                                                                                  Promise.resolve(Ok(rowDict))
+                                                                                } else {
+                                                                                  let cVar = ComInterfaces.VInt(cIdx.contents)
+                                                                                  Bindings.Winax.WINAX_BINDING.getItem(rowFieldsHandle, cVar)
+                                                                                    ->Promise.then(ciResult => {
+                                                                                      switch ciResult {
+                                                                                      | Error(e) => Promise.resolve(Error(e))
+                                                                                      | Ok(cItem) => {
+                                                                                          Bindings.Winax.WINAX_BINDING.get(cItem, "Value")
+                                                                                            ->Promise.then(valResult => {
+                                                                                              Bindings.Winax.WINAX_BINDING.release(cItem)->ignore
+                                                                                              switch valResult {
+                                                                                              | Ok(val) => {
+                                                                                                  let cName = switch Array.get(columns, cIdx.contents) {
+                                                                                                  | Some(n) => n
+                                                                                                  | None => "col" ++ Int.toString(cIdx.contents)
+                                                                                                  }
+                                                                                                  Dict.set(rowDict, cName, val)
+                                                                                                  cIdx.contents = cIdx.contents + 1
+                                                                                                  cCollect()
+                                                                                                }
+                                                                                              | Error(e) => Promise.resolve(Error(e))
+                                                                                              }
+                                                                                            })
+                                                                                        }
+                                                                                      }
+                                                                                    })
+                                                                                }
+                                                                              }
+                                                                              cCollect()
+                                                                                ->Promise.then(rowResult => {
+                                                                                  Bindings.Winax.WINAX_BINDING.release(rowFieldsHandle)->ignore
+                                                                                  switch rowResult {
+                                                                                  | Error(e) => Promise.resolve(Error(e))
+                                                                                  | Ok(_) => {
+                                                                                      allRows->Array.push(rowDict)->ignore
+                                                                                      Bindings.Winax.WINAX_BINDING.invoke(rs, "MoveNext", [])
+                                                                                        ->Promise.then(_ => {
+                                                                                          rowCollect()
+                                                                                        })
+                                                                                    }
+                                                                                  }
+                                                                                })
+                                                                            }
+                                                                          }
+                                                                        })
+                                                                    }
+                                                                  | Error(e) => Promise.resolve(Error(e))
+                                                                  }
+                                                                })
+                                                            }
+                                                          | Error(e) => Promise.resolve(Error(e))
+                                                          }
+                                                        })
+                                                    }
+                                                    rowCollect()
+                                                      ->Promise.then(rowsResult => {
+                                                        Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                                                        switch rowsResult {
+                                                        | Error(e) => Promise.resolve(Error(e))
+                                                        | Ok(rows) => {
+                                                            Promise.resolve(Ok({
+                                                              success: true,
+                                                              rows: rows,
+                                                              count: Array.length(rows),
+                                                              columns: columns,
+                                                              error: None,
+                                                            }))
+                                                          }
+                                                        }
+                                                      })
+                                                  }
+                                                }
+                                              })
+                                          }
+                                        }
+                                      })
+                                  }
+                                | Error(e) => {
+                                    Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                                    Promise.resolve(Error(e))
+                                  }
+                                }
+                              })
+                          }
+                        | Error(e) => {
+                            Bindings.Winax.WINAX_BINDING.release(rs)->ignore
+                            Promise.resolve(Error(e))
+                          }
+                        }
+                      })
+                  }
+                }
+              })
+              ->Promise.catch(exn => {
+                Promise.resolve(Error(Errors.databaseError(_exnMessage(exn))))
+              })
+          }
+        }
+      }
     }
   }
 
@@ -385,6 +613,7 @@ module DaoAdapter = {
   }
 
   let createIndex = (self: t, indexName: string, table: string, columns: array<string>, ~unique: option<bool>=?, ~ignoreNulls: option<bool>=?): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+    let _ = ignoreNulls // suppress unused warning
     Promise.resolve(Ok({success: false, error: Some("COM createIndex not implemented")}))
   }
 
