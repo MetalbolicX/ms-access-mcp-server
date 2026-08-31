@@ -514,9 +514,135 @@ module DaoAdapter = {
     if !self.isConnected {
       Promise.resolve(Ok([]))
     } else {
-      // Note: Full implementation would iterate DAO TableDefs collection
-      // The winax stubs don't support getCount/getItem properly
-      Promise.resolve(Ok([]))
+      switch self.session {
+      | None => Promise.resolve(Ok([]))
+      | Some(session) => {
+          switch ComSession.getCurrentDb(session) {
+          | None => Promise.resolve(Ok([]))
+          | Some(db) => {
+              Bindings.Winax.WINAX_BINDING.get(db, "TableDefs")
+              ->Promise.then(tableDefsResult => {
+                switch tableDefsResult {
+                | Error(e) => Promise.resolve(Error(e))
+                | Ok(tableDefs) => {
+                    // Wrap TableDefs COM handle for getCount/getItem
+                    let tableDefsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefs)
+                    Bindings.Winax.WINAX_BINDING.getCount(tableDefsHandle)
+                    ->Promise.then(countResult => {
+                      switch countResult {
+                      | Error(e) => {
+                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
+                          Promise.resolve(Error(e))
+                        }
+                      | Ok(count) => {
+                          let results: array<Interfaces.tableInfo> = []
+                          let tableIdx = ref(0)
+                          let rec collectLoop: unit => Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> = () => {
+                            if tableIdx.contents >= count {
+                              Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
+                              Promise.resolve(Ok(results))
+                            } else {
+                              let idxVar = ComInterfaces.VInt(tableIdx.contents)
+                              Bindings.Winax.WINAX_BINDING.getItem(tableDefsHandle, idxVar)
+                              ->Promise.then(itemResult => {
+                                switch itemResult {
+                                | Error(e) => {
+                                    Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
+                                    Promise.resolve(Error(e))
+                                  }
+                                | Ok(td) => {
+                                    Bindings.Winax.WINAX_BINDING.get(td, "Name")
+                                    ->Promise.then(nameResult => {
+                                      switch nameResult {
+                                      | Error(e) => {
+                                          Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
+                                          Promise.resolve(Error(e))
+                                        }
+                                      | Ok(JSON.String(name)) => {
+                                          Bindings.Winax.WINAX_BINDING.get(td, "Type")
+                                          ->Promise.then(typeResult => {
+                                            Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                                            switch typeResult {
+                                            | Error(e) => {
+                                                Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
+                                                Promise.resolve(Error(e))
+                                              }
+                                            | Ok(typeVal) => {
+                                                // DAO type: 1=TABLE, 5=SYSTEM, 8=QUERY
+                                                let isSystem = name->String.startsWith("MSys") || name->String.startsWith("~") || name->String.startsWith("~$")
+                                                let isQuery = switch typeVal {
+                                                | JSON.Number(n) => n->Float.toInt === 8
+                                                | _ => false
+                                                }
+                                                if isQuery {
+                                                  tableIdx.contents = tableIdx.contents + 1
+                                                  collectLoop()
+                                                } else if systemOnly {
+                                                  if isSystem {
+                                                    let fi: Interfaces.fieldInfo = {
+                                                      name: name,
+                                                      type_: "SYSTEM",
+                                                      size: 0,
+                                                      required: false,
+                                                      allowZeroLength: false,
+                                                      defaultValue: None,
+                                                      isAutoincrement: false,
+                                                    }
+                                                    let ti: Interfaces.tableInfo = {
+                                                      name: name,
+                                                      fields: [fi],
+                                                      recordCount: 0,
+                                                      primaryKey: None,
+                                                    }
+                                                    results->Array.push(ti)
+                                                  }
+                                                  tableIdx.contents = tableIdx.contents + 1
+                                                  collectLoop()
+                                                } else {
+                                                  if !isSystem {
+                                                    let fi: Interfaces.fieldInfo = {
+                                                      name: name,
+                                                      type_: "TABLE",
+                                                      size: 0,
+                                                      required: false,
+                                                      allowZeroLength: false,
+                                                      defaultValue: None,
+                                                      isAutoincrement: false,
+                                                    }
+                                                    let ti: Interfaces.tableInfo = {
+                                                      name: name,
+                                                      fields: [fi],
+                                                      recordCount: 0,
+                                                      primaryKey: None,
+                                                    }
+                                                    results->Array.push(ti)
+                                                  }
+                                                  tableIdx.contents = tableIdx.contents + 1
+                                                  collectLoop()
+                                                }
+                                              }
+                                            }
+                                          })
+                                        }
+                                      }
+                                    })
+                                  }
+                                }
+                              })
+                            }
+                          }
+                          collectLoop()
+                        }
+                      }
+                    })
+                  }
+                }
+              })
+            }
+          }
+        }
+      }
     }
   }
 
@@ -535,12 +661,9 @@ module DaoAdapter = {
   let _getRelationshipsImpl: t => Promise.t<result<array<Interfaces.relationshipInfo>, Errors.t>> = (
     self: t,
   ) => {
-    if !self.isConnected {
-      Promise.resolve(Ok([]))
-    } else {
-      // Note: Full implementation would iterate DAO Relations collection
-      Promise.resolve(Ok([]))
-    }
+    // DAO Relations collection — deferred full implementation
+    // Returns empty array until nested promise iteration is resolved
+    Promise.resolve(Ok([]))
   }
 
   let getRelationships = (self: t): Promise.t<result<array<Interfaces.relationshipInfo>, Errors.t>> => {
@@ -557,10 +680,10 @@ module DaoAdapter = {
 
   let _getDbStatsImpl: t => Promise.t<result<dict<JSON.t>, Errors.t>> = (self: t) => {
     let stats = Dict.make()
+    Dict.set(stats, "connected", JSON.Boolean(self.isConnected))
     switch self.dbPath {
     | Some(path) => {
         Dict.set(stats, "file", JSON.String(path))
-        Dict.set(stats, "connected", JSON.Boolean(self.isConnected))
       }
     | None => ()
     }
@@ -572,12 +695,9 @@ module DaoAdapter = {
   }
 
   let _getQueriesImpl: t => Promise.t<result<array<Interfaces.queryInfo>, Errors.t>> = (self: t) => {
-    if !self.isConnected {
-      Promise.resolve(Ok([]))
-    } else {
-      // Note: Full implementation would iterate DAO QueryDefs collection
-      Promise.resolve(Ok([]))
-    }
+    // DAO QueryDefs collection — deferred full implementation
+    // Returns empty array until nested promise iteration is resolved
+    Promise.resolve(Ok([]))
   }
 
   let getQueries = (self: t): Promise.t<result<array<Interfaces.queryInfo>, Errors.t>> => {
@@ -609,6 +729,8 @@ module DaoAdapter = {
   }
 
   let getIndexes = (self: t, tableName: string): Promise.t<result<array<Interfaces.indexInfo>, Errors.t>> => {
+    // DAO Indexes collection — deferred full implementation
+    // Returns empty array until nested promise iteration is resolved
     Promise.resolve(Ok([]))
   }
 
