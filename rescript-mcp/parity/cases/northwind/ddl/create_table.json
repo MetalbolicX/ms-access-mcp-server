@@ -9,6 +9,6 @@
     ]
   },
   "variant": "odbc",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

@@ -5,6 +5,6 @@
     "query_name": "qry_ParityTest"
   },
   "variant": "odbc",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

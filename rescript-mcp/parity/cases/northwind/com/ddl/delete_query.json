@@ -5,6 +5,6 @@
     "query_name": "qry_ParityTest"
   },
   "variant": "com",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

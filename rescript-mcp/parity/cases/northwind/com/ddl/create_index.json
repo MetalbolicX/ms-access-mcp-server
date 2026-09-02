@@ -9,6 +9,6 @@
     "ignore_nulls": false
   },
   "variant": "com",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

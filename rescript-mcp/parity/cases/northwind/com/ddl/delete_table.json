@@ -5,6 +5,6 @@
     "table_name": "ParityTest_Tmp"
   },
   "variant": "com",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

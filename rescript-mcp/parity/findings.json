@@ -1,82 +1,42 @@
 [
   {
-    "operation": "alter_table",
-    "case": "alter_table.json",
+    "operation": "connect_access",
+    "case": "connect_access.json",
+    "diff": {
+      "path": "$",
+      "expected": "missing",
+      "actual": [
+        "adapter_type"
+      ]
+    }
+  },
+  {
+    "operation": "get_relationships",
+    "case": "get_relationships.json",
+    "diff": {
+      "path": "$.relationships[0].attributes",
+      "expected": "",
+      "actual": "1"
+    }
+  },
+  {
+    "operation": "get_table_schema",
+    "case": "get_table_schema-Customers.json",
     "diff": {
       "path": "DRIVER",
       "expected": "ok",
-      "actual": "rescript: rescript exit 1"
+      "actual": "rescript: rescript exit 134"
     },
-    "stderr": "runRescript: Cannot read properties of undefined (reading '0')\nTypeError: Cannot read properties of undefined (reading '0')\n    at processActions (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1526:35)\n    at Module.alterTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1642:10)\n    at Object.alterTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Composition.res.mjs:31:48)\n    at Module.alterTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:715:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:134:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
+    "stderr": "\r\n  #  C:\\nvm4w\\nodejs\\node.exe[18788]: void __cdecl node::RemoveEnvironmentCleanupHook(Isolate *, CleanupHook, void *) at src\\api\\hooks.cc:142\r\n  #  Assertion failed: (env) != nullptr\r\n\r\n----- Native stack trace -----\r\n\r\n 1: 00007FF6F94F14AA node::MultiIsolatePlatform::DisposeIsolate+765370\r\n 2: 00007FF6F960343A node::RemoveEnvironmentCleanupHook+234\r\n 3: 00007FFF0CBE7B0B DispObject::`scalar deleting destructor'+203\r\n 4: 00007FF6F7F7229A v8::ResourceConstraints::ResourceConstraints+6346\r\n 5: 00007FF6F7F05A34 X509_STORE_get_lookup_certs+61556\r\n 6: 00007FF6F7F167E2 v8::internal::StrongRootAllocatorBase::deallocate_impl+15858\r\n 7: 00007FF6F7F1630B v8::internal::StrongRootAllocatorBase::deallocate_impl+14619\r\n 8: 00007FF6F981492D node::AsyncResource::CallbackScope::CallbackScope+2124541\r\n 9: 00007FF6F7F01920 X509_STORE_get_lookup_certs+44896\r\n10: 00007FF6F7F1C17A X509_STORE_set_cleanup+5098\r\n11: 00007FF6F7F28616 uv_timer_set_repeat+20694\r\n12: 00007FF6F7AF9277 v8::CodeEvent::GetFunctionName+131959\r\n13: 0000029CAFE775FA \r\n"
   },
   {
-    "operation": "create_index",
-    "case": "create_index.json",
+    "operation": "get_tables",
+    "case": "get_tables.json",
     "diff": {
       "path": "DRIVER",
       "expected": "ok",
-      "actual": "rescript: rescript exit 1"
+      "actual": "rescript: rescript exit 134"
     },
-    "stderr": "runRescript: Cannot read properties of undefined (reading 'map')\nTypeError: Cannot read properties of undefined (reading 'map')\n    at Module.createIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:300:34)\n    at Module.createIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1442:24)\n    at Object.createIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Composition.res.mjs:56:77)\n    at Module.createIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:776:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:140:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
-  },
-  {
-    "operation": "create_table",
-    "case": "create_table.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": "ok",
-      "actual": "rescript: rescript exit 1"
-    },
-    "stderr": "runRescript: Cannot read properties of undefined (reading 'map')\nTypeError: Cannot read properties of undefined (reading 'map')\n    at Module.createTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:684:28)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:123:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
-  },
-  {
-    "operation": "delete_query",
-    "case": "delete_query.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "rescript: rescript exit 1"
-    },
-    "stderr": "runRescript: n.replace is not a function\nTypeError: n.replace is not a function\n    at file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:18\n    at _bracketEscape (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:38)\n    at bracket (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:31:16)\n    at Module.dropView (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:349:25)\n    at Module.deleteQuery (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1686:24)\n    at Object.deleteQuery (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Composition.res.mjs:28:38)\n    at Module.deleteQuery (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:847:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:166:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
-  },
-  {
-    "operation": "delete_table",
-    "case": "delete_table.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": "ok",
-      "actual": "rescript: rescript exit 1"
-    },
-    "stderr": "runRescript: n.replace is not a function\nTypeError: n.replace is not a function\n    at file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:18\n    at _bracketEscape (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:38)\n    at bracket (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:31:16)\n    at Module.dropTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:280:26)\n    at Module.deleteTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1407:24)\n    at Object.deleteTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Composition.res.mjs:30:38)\n    at Module.deleteTable (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:701:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:129:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
-  },
-  {
-    "operation": "drop_index",
-    "case": "drop_index.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": "ok",
-      "actual": "rescript: rescript exit 1"
-    },
-    "stderr": "runRescript: Cannot read properties of undefined (reading 'replace')\nTypeError: Cannot read properties of undefined (reading 'replace')\n    at file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:18\n    at _bracketEscape (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:38)\n    at Module.dropIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:310:27)\n    at Module.dropIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1475:24)\n    at Object.dropIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Composition.res.mjs:57:45)\n    at Module.dropIndex (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:790:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:149:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
-  },
-  {
-    "operation": "generate_sql",
-    "case": "generate_sql.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "rescript: Not available via ODBC"
-    },
-    "stderr": "{\"error\": \"unknown operation: generate_sql\"}\r\n"
-  },
-  {
-    "operation": "set_query_sql",
-    "case": "set_query_sql.json",
-    "diff": {
-      "path": "DRIVER",
-      "expected": null,
-      "actual": "rescript: rescript exit 1"
-    },
-    "stderr": "runRescript: n.replace is not a function\nTypeError: n.replace is not a function\n    at file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:18\n    at _bracketEscape (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:27:38)\n    at bracket (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:31:16)\n    at Module.dropView (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/SqlBuilder.res.mjs:349:25)\n    at Module.setQuerySql (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Adapters/OdbcAdapter.res.mjs:1719:28)\n    at Object.setQuerySql (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Composition.res.mjs:27:45)\n    at Module.setQuerySql (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/src/Services/Facade.res.mjs:833:21)\n    at runOperation (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:160:33)\n    at main (file:///D:/code/python/ms-access-mcp-server/rescript-mcp/parity/dist/runRescript.js:238:28)\n"
+    "stderr": "\r\n  #  C:\\nvm4w\\nodejs\\node.exe[13792]: void __cdecl node::RemoveEnvironmentCleanupHook(Isolate *, CleanupHook, void *) at src\\api\\hooks.cc:142\r\n  #  Assertion failed: (env) != nullptr\r\n\r\n----- Native stack trace -----\r\n\r\n 1: 00007FF6F94F14AA node::MultiIsolatePlatform::DisposeIsolate+765370\r\n 2: 00007FF6F960343A node::RemoveEnvironmentCleanupHook+234\r\n 3: 00007FFF0CBE7B0B DispObject::`scalar deleting destructor'+203\r\n 4: 00007FF6F7F7229A v8::ResourceConstraints::ResourceConstraints+6346\r\n 5: 00007FF6F7F05A34 X509_STORE_get_lookup_certs+61556\r\n 6: 00007FF6F7F167E2 v8::internal::StrongRootAllocatorBase::deallocate_impl+15858\r\n 7: 00007FF6F7F1630B v8::internal::StrongRootAllocatorBase::deallocate_impl+14619\r\n 8: 00007FF6F981492D node::AsyncResource::CallbackScope::CallbackScope+2124541\r\n 9: 00007FF6F7F01920 X509_STORE_get_lookup_certs+44896\r\n10: 00007FF6F7F1C17A X509_STORE_set_cleanup+5098\r\n11: 00007FF6F7F28616 uv_timer_set_repeat+20694\r\n12: 00007FF6F7AF9277 v8::CodeEvent::GetFunctionName+131959\r\n13: 0000021F6D9F75FA \r\n"
   }
 ]

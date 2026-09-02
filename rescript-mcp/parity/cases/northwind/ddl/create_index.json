@@ -9,6 +9,6 @@
     "ignore_nulls": false
   },
   "variant": "odbc",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

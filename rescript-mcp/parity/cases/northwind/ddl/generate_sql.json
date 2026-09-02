@@ -5,6 +5,6 @@
     "output_path": "REPLACE_AT_RUNTIME"
   },
   "variant": "odbc",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }

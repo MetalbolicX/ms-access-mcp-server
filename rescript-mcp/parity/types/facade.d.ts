@@ -56,15 +56,15 @@ export interface Facade {
   deleteData: (facade: Facade, table: string, whereDict: Record<string, JsonT>, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   executeRawSql: (facade: Facade, sql: string, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   exportData: (facade: Facade, sql: string, filePath: string, format: string, opts?: ExportOpts) => Promise<Record<string, JsonT>>;
-  createTable: (facade: Facade, opts: CreateTableOpts) => Promise<Record<string, JsonT>>;
-  deleteTable: (facade: Facade, opts: DeleteTableOpts) => Promise<Record<string, JsonT>>;
-  alterTable: (facade: Facade, opts: AlterTableOpts) => Promise<Record<string, JsonT>>;
-  createIndex: (facade: Facade, opts: CreateIndexOpts) => Promise<Record<string, JsonT>>;
-  dropIndex: (facade: Facade, opts: DropIndexOpts) => Promise<Record<string, JsonT>>;
-  getIndexes: (facade: Facade, opts: GetIndexesOpts) => Promise<Record<string, JsonT>>;
-  setQuerySql: (facade: Facade, opts: SetQuerySqlOpts) => Promise<Record<string, JsonT>>;
-  deleteQuery: (facade: Facade, opts: DeleteQueryOpts) => Promise<Record<string, JsonT>>;
-  generateSql: (facade: Facade, opts: GenerateSqlOpts) => Promise<Record<string, JsonT>>;
+  createTable: (facade: Facade, tableName: string, columns: Record<string, JsonT>[], name?: string) => Promise<Record<string, JsonT>>;
+  deleteTable: (facade: Facade, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
+  alterTable: (facade: Facade, tableName: string, operations: Record<string, JsonT>[], name?: string) => Promise<Record<string, JsonT>>;
+  createIndex: (facade: Facade, tableName: string, indexName: string, columns: string[], unique?: boolean, ignoreNulls?: boolean, name?: string) => Promise<Record<string, JsonT>>;
+  dropIndex: (facade: Facade, tableName: string, indexName: string, name?: string) => Promise<Record<string, JsonT>>;
+  getIndexes: (facade: Facade, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
+  setQuerySql: (facade: Facade, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
+  deleteQuery: (facade: Facade, queryName: string, name?: string) => Promise<Record<string, JsonT>>;
+  generateSql: (facade: Facade, outputPath: string, name?: string) => Promise<Record<string, JsonT>>;
 }
 
 export interface ConnectOpts {

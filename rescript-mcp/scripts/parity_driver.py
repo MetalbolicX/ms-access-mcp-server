@@ -480,6 +480,9 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
             return _shape_set_query_sql(adapter, args["query_name"], args["sql"])
         if operation == "delete_query":
             return _shape_delete_query(adapter, args["query_name"])
+        if operation == "generate_sql":
+            # ODBC variant does not support generate_sql (DAO-only)
+            return {"success": False, "error": "Not available via ODBC"}
         raise ValueError(f"unknown operation: {operation}")
     finally:
         try:

@@ -6,6 +6,6 @@
     "sql": "SELECT CustomerID, CompanyName FROM Customers"
   },
   "variant": "odbc",
-  "mutating": false,
+  "mutating": true,
   "volatileFields": []
 }
