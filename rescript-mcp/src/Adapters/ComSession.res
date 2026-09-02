@@ -103,11 +103,11 @@ let _releaseAccessApp: ComInterfaces.comObject => unit = (
   }
 )
 
-let _releaseHandle: option<ComInterfaces.comObject> => unit = (
+let _releaseHandle: option<ComInterfaces.comObject> => Promise.t<unit> = (
   handle => {
     switch handle {
-    | Some(obj) => Bindings.Winax.WINAX_BINDING.release(obj)
-    | None => ()
+    | Some(obj) => Bindings.Winax.WINAX_BINDING.releaseAsync(obj)
+    | None => Promise.resolve()
     }
   }
 )
@@ -161,8 +161,8 @@ let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, 
                             ->Promise.then(dbOpenResult => {
                               switch dbOpenResult {
                               | Error(e) => {
-                                  _releaseHandle(session.handles.daoDb)
-                                  _releaseHandle(Some(accessApp))
+                                  let _ = _releaseHandle(session.handles.daoDb)
+                                  let _ = _releaseHandle(Some(accessApp))
                                   session.handles.daoDb = None
                                   session.handles.accessApp = None
                                   Promise.resolve(Error(e))
@@ -178,9 +178,9 @@ let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, 
                                     ->Promise.then(ocdResult => {
                                       switch ocdResult {
                                       | Error(e) => {
-                                          _releaseHandle(session.currentDb)
-                                          _releaseHandle(session.handles.daoDb)
-                                          _releaseHandle(Some(accessApp))
+                                          let _ = _releaseHandle(session.currentDb)
+                                          let _ = _releaseHandle(session.handles.daoDb)
+                                          let _ = _releaseHandle(Some(accessApp))
                                           session.currentDb = None
                                           session.handles.daoDb = None
                                           session.handles.accessApp = None
@@ -254,19 +254,28 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
       }
       // LIFO: adoConn → currentDb → daoDb → accessApp
       _gracefulShutdown()
-        -> Promise.then(_ => {
+        ->Promise.then(_ => {
           _releaseHandle(session.handles.adoConn)
-          session.handles.adoConn = None
-          _releaseHandle(session.currentDb)
-          session.currentDb = None
-          _releaseHandle(session.handles.daoDb)
-          session.handles.daoDb = None
-          _releaseHandle(session.handles.accessApp)
-          session.handles.accessApp = None
-          session.isConnected = false
-          session.pid = None
-          Promise.resolve(Ok())
+            ->Promise.then(_ => {
+              session.handles.adoConn = None
+              _releaseHandle(session.currentDb)
+            })
+            ->Promise.then(_ => {
+              session.currentDb = None
+              _releaseHandle(session.handles.daoDb)
+            })
+            ->Promise.then(_ => {
+              session.handles.daoDb = None
+              _releaseHandle(session.handles.accessApp)
+            })
+            ->Promise.then(_ => {
+              session.handles.accessApp = None
+              session.isConnected = false
+              session.pid = None
+              Promise.resolve(Ok())
+            })
         })
+        ->Promise.catch(_ => Promise.resolve(Ok()))
     }
   }
 : t => Promise.t<result<unit, Errors.t>>
