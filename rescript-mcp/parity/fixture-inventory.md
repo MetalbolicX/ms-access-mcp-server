@@ -1,9 +1,9 @@
-# Fixture inventory - db/northwind.accdb (plan 026 real-database baseline)
+# Fixture inventory - tests/integration/fixtures/test_db.accdb
 
-Generated: 2026-08-29T00:26:55.134896
-File size: 430080 bytes
-File mtime: 2026-08-28T23:57:15.460746
-Source: db/northwind.accdb (Python oracle)
+Generated: 2026-09-02T07:24:50.444096
+File size: 11206656 bytes
+File mtime: 2026-09-02T07:23:52.752210
+Source: tests/integration/fixtures/test_db.accdb (Python oracle)
 Driver: `Microsoft Access Driver (*.mdb, *.accdb)` via pyodbc
 
 ## User tables (8)
@@ -132,4 +132,4 @@ Driver: `Microsoft Access Driver (*.mdb, *.accdb)` via pyodbc
 - MSysAccessStorage is internal Access workspace scaffolding, not user tables - verified during plan 016.
 - Discovery strategy: probe-based candidate enumeration against the candidate list (env var `ACCESS_FIXTURE_TABLE_CANDIDATES`).
 - Row counts taken via `SELECT COUNT(*) FROM [<name>]`; columns via `SELECT * FROM [<name>] WHERE 1=0` + `cur.description`.
-- Probed 8 candidate names; override via `ACCESS_FIXTURE_TABLE_CANDIDATES` (semicolon-separated).
+- Probed 28 candidate names; override via `ACCESS_FIXTURE_TABLE_CANDIDATES` (semicolon-separated).
