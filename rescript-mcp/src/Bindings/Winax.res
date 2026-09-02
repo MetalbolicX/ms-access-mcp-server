@@ -10,6 +10,7 @@ module type WINAX_BINDING = {
   // Object lifecycle
   let createObject: string => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   let release: ComInterfaces.comObject => unit
+  let releaseAsync: ComInterfaces.comObject => Promise.t<unit>
 
   // Property access
   let get: (ComInterfaces.comObject, string) => Promise.t<result<JSON.t, Errors.t>>
@@ -141,6 +142,16 @@ module WINAX_BINDING: WINAX_BINDING = {
         ->ignore
     }
   : ComInterfaces.comObject => unit
+  )
+
+  let releaseAsync: ComInterfaces.comObject => Promise.t<unit> = (
+    (obj: ComInterfaces.comObject) => {
+      _importWinax(())->Promise.then(m => {
+        let rawMod = TsBridge.unwrapWinaxModule(m)
+        TsBridge.winaxRelease(rawMod, obj)
+        Promise.resolve()
+      })->Promise.catch(_ => Promise.resolve())
+    }: ComInterfaces.comObject => Promise.t<unit>
   )
 
   // ------------------------------------------------------------------
