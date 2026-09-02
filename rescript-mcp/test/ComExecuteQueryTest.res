@@ -94,7 +94,7 @@ testAsync("ComExecuteQuery: SELECT id, name FROM Customers returns rows", cb => 
           Promise.resolve()
         }
       | Ok(_) => {
-          ComDataAdapter.DaoAdapter.executeQuery(adapter, "SELECT id, name FROM Customers")
+          ComDataAdapter.DaoAdapter.executeQuery(adapter, "SELECT CustomerID, CompanyName FROM Customers")
             ->Promise.then(queryResult => {
               switch queryResult {
               | Error(e) => {
@@ -108,16 +108,16 @@ testAsync("ComExecuteQuery: SELECT id, name FROM Customers returns rows", cb => 
                   assertion(~operator="equal", (a, b) => a == b, result.success, true)
                   assertion(~operator="equal", (a, b) => a == b, Array.length(result.columns) >= 2, true)
                   assertion(~operator="equal", (a, b) => a == b, result.count > 0, true)
-                  // Verify column names include id and name
-                  let hasId = Array.includes(result.columns, "id")
-                  let hasName = Array.includes(result.columns, "name")
+                  // Verify column names include CustomerID and CompanyName (Northwind schema)
+                  let hasId = Array.includes(result.columns, "CustomerID")
+                  let hasName = Array.includes(result.columns, "CompanyName")
                   assertion(~operator="equal", (a, b) => a == b, hasId, true)
                   assertion(~operator="equal", (a, b) => a == b, hasName, true)
-                  // Verify rows have correct shape
+                  // Verify rows have correct shape (Northwind schema)
                   switch Array.get(result.rows, 0) {
                   | Some(firstRow) => {
-                      let hasIdField = Js.Dict.get(firstRow, "id")->Option.isSome
-                      let hasNameField = Js.Dict.get(firstRow, "name")->Option.isSome
+                      let hasIdField = Js.Dict.get(firstRow, "CustomerID")->Option.isSome
+                      let hasNameField = Js.Dict.get(firstRow, "CompanyName")->Option.isSome
                       assertion(~operator="equal", (a, b) => a == b, hasIdField, true)
                       assertion(~operator="equal", (a, b) => a == b, hasNameField, true)
                     }
@@ -194,7 +194,7 @@ testAsync("ComExecuteQuery: SELECT with no rows returns empty array", cb => {
           Promise.resolve()
         }
       | Ok(_) => {
-          ComDataAdapter.DaoAdapter.executeQuery(adapter, "SELECT id, name FROM Customers WHERE 1=0")
+          ComDataAdapter.DaoAdapter.executeQuery(adapter, "SELECT CustomerID, CompanyName FROM Customers WHERE 1=0")
             ->Promise.then(queryResult => {
               switch queryResult {
               | Ok(result) => {

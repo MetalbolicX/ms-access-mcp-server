@@ -67,12 +67,12 @@ testAsync("ComSchemaReads: getTables returns known tables and excludes MSys*", c
                       }
                     | Ok(tables) => {
                         let tableNames = tables->Array.map(ti => ti.name)
-                        // DAO returns table names case-sensitively as stored in the fixture;
-                        // the fixture ships lowercase ("customers", "orders", "products",
-                        // "type_test"). Compare case-sensitively to actual fixture names.
-                        let hasCustomers = tableNames->Array.some(n => n === "customers")
-                        let hasOrders = tableNames->Array.some(n => n === "orders")
-                        let hasProducts = tableNames->Array.some(n => n === "products")
+                        // Fixture `tests/integration/fixtures/test_db.accdb` ships with UPPERCASE
+                        // table names ("Customers", "Orders", "Products"). Compare case-sensitively
+                        // to actual fixture names.
+                        let hasCustomers = tableNames->Array.some(n => n === "Customers")
+                        let hasOrders = tableNames->Array.some(n => n === "Orders")
+                        let hasProducts = tableNames->Array.some(n => n === "Products")
                         let hasMsys = tableNames->Array.some(n => String.startsWith(n, "MSys"))
                         let hasTmp = tableNames->Array.some(n => String.startsWith(n, "~"))
                         assertion(~operator="equal", (a, b) => a == b, hasCustomers, true)
