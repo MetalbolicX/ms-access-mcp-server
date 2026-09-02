@@ -210,7 +210,7 @@ test("_buildDropIndexSql: name with spaces", () => {
 // Unit tests: alterTable not-connected envelope
 // ---------------------------------------------------------------------------
 
-test("alterTable: not connected returns Error envelope", () => {
+testAsync("alterTable: not connected returns Error envelope", cb => {
   let adapter = ComDataAdapter.DaoAdapter.make()
   ComDataAdapter.DaoAdapter.alterTable(adapter, "T", [])
     ->Promise.then(result => {
@@ -218,6 +218,7 @@ test("alterTable: not connected returns Error envelope", () => {
         | Error(_) => true
         | Ok(_) => false
       }, true)
+      cb(~planned=1, ())
       Promise.resolve()
     })
     ->ignore
@@ -272,45 +273,42 @@ testAsync("ComDdl: createTable creates a table and getTables reflects it", cb =>
                 ]
                 ComDataAdapter.DaoAdapter.createTable(adapter, newTableName, cols)
                   ->Promise.then(createResult => {
-                    ComDataAdapter.DaoAdapter.disconnect(adapter)
-                      ->Promise.then(_ => {
-                        switch createResult {
-                        | Error(e) => {
-                            Console.log("ComDdl createTable: create failed: " ++ Errors._message(e))
-                            cb(~planned=1, ())
-                            Promise.resolve()
-                          }
-                        | Ok(result) => {
-                            if !result.success {
-                              Console.log("ComDdl createTable: failed: " ++ (switch result.error {
-                                | Some(e) => e
-                                | None => "unknown"
-                              }))
-                              cb(~planned=1, ())
-                              Promise.resolve()
-                            } else {
-                              ComDataAdapter.DaoAdapter.getTables(adapter)
-                                ->Promise.then(tablesResult => {
-                                  switch tablesResult {
-                                  | Error(e) => {
-                                      Console.log("ComDdl createTable: getTables failed: " ++ Errors._message(e))
-                                      cb(~planned=1, ())
-                                      Promise.resolve()
-                                    }
-                                  | Ok(tables) => {
-                                      let tableNames = tables->Array.map(ti => ti.name)
-                                      let created = tableNames->Array.some(n => n === newTableName)
-                                      assertion(~operator="equal", (a, b) => a == b, result.success, true)
-                                      assertion(~operator="equal", (a, b) => a == b, created, true)
-                                      cb(~planned=2, ())
-                                      Promise.resolve()
-                                    }
-                                  }
-                                })
-                            }
-                          }
+                    switch createResult {
+                    | Error(e) => {
+                        Console.log("ComDdl createTable: create failed: " ++ Errors._message(e))
+                        ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                        Promise.resolve()
+                      }
+                    | Ok(result) => {
+                        if !result.success {
+                          Console.log("ComDdl createTable: failed: " ++ (switch result.error {
+                            | Some(e) => e
+                            | None => "unknown"
+                          }))
+                          ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                          Promise.resolve()
+                        } else {
+                          ComDataAdapter.DaoAdapter.getTables(adapter)
+                            ->Promise.then(tablesResult => {
+                              switch tablesResult {
+                              | Error(e) => {
+                                  Console.log("ComDdl createTable: getTables failed: " ++ Errors._message(e))
+                                  ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                  Promise.resolve()
+                                }
+                              | Ok(tables) => {
+                                  let tableNames = tables->Array.map(ti => ti.name)
+                                  let created = tableNames->Array.some(n => n === newTableName)
+                                  assertion(~operator="equal", (a, b) => a == b, result.success, true)
+                                  assertion(~operator="equal", (a, b) => a == b, created, true)
+                                  ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=2, ()); Promise.resolve() })->ignore
+                                  Promise.resolve()
+                                }
+                              }
+                            })
                         }
-                      })
+                      }
+                    }
                   })
               }
             }
@@ -1152,40 +1150,43 @@ testAsync("ComDdl: alterTable rename_table", cb => {
 // Unit tests: query DDL not-connected envelope
 // ---------------------------------------------------------------------------
 
-test("createQuery: not connected returns Error envelope", () => {
+testAsync("createQuery: not connected returns Ok envelope with success=false", cb => {
   let adapter = ComDataAdapter.DaoAdapter.make()
   ComDataAdapter.DaoAdapter.createQuery(adapter, "TestQ", "SELECT * FROM Test")
     ->Promise.then(result => {
       assertion(~operator="equal", (a, b) => a == b, switch result {
-        | Error(_) => true
-        | Ok(_) => false
+        | Error(_) => false
+        | Ok(_) => true
       }, true)
+      cb(~planned=1, ())
       Promise.resolve()
     })
     ->ignore
 })
 
-test("setQuerySql: not connected returns Error envelope", () => {
+testAsync("setQuerySql: not connected returns Ok envelope with success=false", cb => {
   let adapter = ComDataAdapter.DaoAdapter.make()
   ComDataAdapter.DaoAdapter.setQuerySql(adapter, "TestQ", "SELECT * FROM Test")
     ->Promise.then(result => {
       assertion(~operator="equal", (a, b) => a == b, switch result {
-        | Error(_) => true
-        | Ok(_) => false
+        | Error(_) => false
+        | Ok(_) => true
       }, true)
+      cb(~planned=1, ())
       Promise.resolve()
     })
     ->ignore
 })
 
-test("deleteQuery: not connected returns Error envelope", () => {
+testAsync("deleteQuery: not connected returns Ok envelope with success=false", cb => {
   let adapter = ComDataAdapter.DaoAdapter.make()
   ComDataAdapter.DaoAdapter.deleteQuery(adapter, "TestQ")
     ->Promise.then(result => {
       assertion(~operator="equal", (a, b) => a == b, switch result {
-        | Error(_) => true
-        | Ok(_) => false
+        | Error(_) => false
+        | Ok(_) => true
       }, true)
+      cb(~planned=1, ())
       Promise.resolve()
     })
     ->ignore

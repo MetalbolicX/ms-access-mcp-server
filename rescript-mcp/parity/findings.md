@@ -366,67 +366,60 @@ tablesExported, relationshipsExported}` — file paths, not inline DDL content.
 
 ---
 
-## 034-F-003 - rescript-test runner phantom assertion count on async DDL tests
+## 034-F-003 - async DDL test body logic and assertion leak pattern
 
 **Finding ID**: 034-F-003
-**Status**: open (known limitation)
-**Owner**: documented
+**Status**: RESOLVED
+**Owner**: TBD
 **Date**: 2026-09-02
 **Branch**: rescript/034-com-ddl-v2
 
-### Symptom
-Two real-COM tests in `ComDdlTest.res` fire extra assertions beyond what the
-test body contains, causing the runner's "Correct assertion count" check to fail:
+### Original Symptom
+Two real-COM tests in `ComDdlTest.res` had extra failures, making the runner
+report a wrong assertion count:
 
 - **Test 652** (`ComDdl: createTable creates a table and getTables reflects it`):
-  body has 2 assertions, runner reports delta=3 (`planned=2, right=3`).
+  1 PASS + 1 FAIL with `left: false, right: true` (plus the planned check).
 - **Test 663** (`ComDdl: createQuery creates a query (success envelope)`):
-  body has 1 assertion, runner reports delta=4 (`planned=1, right=4`).
+  1 FAIL with `left: true, right: false` (plus 3 phantom FAILs).
 
-### Root cause (confirmed diagnosis)
+### Actual Root Cause (after refactor)
+Two separate issues, both in test code (NOT a runner quirk):
 
-The `->Promise.then(result => assertion(...))->ignore` pattern in sync `test()`
-blocks causes the assertion to fire AFTER `func()` returns and AFTER `resolve()`
-triggers the next test. The promise chain resolves asynchronously, so:
+1. **Test 652 had a real test logic bug**: the body called `disconnect(adapter)`
+   BEFORE `getTables(adapter)`. After disconnect, the adapter is no longer
+   connected, so `getTables` returns `Ok([])`. The check
+   `tables->Array.some(n => n === newTableName)` returned `false`, causing the
+   `assertion(created, true)` to FAIL.
 
-1. `func()` returns (synchronously) — `planned` counter captured
-2. `resolve()` is called — next test starts
-3. The pending `->Promise.then(result => assertion(...))->ignore` fires — its
-   `assertion()` call increments passCounter/failCounter **in the next test's
-   context**, inflating that test's actual assertion count.
+2. **Test 663 had a stale hypothesis from 034-F-001**: 034-F-001 documented
+   that `createQuery` returns `success=false`, so the test asserted
+   `result.success == false`. But `createQuery` actually returns `success=true`
+   (the winax binding works). The assertion failed with `left: true, right: false`.
 
-For test 652 specifically: the `alterTable` not-connected unit test (test ~651)
-uses `->Promise.then(result => assertion(...))->ignore`. Because the adapter is
-not connected, `alterTable` returns `Error(...)` which maps to `false` in the
-switch. So the assertion fires `assertion(false, true)` which the runner counts
-as a FAIL. This phantom assertion leaks into test 652's counter.
+3. **Cross-test assertion leak (minor)**: sync `test()` blocks using
+   `->Promise.then(result => assertion(...))->ignore` can leak assertions into
+   the next test's counter if the promise resolves after `func()` returns. Tests
+   651, 660, 661, 662 had this pattern. Although they didn't cause the original
+   test 652/663 failures (which were the bugs above), they were a code smell
+   that contributed to the noise.
 
-For test 663: the three not-connected unit tests for `createQuery`, `setQuerySql`,
-and `deleteQuery` (tests ~660/661/662) all use the same `->ignore` pattern.
-Each returns `Ok({success: false})` when called on a disconnected adapter, so
-each fires `assertion(false, true)` — 3 phantom FAIL assertions that all leak
-into test 663's counter (making the runner see `right=4` when `planned=1`).
+### Resolution (2026-09-02)
+1. **Test 652**: Reordered the promise chain so `getTables(adapter)` runs BEFORE
+   `disconnect(adapter)`. Now the connected adapter's table list correctly
+   reflects the newly created table. `created = true` → assertion passes.
+2. **Test 663**: Updated assertion to `result.success == true` (034-F-001 was a
+   misdiagnosis; the implementation works).
+3. **Tests 651, 660, 661, 662**: Refactored from sync `test()` with
+   `->Promise.then(...)->ignore` to `testAsync` with proper `cb` callback. This
+   contains the assertion within each test's window, eliminating the cross-test
+   leak pattern.
+4. **Tests 660, 661, 662 expectation**: Fixed the expected envelope — these
+   operations return `Ok({success: false, error: ...})` when not connected, NOT
+   `Error(...)`. Updated the `switch result` patterns accordingly.
 
-The **leak mechanism** is:
-- `disconnect(adapter)` fires a promise chain ending in `_importWinax` (dynamic
-  import) and `_releaseHandle(releaseAsync)`
-- These are async microtasks that resolve after `func()` returns
-- The `->ignore` pattern does not await them, so the test function exits before
-  the promise chain fires
-- The pending `.then(result => assertion(...))` from the NOT-connected unit tests
-  fires in the window between one test's `func()` returning and the next test's
-  `func()` starting — incrementing the next test's counters
-
-### Workaround
-Refactor the async `test()` blocks to use `testAsync` with proper `cb` and
-`await`, OR document the limitation and accept the 2 known test failures as
-runner-counter artifacts rather than code defects.
-
-### Impact
-- 768/770 tests pass (down from 770 ideal due to this finding)
-- Both failing tests are NOT code defects — they are runner-counter artifacts
-  of the async `->ignore` pattern
-- T7 verification gate is `768/770 ≥ 741` (baseline + 27 net new tests)
+### Net Result
+**770/770 tests pass** (from 768/770) — all 3 findings fully resolved.
 
 ---
 
@@ -440,19 +433,18 @@ runner-counter artifacts rather than code defects.
 - **T1**: Type map (`_accessSqlType`) — DONE
 - **T2**: Table DDL (`createTable`, `deleteTable`, `alterTable`) — DONE
 - **T3**: Index DDL (`createIndex`, `dropIndex`, `getIndexes`) — DONE
-- **T4**: Query DDL (`createQuery`, `setQuerySql`, `deleteQuery`, `getQueries`) — DONE (winax binding works — 034-F-001 resolved)
-- **T5**: `generateSql` inline DDL envelope — DONE (034-F-002 resolved)
+- **T4**: Query DDL (`createQuery`, `setQuerySql`, `deleteQuery`, `getQueries`) — DONE (winax binding works)
+- **T5**: `generateSql` inline DDL envelope — DONE (Python oracle shape matched)
 - **T6**: Unit test coverage for all DDL functions — DONE
 - **T7**: Parity runs — BLOCKED on ACE ODBC driver install (env issue, not code)
 
 ### Findings
 - **034-F-001** (createQuery winax binding): **RESOLVED** — `createQuery` via `WINAX_BINDING.invokeAsObject` works correctly; test 663 now asserts `success=true`
 - **034-F-002** (generateSql envelope): **RESOLVED** — inline DDL string added to `ddlResult` interface; Python oracle shape matched
-- **034-F-003** (phantom assertions): **OPEN** — runner quirk: `->Promise.then(...)->ignore` in sync `test()` blocks leaks assertions into the next test; 2 known test counter artifacts (tests 652 and 663); NOT code defects
+- **034-F-003** (async DDL test logic + assertion leak): **RESOLVED** — test 652 reordered to call getTables before disconnect; test 663 expectation corrected; tests 651/660/661/662 refactored to testAsync with proper cb
 
 ### Net Result
-**768/770 tests pass** (baseline 741 + 27 net new — 2 runner-counter artifacts)
+**770/770 tests pass** (baseline 741 + 27 net new + 2 bug fixes)
 
-Plan 034 is marked **DONE** with documented limitations. The 2 failing tests
-(test counter artifacts from the runner's async `->ignore` pattern) do not
-represent code defects and do not block the plan.
+Plan 034 is marked **DONE** with all findings resolved. T7 parity runs remain
+blocked on ACE ODBC driver install (env-only, not code).
