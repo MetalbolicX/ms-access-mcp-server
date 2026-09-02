@@ -60,6 +60,7 @@ Desktop.ini
 *.accdb
 *.mdb
 *.laccdb
+*.tmp_*.accdb  # per-test fixture copies from parity harness
 
 # Access lock files (created when .accdb is open)
 *$*

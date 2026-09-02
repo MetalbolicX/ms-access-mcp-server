@@ -229,6 +229,9 @@ let importAllVersioning: (
 // Import ordering: modules → forms → reports → macros → queries.
 // Files sorted by name for deterministic order (deterministic ordering requirement).
 
+// Internal helper exposed for use by ComDataAdapter.generateSql (034-F-002)
+let _readFileText: string => string
+
 let exportSchemaDdl: (
   ComInterfaces.sessionHandles,
   ~outputDir: string,
