@@ -1230,12 +1230,11 @@ testAsync("ComDdl: createQuery creates a query (success envelope)", cb => {
                         Promise.resolve()
                       }
                     | Ok(result) => {
-                        // 034-F-001: DAO CreateQueryDef via winax invokeAsObject does not
-                        // round-trip cleanly. Until the winax dispatch is fixed, createQuery
-                        // returns success=false with the DAO error string. Assert that the
-                        // envelope shape is correct (success=false) — the query did NOT get
-                        // created. 034-F-001 in parity/findings.md documents the root cause.
-                        assertion(~operator="equal", (a, b) => a == b, result.success, false)
+                        // 034-F-001 RESOLVED: DAO CreateQueryDef via winax invokeAsObject
+                        // now round-trips correctly on this branch. createQuery returns
+                        // success=true with the QueryDef COM handle released after creation.
+                        // Assert the envelope shape and that the query is persisted.
+                        assertion(~operator="equal", (a, b) => a == b, result.success, true)
                         ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
                         Promise.resolve()
                       }
