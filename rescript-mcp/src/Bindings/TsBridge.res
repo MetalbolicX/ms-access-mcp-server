@@ -69,6 +69,9 @@ external cleanName: string => string = "cleanName"
 @module("../Js/fsHelpers.mjs")
 external fileExists: string => bool = "fileExists"
 
+@module("../Js/fsHelpers.mjs")
+external fsCopyFileSync: (string, string) => unit = "copyFileSync"
+
 // ---------------------------------------------------------------------------
 // hash.mts — file hashing helpers
 // ---------------------------------------------------------------------------

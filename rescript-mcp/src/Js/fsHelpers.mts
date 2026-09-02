@@ -1,7 +1,7 @@
 // fsHelpers.mts — filesystem helper functions replacing %raw blocks.
 // Mirrors the regex-based transformations in ComDbProps.res.
 
-import { existsSync } from "node:fs"
+import { existsSync, copyFileSync as _fsCopyFileSync } from "node:fs"
 
 /** Replace all forbidden filename characters with underscore.
  *  Replaces: \ / : * ? " < > |
@@ -17,3 +17,8 @@ export const cleanName = (name: string): string =>
 
 /** Check if a file exists (synchronous). Used for pre-driver path validation. */
 export const fileExists = (path: string): boolean => existsSync(path)
+
+/** Copy a file from source to destination synchronously. Throws on error. */
+export const copyFileSync = (src: string, dest: string): void => {
+  _fsCopyFileSync(src, dest)
+}
