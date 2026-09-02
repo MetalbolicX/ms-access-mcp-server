@@ -7,5 +7,15 @@
   },
   "variant": "com",
   "mutating": true,
+  "setup": [
+    {
+      "operation": "create_index",
+      "args": {
+        "table_name": "Customers",
+        "index_name": "ParityTest_IX",
+        "columns": ["CustomerID"]
+      }
+    }
+  ],
   "volatileFields": []
 }

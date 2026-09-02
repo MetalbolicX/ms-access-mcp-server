@@ -64,6 +64,7 @@ export interface Facade {
   getIndexes: (facade: Facade, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
   setQuerySql: (facade: Facade, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
   deleteQuery: (facade: Facade, queryName: string, name?: string) => Promise<Record<string, JsonT>>;
+  createQuery: (facade: Facade, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
   generateSql: (facade: Facade, outputPath: string, name?: string) => Promise<Record<string, JsonT>>;
 }
 
@@ -142,6 +143,12 @@ export interface SetQuerySqlOpts {
 
 export interface DeleteQueryOpts {
   queryName: string;
+  name?: string;
+}
+
+export interface CreateQueryOpts {
+  queryName: string;
+  sql: string;
   name?: string;
 }
 

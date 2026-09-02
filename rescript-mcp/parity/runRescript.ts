@@ -81,6 +81,7 @@ interface CaseFile {
   mutating?: boolean;
   volatileFields?: string[];
   variant?: string;
+  setup?: Array<{ operation: string; args: Record<string, unknown> }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ interface FacadeModule {
   deleteData: (facade: FacadeRecord, table: string, whereDict: Record<string, JsonT>, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   executeRawSql: (facade: FacadeRecord, sql: string, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   exportData: (facade: FacadeRecord, sql: string, filePath: string, format: string, delimiter?: string, header?: boolean, name?: string) => Promise<Record<string, JsonT>>;
-  // DDL operations (034 plan) — skip createQuery per 034-F-001
+  // DDL operations (034 plan)
   createTable: (facade: FacadeRecord, tableName: string, columns: Record<string, JsonT>[], name?: string) => Promise<Record<string, JsonT>>;
   deleteTable: (facade: FacadeRecord, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
   alterTable: (facade: FacadeRecord, tableName: string, operations: Record<string, JsonT>[], name?: string) => Promise<Record<string, JsonT>>;
@@ -131,6 +132,7 @@ interface FacadeModule {
   getIndexes: (facade: FacadeRecord, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
   setQuerySql: (facade: FacadeRecord, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
   deleteQuery: (facade: FacadeRecord, queryName: string, name?: string) => Promise<Record<string, JsonT>>;
+  createQuery: (facade: FacadeRecord, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
   generateSql: (facade: FacadeRecord, outputPath: string, name?: string) => Promise<Record<string, JsonT>>;
 }
 
@@ -210,7 +212,7 @@ async function runOperation(Facade: FacadeModule, facade: FacadeRecord, operatio
       return await Facade.exportData(facade, args.sql as string, filePath, args.format as string);
     }
 
-    // DDL operations (034 plan) — skip create_query (winax limitation, 034-F-001)
+    // DDL operations (034 plan)
     case "create_table":
       return await Facade.createTable(facade, args.table_name as string, args.columns as Record<string, JsonT>[], args.name as string | undefined);
 
@@ -234,6 +236,9 @@ async function runOperation(Facade: FacadeModule, facade: FacadeRecord, operatio
 
     case "delete_query":
       return await Facade.deleteQuery(facade, args.query_name as string, args.name as string | undefined);
+
+    case "create_query":
+      return await Facade.createQuery(facade, args.query_name as string, args.sql as string, args.name as string | undefined);
 
     case "generate_sql":
       return await Facade.generateSql(facade, args.output_path as string, args.name as string | undefined);
@@ -311,7 +316,48 @@ async function main() {
     }
   }
 
-  const envelope = await runOperation(Facade, facade, caseObj.operation, caseObj.args ?? {});
+  // Setup pre-loop: run any setup operations before the main op
+  if (caseObj.setup && Array.isArray(caseObj.setup)) {
+    for (const step of caseObj.setup) {
+      const setupEnvelope = await runOperation(Facade, facade, step.operation, step.args ?? {});
+      if (!setupEnvelope.success) {
+        process.stderr.write(`SETUP ${step.operation}: ${setupEnvelope.error ?? "unknown"}\n`);
+        process.exit(1);
+      }
+    }
+  }
+
+  // alterTable translator: normalize op shape so case files can use type/colType/params interchangeably.
+  // The OdbcAdapter and ComDataAdapter have DIFFERENT parsers:
+  //   - OdbcAdapter: reads flat keys (name, colType, size, nullable) at the action dict level
+  //   - ComDataAdapter: reads NESTED params dict (params.name, params.colType, ...)
+  // We must produce BOTH representations so the case file (flat {name, type, size, nullable})
+  // works for either variant.
+  const mainArgs = caseObj.args ?? {};
+  if (caseObj.operation === "alter_table" && Array.isArray(mainArgs.operations)) {
+    mainArgs.operations = mainArgs.operations.map((op: Record<string, unknown>) => {
+      const existingParams = (op.params as Record<string, unknown>) || {};
+      const flat = { ...op };
+      // colType: prefer colType, fall back to type, then params.type
+      flat.colType = (op.colType as string) ?? (op.type as string) ?? (existingParams.type as string);
+      // size: prefer size, fall back to params.size
+      flat.size = op.size ?? existingParams.size;
+      // nullable: prefer nullable, fall back to params.nullable
+      flat.nullable = op.nullable ?? existingParams.nullable;
+      // ALWAYS build a params dict from the flat fields (or merge with existing) so
+      // ComDataAdapter's `params` reader finds the values.
+      flat.params = {
+        name: op.name ?? existingParams.name,
+        colType: flat.colType,
+        size: flat.size,
+        nullable: flat.nullable,
+        ...existingParams,
+      };
+      return flat;
+    });
+  }
+
+  const envelope = await runOperation(Facade, facade, caseObj.operation, mainArgs);
 
   // Disconnect after non-lifecycle ops to leave a clean pool for the next
   // child process. Errors here are non-fatal (the child is exiting anyway).

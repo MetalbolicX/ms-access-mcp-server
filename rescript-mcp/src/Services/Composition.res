@@ -41,14 +41,24 @@ let asSchemaInstance = (dataT: OdbcAdapter.t): Instances.schemaAdapterInstance =
         ->Promise.then(result => {
           switch result {
           | Ok(r) => {
-              let d: dict<JSON.t> = Dict.fromArray([
-                ("success", JSON.Boolean(r.success)),
-                ("error", switch r.error {
-                  | Some(e) => JSON.String(e)
-                  | None => JSON.Null
-                }),
-              ])
-              Promise.resolve(Ok(d))
+              // Pass through success/error AND operations (per-op results) so
+              // the parity differ can compare against the Python oracle envelope.
+              // Without operations, the parity case for alter_table fails with
+              // `$.operations: expected ["operations"], actual "missing"`.
+              let pairs: array<(string, JSON.t)> = Belt_Array.concat(
+                [
+                  ("success", JSON.Boolean(r.success)),
+                  ("error", switch r.error {
+                    | Some(e) => JSON.String(e)
+                    | None => JSON.Null
+                  }),
+                ],
+                switch r.operations {
+                | Some(ops) => [("operations", JSON.Array(ops))]
+                | None => []
+                },
+              )
+              Promise.resolve(Ok(Dict.fromArray(pairs)))
             }
           | Error(e) => Promise.resolve(Error(e))
           }

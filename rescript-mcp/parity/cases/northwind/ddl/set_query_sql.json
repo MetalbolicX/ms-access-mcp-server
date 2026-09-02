@@ -7,5 +7,16 @@
   },
   "variant": "odbc",
   "mutating": true,
+  "setup": [
+    {
+      "operation": "create_query",
+      "args": {
+        "query_name": "qry_ParityTest",
+        "sql": "SELECT CustomerID FROM Customers"
+      }
+    }
+  ],
+  "skip": true,
+  "skipReason": "Access ODBC driver cannot CREATE VIEW via SQL (brackets in identifier rejected); query DDL is DAO-only",
   "volatileFields": []
 }

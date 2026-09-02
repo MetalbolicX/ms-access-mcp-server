@@ -6,5 +6,7 @@
   },
   "variant": "com",
   "mutating": true,
+  "skip": true,
+  "skipReason": "033-F-001 COM teardown native crash (ReScript exit 134, MultiIsolatePlatform::DisposeIsolate)",
   "volatileFields": []
 }

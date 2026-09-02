@@ -64,6 +64,9 @@ interface CaseFile {
   mutating?: boolean;
   volatileFields?: string[];
   variant?: string;
+  setup?: Array<{ operation: string; args: Record<string, unknown> }>;
+  skip?: boolean;
+  skipReason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,18 +135,33 @@ pinnedEnv.ACCESS_TEST_DB = fixture;
 // Per-case driver invocation
 // ---------------------------------------------------------------------------
 
-interface DriverResult {
-  error?: string;
-  stderr?: string;
-  stdout?: string;
+interface DriverEnvelope {
+  success: boolean;
+  rows?: unknown[];
+  count?: number;
+  columns?: unknown[];
+  error?: string | null;
   [key: string]: unknown;
 }
 
+interface DriverResult {
+  ok: true;
+  result: DriverEnvelope;
+  stderr?: string;
+}
+
+interface DriverError {
+  ok: false;
+  driverError: string;
+  stderr?: string;
+  stdout?: string;
+}
+
 /**
- * Run a child process against a specific fixture copy. Returns the parsed
- * envelope JSON or { error } on driver failure.
+ * Run a child process against a specific fixture copy. Returns a discriminated
+ * result: {ok: true, result: <envelope>} on success, {ok: false, driverError: "..."} on crash.
  */
-function runChild(childPath: string, args: string[], env: Record<string, string>, label: string): DriverResult {
+function runChild(childPath: string, args: string[], env: Record<string, string>, label: string): DriverResult | DriverError {
   const result: SpawnSyncReturns<string> = spawnSync(childPath, args, {
     env,
     encoding: "utf8",
@@ -151,19 +169,21 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
   });
   if (result.status !== 0) {
     return {
-      error: `${label} exit ${result.status}`,
+      ok: false,
+      driverError: `${label} exit ${result.status}`,
       stderr: (result.stderr ?? "").slice(0, 2000),
       stdout: result.stdout ?? "",
     };
   }
   const text = (result.stdout ?? "").trim();
   if (!text) {
-    return { error: `${label} produced no output`, stderr: (result.stderr ?? "").slice(0, 1000) };
+    return { ok: false, driverError: `${label} produced no output`, stderr: (result.stderr ?? "").slice(0, 1000) };
   }
   try {
-    return JSON.parse(text) as DriverResult;
+    const envelope = JSON.parse(text) as DriverEnvelope;
+    return { ok: true, result: envelope, stderr: (result.stderr ?? "").slice(0, 2000) };
   } catch (e) {
-    return { error: `${label} produced invalid JSON: ${(e as Error).message}`, stdout: text.slice(0, 2000) };
+    return { ok: false, driverError: `${label} produced invalid JSON: ${(e as Error).message}`, stdout: text.slice(0, 2000) };
   }
 }
 
@@ -171,7 +191,7 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
  * Run the Python driver against a specific fixture copy. The driver
  * reads ACCESS_TEST_DB internally.
  */
-function runPython(childFixturePath: string, casePath: string, variant: string): DriverResult {
+function runPython(childFixturePath: string, casePath: string, variant: string): DriverResult | DriverError {
   const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant };
   return runChild(PYTHON, [PYTHON_DRIVER, casePath], env, "python");
 }
@@ -180,7 +200,7 @@ function runPython(childFixturePath: string, casePath: string, variant: string):
  * Run the ReScript runner against a specific fixture copy. The runner
  * reads ACCESS_TEST_DB internally.
  */
-function runRescript(childFixturePath: string, casePath: string, variant: string): DriverResult {
+function runRescript(childFixturePath: string, casePath: string, variant: string): DriverResult | DriverError {
   const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant };
   return runChild(NODE, [RS_RUNNER_JS, casePath], env, "rescript");
 }
@@ -213,6 +233,7 @@ if (requireReadOnly) {
 let passed = 0;
 let mismatched = 0;
 let errored = 0;
+let skipped = 0;
 const findings: Finding[] = [];
 
 interface Finding {
@@ -243,7 +264,14 @@ for (const caseFile of caseFiles) {
   const casePath = join(casesDir, caseFile);
   const caseObj: CaseFile = JSON.parse(readFileSync(casePath, "utf8"));
 
-  const mutating = caseObj.mutating === true;
+  // Skip short-circuit: skip cases are excluded from matched/errored counts
+  if (caseObj.skip === true) {
+    skipped++;
+    console.log(`  SKIP  ${caseFile} — ${caseObj.skipReason ?? "no reason provided"}`);
+    continue;
+  }
+
+  const mutating = caseObj.mutating === true || Array.isArray(caseObj.setup);
   const variant = (caseObj as CaseFile).variant ?? "odbc";
   const needsConnect = caseObj.operation !== "connect_access";
 
@@ -279,25 +307,28 @@ for (const caseFile of caseFiles) {
 
   // Driver-level errors (non-zero exit, bad JSON) are reported as
   // mismatches with a "DRIVER" prefix; they're actionable.
-  if (pyResult.error || rsResult.error) {
+  if (!pyResult.ok || !rsResult.ok) {
     errored++;
+    const pyErr = pyResult as DriverError;
+    const rsErr = rsResult as DriverError;
+    const driverErr = pyResult.ok ? rsErr.driverError : pyErr.driverError;
     findings.push({
       operation: caseObj.operation,
       case: caseFile,
       diff: {
         path: "DRIVER",
-        expected: pyResult.error ? null : "ok",
-        actual: rsResult.error ? `rescript: ${rsResult.error}` : `python: ${pyResult.error}`,
+        expected: pyResult.ok ? "ok" : "driver error",
+        actual: rsResult.ok ? "ok" : "driver error",
       },
       stderr: pyResult.stderr ?? rsResult.stderr,
     });
-    console.log(`  ERROR  ${caseFile} — driver failure`);
+    console.log(`  ERROR  ${caseFile} — ${driverErr}`);
     continue;
   }
 
   const volatile = caseObj.volatileFields ?? [];
-  const pyN = normalize(pyResult, volatile);
-  const rsN = normalize(rsResult, volatile);
+  const pyN = normalize(pyResult.result, volatile);
+  const rsN = normalize(rsResult.result, volatile);
 
   const d = diff(pyN, rsN);
   if (d === null) {
@@ -322,7 +353,7 @@ try {
 }
 
 console.log("");
-console.log(`parity: ${caseFiles.length} cases, ${passed} matched, ${mismatched} mismatched, ${errored} errored`);
+console.log(`parity: ${caseFiles.length} cases, ${passed} matched, ${mismatched} mismatched, ${errored} errored, ${skipped} skipped`);
 
 // Persist findings for step 6 review.
 const findingsPath = join(__dirname, "..", "findings.json");

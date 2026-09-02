@@ -1713,7 +1713,12 @@ module DaoAdapter = {
     params: dict<JSON.t>,
   ): Promise.t<result<dict<JSON.t>, Errors.t>> => {
     let colName = _jsonStr(Dict.get(params, "name"), "")
-    let colType = _jsonStr(Dict.get(params, "colType"), "Text")
+    // colType alias: prefer colType, fall back to type
+    let colTypeRaw = switch Dict.get(params, "colType") {
+      | Some(v) => Some(v)
+      | None => Dict.get(params, "type")
+    }
+    let colType = _jsonStr(colTypeRaw, "Text")
     let size = _jsonInt(Dict.get(params, "size"), 255)
     let nullable = _jsonBool(Dict.get(params, "nullable"), true)
     let sqlType = _accessSqlType(colType, size)
@@ -1786,7 +1791,12 @@ module DaoAdapter = {
     params: dict<JSON.t>,
   ): Promise.t<result<dict<JSON.t>, Errors.t>> => {
     let colName = _jsonStr(Dict.get(params, "name"), "")
-    let colType = _jsonStr(Dict.get(params, "colType"), "Text")
+    // colType alias: prefer colType, fall back to type
+    let colTypeRaw = switch Dict.get(params, "colType") {
+      | Some(v) => Some(v)
+      | None => Dict.get(params, "type")
+    }
+    let colType = _jsonStr(colTypeRaw, "Text")
     let size = _jsonInt(Dict.get(params, "size"), 255)
     let nullable = _jsonBool(Dict.get(params, "nullable"), true)
     let sqlType = _accessSqlType(colType, size)

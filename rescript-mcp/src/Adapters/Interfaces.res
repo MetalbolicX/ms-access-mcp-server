@@ -23,6 +23,8 @@ type mutationResult = {
 type ddlResult = {
   success: bool,
   error: option<string>,
+  // Per-operation results populated by alterTable (mirrors Python oracle envelope)
+  operations?: array<JSON.t>,
   // Extended fields populated by generateSql (mirrors Python oracle envelope)
   path?: string,
   statements?: int,

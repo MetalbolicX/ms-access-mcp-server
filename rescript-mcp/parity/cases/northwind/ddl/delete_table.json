@@ -6,5 +6,17 @@
   },
   "variant": "odbc",
   "mutating": true,
+  "setup": [
+    {
+      "operation": "create_table",
+      "args": {
+        "table_name": "ParityTest_Tmp",
+        "columns": [
+          { "name": "ID", "type": "Long Integer", "nullable": false },
+          { "name": "Name", "type": "Text", "size": 100 }
+        ]
+      }
+    }
+  ],
   "volatileFields": []
 }

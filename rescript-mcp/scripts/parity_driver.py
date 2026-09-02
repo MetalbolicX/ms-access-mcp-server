@@ -399,6 +399,78 @@ def _shape_delete_query(adapter: OdbcAdapter, query_name: str) -> dict[str, Any]
     return _shape_ddl_result(result)
 
 
+def _shape_create_query(adapter: OdbcAdapter, query_name: str, sql: str) -> dict[str, Any]:
+    """Wrap adapter.create_query — ReScript ddlResult: {success, error?}."""
+    result = adapter.create_query(query_name, sql)
+    return _shape_ddl_result(result)
+
+
+# ---------------------------------------------------------------------------
+# Operation dispatch helpers
+# ---------------------------------------------------------------------------
+
+def _run_op(adapter: OdbcAdapter, step: dict[str, Any]) -> dict[str, Any]:
+    """Run a single operation on the adapter. Used for both main ops and setup steps."""
+    operation = step["operation"]
+    args = step.get("args", {})
+
+    if operation == "query_data":
+        return _query_data_op(adapter, args)
+    if operation == "insert_data":
+        return _insert_data_op(adapter, args)
+    if operation == "update_data":
+        return _update_data_op(adapter, args)
+    if operation == "delete_data":
+        return _delete_data_op(adapter, args)
+    if operation == "get_tables":
+        return _shape_get_tables(adapter)
+    if operation == "get_table_schema":
+        return _shape_get_table_schema(adapter, args["table_name"])
+    if operation == "get_relationships":
+        return _shape_get_relationships(adapter)
+    if operation == "get_queries":
+        return _shape_get_queries(adapter)
+    if operation == "get_database_statistics":
+        return _shape_get_database_statistics(adapter)
+    if operation == "execute_raw_sql":
+        return _shape_execute_raw_sql(adapter, args["sql"])
+    if operation == "export_data":
+        file_path = args["filePath"]
+        if file_path == "REPLACE_AT_RUNTIME":
+            file_path = _export_path()
+        return _shape_export_data(adapter, args["sql"], file_path, args["format"])
+    # DDL operations
+    if operation == "create_table":
+        return _shape_create_table(adapter, args["table_name"], args["columns"])
+    if operation == "delete_table":
+        return _shape_delete_table(adapter, args["table_name"])
+    if operation == "alter_table":
+        return _shape_alter_table(adapter, args["table_name"], args["operations"])
+    if operation == "create_index":
+        return _shape_create_index(
+            adapter,
+            args["table_name"],
+            args["index_name"],
+            args["columns"],
+            unique=args.get("unique", False),
+            ignore_nulls=args.get("ignore_nulls", False),
+        )
+    if operation == "drop_index":
+        return _shape_drop_index(adapter, args["table_name"], args["index_name"])
+    if operation == "get_indexes":
+        return _shape_get_indexes(adapter, args["table_name"])
+    if operation == "set_query_sql":
+        return _shape_set_query_sql(adapter, args["query_name"], args["sql"])
+    if operation == "delete_query":
+        return _shape_delete_query(adapter, args["query_name"])
+    if operation == "create_query":
+        return _shape_create_query(adapter, args["query_name"], args["sql"])
+    if operation == "generate_sql":
+        # ODBC variant does not support generate_sql (DAO-only)
+        return {"success": False, "error": "Not available via ODBC"}
+    raise ValueError(f"unknown operation: {operation}")
+
+
 # ---------------------------------------------------------------------------
 # Operation dispatch
 # ---------------------------------------------------------------------------
@@ -431,59 +503,23 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
     # Everything else needs a live adapter.
     adapter = _connect()
     try:
-        if operation == "query_data":
-            return _query_data_op(adapter, args)
-        if operation == "insert_data":
-            return _insert_data_op(adapter, args)
-        if operation == "update_data":
-            return _update_data_op(adapter, args)
-        if operation == "delete_data":
-            return _delete_data_op(adapter, args)
-        if operation == "get_tables":
-            return _shape_get_tables(adapter)
-        if operation == "get_table_schema":
-            return _shape_get_table_schema(adapter, args["table_name"])
-        if operation == "get_relationships":
-            return _shape_get_relationships(adapter)
-        if operation == "get_queries":
-            return _shape_get_queries(adapter)
-        if operation == "get_database_statistics":
-            return _shape_get_database_statistics(adapter)
-        if operation == "execute_raw_sql":
-            return _shape_execute_raw_sql(adapter, args["sql"])
-        if operation == "export_data":
-            file_path = args["filePath"]
-            if file_path == "REPLACE_AT_RUNTIME":
-                file_path = _export_path()
-            return _shape_export_data(adapter, args["sql"], file_path, args["format"])
-        # DDL operations — no create_query (winax limitation, 034-F-001)
-        if operation == "create_table":
-            return _shape_create_table(adapter, args["table_name"], args["columns"])
-        if operation == "delete_table":
-            return _shape_delete_table(adapter, args["table_name"])
+        # Setup pre-loop: run any setup operations before the main op
+        for step in case.get("setup", []):
+            setup_result = _run_op(adapter, step)
+            if not setup_result.get("success", False):
+                sys.stderr.write(f"SETUP {step['operation']}: {setup_result.get('error', 'unknown')}\n")
+                sys.exit(1)
+
+        # Main dispatch — use the helper for all ops including alter_table
         if operation == "alter_table":
-            return _shape_alter_table(adapter, args["table_name"], args["operations"])
-        if operation == "create_index":
-            return _shape_create_index(
-                adapter,
-                args["table_name"],
-                args["index_name"],
-                args["columns"],
-                unique=args.get("unique", False),
-                ignore_nulls=args.get("ignore_nulls", False),
-            )
-        if operation == "drop_index":
-            return _shape_drop_index(adapter, args["table_name"], args["index_name"])
-        if operation == "get_indexes":
-            return _shape_get_indexes(adapter, args["table_name"])
-        if operation == "set_query_sql":
-            return _shape_set_query_sql(adapter, args["query_name"], args["sql"])
-        if operation == "delete_query":
-            return _shape_delete_query(adapter, args["query_name"])
-        if operation == "generate_sql":
-            # ODBC variant does not support generate_sql (DAO-only)
-            return {"success": False, "error": "Not available via ODBC"}
-        raise ValueError(f"unknown operation: {operation}")
+            # Translate flat op shape to nested params if needed
+            ops = args.get("operations", [])
+            for op in ops:
+                if "params" not in op and any(k in op for k in ("name", "type", "size", "nullable")):
+                    op["params"] = {k: op[k] for k in ("name", "type", "size", "nullable") if k in op}
+            return _run_op(adapter, case)
+
+        return _run_op(adapter, case)
     finally:
         try:
             adapter.disconnect()

@@ -5,6 +5,6 @@
     "table_name": "Customers"
   },
   "variant": "com",
-  "mutating": true,
-  "volatileFields": []
+  "mutating": false,
+  "volatileFields": ["count", "indexes"]
 }

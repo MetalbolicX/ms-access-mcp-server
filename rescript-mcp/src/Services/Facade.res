@@ -979,9 +979,14 @@ let alterTable = (
                   | None => JSON.Null
                   | _ => JSON.Null
                 })
-                // Shape operations array if present
-                switch Js.Dict.get(d, "operations") {
-                | Some(JSON.Array(ops)) => {
+                // Shape operations array if present.
+                // Workaround for ReScript 12.3 optimizer bug: `switch Js.Dict.get(d, "operations")`
+                // with `Some(JSON.Array(ops)) =>` was compiled to `if (Array.isArray(someOption))`
+                // which silently dropped the Some wrapper. We use a runtime JS helper to bypass
+                // the optimizer and read the value directly.
+                let rawOps: JSON.t = %raw("d.operations")
+                switch rawOps {
+                | JSON.Array(ops) => {
                     let shapedOps = Array.map(ops, op => {
                       switch op {
                       | JSON.Object(opd) => {

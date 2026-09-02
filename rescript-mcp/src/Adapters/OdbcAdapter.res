@@ -1341,89 +1341,107 @@ let alterTable = (
   switch _requireConnection(adapter) {
   | None => Promise.resolve(Error(Errors.databaseError("Not connected")))
   | Some(conn) => {
+      // REQ-S8 contract: rename_table and rename_column are DAO-only and
+      // must return Error(DatabaseError) — accumulate-into-Ops is COM's
+      // path. Tests at OdbcAdapterDdlTest.res:259,260 depend on this.
+      // Accumulator is only used to surface the operations array on
+      // success (parity case alter_table compares it against the
+      // Python oracle envelope). On per-op failure we short-circuit
+      // with Error like before, to preserve the legacy contract.
       let rec processActions = (
         actionDicts: array<dict<JSON.t>>,
+        opsAccum: array<JSON.t>,
       ): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
         switch Array.get(actionDicts, 0) {
-        | None => Promise.resolve(Ok(({success: true, error: None}: Interfaces.ddlResult)))
+        | None =>
+          // All actions succeeded — return the ddlResult with operations.
+          Promise.resolve(
+            Ok(({success: true, error: None, operations: opsAccum}: Interfaces.ddlResult)),
+          )
         | Some(actionDict) => {
             let actionName = switch Dict.get(actionDict, "action") {
             | Some(JSON.String(s)) => s
             | _ => ""
             }
             switch actionName {
-            | "add_column" => {
-                let colInfo = _dictToColumnInfo(actionDict)
-                switch SqlBuilder.alterTable(name, SqlBuilder.AddColumn(colInfo)) {
-                | Some(sql) => {
-                    conn.query(sql, [])
-                      ->Promise.then(result => {
-                        switch result {
-                        | Ok(_) => processActions(Array.slice(actionDicts, ~start=1))
-                        | Error(e) => Promise.resolve(Error(e))
-                        }
-                      })
-                      ->Promise.catch(e => {
-                        let msg = _exnMessage(e)
-                        Promise.resolve(Error(Errors.databaseError(msg)))
-                      })
-                  }
-                | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
-                }
+            | "add_column" =>
+              let colInfo = _dictToColumnInfo(actionDict)
+              switch SqlBuilder.alterTable(name, SqlBuilder.AddColumn(colInfo)) {
+              | Some(sql) =>
+                conn.query(sql, [])
+                  ->Promise.then(result => {
+                    let opResult: dict<JSON.t> = Js.Dict.empty()
+                    Js.Dict.set(opResult, "action", JSON.String(actionName))
+                    switch result {
+                    | Ok(_) =>
+                      Js.Dict.set(opResult, "success", JSON.Boolean(true))
+                      let newOps = Js.Array.concat(opsAccum, [JSON.Object(opResult)])
+                      processActions(Array.slice(actionDicts, ~start=1), newOps)
+                    | Error(e) => Promise.resolve(Error(e))
+                    }
+                  })
+                  ->Promise.catch(e => {
+                    let msg = _exnMessage(e)
+                    Promise.resolve(Error(Errors.databaseError(msg)))
+                  })
+              | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
               }
-            | "drop_column" => {
-                let colName = _jsonToString(Dict.get(actionDict, "name"))
-                switch SqlBuilder.alterTable(name, SqlBuilder.DropColumn(colName)) {
-                | Some(sql) => {
-                    conn.query(sql, [])
-                      ->Promise.then(result => {
-                        switch result {
-                        | Ok(_) => processActions(Array.slice(actionDicts, ~start=1))
-                        | Error(e) => Promise.resolve(Error(e))
-                        }
-                      })
-                      ->Promise.catch(e => {
-                        let msg = _exnMessage(e)
-                        Promise.resolve(Error(Errors.databaseError(msg)))
-                      })
-                  }
-                | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
-                }
+            | "drop_column" =>
+              let colName = _jsonToString(Dict.get(actionDict, "name"))
+              switch SqlBuilder.alterTable(name, SqlBuilder.DropColumn(colName)) {
+              | Some(sql) =>
+                conn.query(sql, [])
+                  ->Promise.then(result => {
+                    let opResult: dict<JSON.t> = Js.Dict.empty()
+                    Js.Dict.set(opResult, "action", JSON.String(actionName))
+                    switch result {
+                    | Ok(_) =>
+                      Js.Dict.set(opResult, "success", JSON.Boolean(true))
+                      let newOps = Js.Array.concat(opsAccum, [JSON.Object(opResult)])
+                      processActions(Array.slice(actionDicts, ~start=1), newOps)
+                    | Error(e) => Promise.resolve(Error(e))
+                    }
+                  })
+                  ->Promise.catch(e => {
+                    let msg = _exnMessage(e)
+                    Promise.resolve(Error(Errors.databaseError(msg)))
+                  })
+              | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
               }
-            | "modify_column" => {
-                let colInfo = _dictToColumnInfo(actionDict)
-                switch SqlBuilder.alterTable(name, SqlBuilder.ModifyColumn(colInfo)) {
-                | Some(sql) => {
-                    conn.query(sql, [])
-                      ->Promise.then(result => {
-                        switch result {
-                        | Ok(_) => processActions(Array.slice(actionDicts, ~start=1))
-                        | Error(e) => Promise.resolve(Error(e))
-                        }
-                      })
-                      ->Promise.catch(e => {
-                        let msg = _exnMessage(e)
-                        Promise.resolve(Error(Errors.databaseError(msg)))
-                      })
-                  }
-                | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
-                }
+            | "modify_column" =>
+              let colInfo = _dictToColumnInfo(actionDict)
+              switch SqlBuilder.alterTable(name, SqlBuilder.ModifyColumn(colInfo)) {
+              | Some(sql) =>
+                conn.query(sql, [])
+                  ->Promise.then(result => {
+                    let opResult: dict<JSON.t> = Js.Dict.empty()
+                    Js.Dict.set(opResult, "action", JSON.String(actionName))
+                    switch result {
+                    | Ok(_) =>
+                      Js.Dict.set(opResult, "success", JSON.Boolean(true))
+                      let newOps = Js.Array.concat(opsAccum, [JSON.Object(opResult)])
+                      processActions(Array.slice(actionDicts, ~start=1), newOps)
+                    | Error(e) => Promise.resolve(Error(e))
+                    }
+                  })
+                  ->Promise.catch(e => {
+                    let msg = _exnMessage(e)
+                    Promise.resolve(Error(Errors.databaseError(msg)))
+                  })
+              | None => Promise.resolve(Error(Errors.databaseError("alter_table returned None unexpectedly")))
               }
-            | "rename_table" => {
-                Promise.resolve(Error(Errors.databaseError("rename_table is not supported via ODBC. Use WinComAdapter.")))
-              }
-            | "rename_column" => {
-                Promise.resolve(Error(Errors.databaseError("rename_column is not supported via ODBC. Use WinComAdapter.")))
-              }
-            | _ => {
-                // Unknown action — continue with remaining actions
-                processActions(Array.slice(actionDicts, ~start=1))
-              }
+            | "rename_table" => Promise.resolve(
+                Error(Errors.databaseError("rename_table is not supported via ODBC. Use WinComAdapter.")),
+              )
+            | "rename_column" => Promise.resolve(
+                Error(Errors.databaseError("rename_column is not supported via ODBC. Use WinComAdapter.")),
+              )
+            | _ => processActions(Array.slice(actionDicts, ~start=1), opsAccum)
             }
           }
         }
       }
-      processActions(actions)
+      processActions(actions, [])
     }
   }
 }

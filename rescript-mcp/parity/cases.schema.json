@@ -8,7 +8,7 @@
   "required": ["operation", "args", "variant", "mutating"],
   "properties": {
     "operation": {
-      "description": "The facade operation to invoke. 17 v1 ops (plan 006) + 8 DDL ops (plan 034, skip create_query per 034-F-001).",
+      "description": "The facade operation to invoke. 17 v1 ops (plan 006) + 9 DDL ops (plan 034, including create_query).",
       "type": "string",
       "enum": [
         "connect_access",
@@ -36,6 +36,7 @@
         "get_indexes",
         "set_query_sql",
         "delete_query",
+        "create_query",
         "generate_sql"
       ]
     },
@@ -60,6 +61,27 @@
       "description": "Field paths dropped from the normalizer before comparison (e.g. timestamps, temp paths, primary-key inference).",
       "type": "array",
       "items": { "type": "string" }
+    },
+    "setup": {
+      "description": "Optional array of setup operations run before the main op. Each step is {operation, args}. Cases with setup are implicitly mutating (runner enforces per-side fixture copies).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["operation", "args"],
+        "additionalProperties": false,
+        "properties": {
+          "operation": { "type": "string" },
+          "args": { "type": "object" }
+        }
+      }
+    },
+    "skip": {
+      "description": "If true, the case is skipped and excluded from matched/errored counts. Use skipReason to document why.",
+      "type": "boolean"
+    },
+    "skipReason": {
+      "description": "Human-readable reason for skipping the case. Required when skip is true.",
+      "type": "string"
     }
   }
 }
