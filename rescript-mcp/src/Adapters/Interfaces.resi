@@ -24,6 +24,11 @@ type mutationResult = {
 type ddlResult = {
   success: bool,
   error: option<string>,
+  // Extended fields populated by generateSql (mirrors Python oracle envelope)
+  path?: string,
+  statements?: int,
+  tables?: array<string>,
+  ddl?: string,  // inline DDL content — read back from exportSchemaDdl file outputs
 }
 
 // ---------------------------------------------------------------------------

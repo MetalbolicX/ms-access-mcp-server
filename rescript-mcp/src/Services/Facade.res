@@ -231,11 +231,13 @@ let connectAccess = (
                       | Ok(_state) => {
                           // Step 5: Register binding
                           facade.bindings = Array.concat(facade.bindings, [(connName, binding)])
-                          // Step 6: Return success shape (B4: adapter_type is always "odbc")
+                          // Step 6: Return success shape
+                          // adapter_type reflects the actual backend the connection was built with.
+                          // listConnections (Facade.res:~306) already uses binding.adapterType.
                           let result = Dict.fromArray([
                             ("success", JSON.Boolean(true)),
                             ("connected", JSON.Boolean(true)),
-                            ("adapter_type", JSON.String("odbc")),
+                            ("adapter_type", JSON.String(binding.adapterType)),
                             ("database", JSON.String(resolvedPath)),
                             ("name", JSON.String(connName)),
                           ])
@@ -837,6 +839,318 @@ let getDatabaseStatistics = (
           }
         }
       })
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DDL operations — mirror ISchemaAdapter surface (034 plan)
+// Guard order: assertNotReadonly, schemaAdapterForName
+// Disconnected message: "Not connected to database"
+// No createQuery here — winax limitation (034-F-001)
+// ---------------------------------------------------------------------------
+
+// shapeDdlResult — unwrap result<ddlResult, Errors.t> into {success, error}
+let _shapeDdlResult = (r: result<Interfaces.ddlResult, Errors.t>): dict<JSON.t> => {
+  switch r {
+  | Ok(ddl) => {
+      let result = Dict.make()
+      Dict.set(result, "success", JSON.Boolean(ddl.success))
+      Dict.set(result, "error", switch ddl.error {
+        | Some(e) => JSON.String(e)
+        | None => JSON.Null
+      })
+      result
+    }
+  | Error(e) => {
+      let result = Dict.make()
+      Dict.set(result, "success", JSON.Boolean(false))
+      Dict.set(result, "error", JSON.String(Errors._message(e)))
+      result
+    }
+  }
+}
+
+// _dictToColumnSchema — convert Python oracle dict {name, type, size?, nullable?}
+// to Interfaces.columnSchema {name, sourceType, maxLength, allowNull, isAutoincrement, defaultValue}
+// Used when the harness sends Python-format column dicts.
+let _dictToColumnSchema = (d: dict<JSON.t>): Interfaces.columnSchema => {
+  let name = switch Js.Dict.get(d, "name") {
+    | Some(JSON.String(s)) => s
+    | _ => ""
+  }
+  let sourceType = switch Js.Dict.get(d, "type") {
+    | Some(JSON.String(s)) => s
+    | _ => "TEXT"
+  }
+  let size = switch Js.Dict.get(d, "size") {
+    | Some(JSON.Number(n)) => Some(int_of_float(n))
+    | _ => None
+  }
+  let allowNull = switch Js.Dict.get(d, "nullable") {
+    | Some(JSON.Boolean(b)) => b
+    | _ => true
+  }
+  ({
+    name: name,
+    sourceType: sourceType,
+    maxLength: size,
+    allowNull: allowNull,
+    isAutoincrement: false,
+    defaultValue: None,
+  }: Interfaces.columnSchema)
+}
+
+// createTable — DAO: db.Execute(CREATE TABLE ...)
+// columns: array<dict<JSON.t>> — Python oracle format {name, type, size?, nullable?}
+// Convert to Interfaces.columnSchema for the adapter
+let createTable = (
+  facade: t,
+  ~tableName: string,
+  ~columns: array<dict<JSON.t>>,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="create_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      let colSchemas = Array.map(columns, _dictToColumnSchema)
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.createTable(tableName, colSchemas)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// deleteTable — DAO: DROP TABLE + reverse Relations cleanup
+let deleteTable = (
+  facade: t,
+  ~tableName: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="delete_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.deleteTable(tableName)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// alterTable — batch of add_column / drop_column / modify_column / rename_table / rename_column
+// Note: rename_table and rename_column are DAO-only (ODBC raises NotImplementedError)
+let alterTable = (
+  facade: t,
+  ~tableName: string,
+  ~operations: array<dict<JSON.t>>,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="alter_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.alterTable(tableName, operations)
+          ->Promise.then(r => {
+            // OdbcAdapter returns dict{succeess, operations, error} directly (not wrapped in ddlResult)
+            // ComDataAdapter returns result<ddlResult, Errors.t>
+            switch r {
+            | Ok(d) => {
+                // d may be ddlResult {success, error} or alterTable result {success, operations, error}
+                let result = Dict.make()
+                let success = switch Js.Dict.get(d, "success") {
+                  | Some(JSON.Boolean(b)) => b
+                  | _ => false
+                }
+                Dict.set(result, "success", JSON.Boolean(success))
+                let errVal = Js.Dict.get(d, "error")
+                Dict.set(result, "error", switch errVal {
+                  | Some(JSON.String(s)) => JSON.String(s)
+                  | Some(JSON.Null) => JSON.Null
+                  | None => JSON.Null
+                  | _ => JSON.Null
+                })
+                // Shape operations array if present
+                switch Js.Dict.get(d, "operations") {
+                | Some(JSON.Array(ops)) => {
+                    let shapedOps = Array.map(ops, op => {
+                      switch op {
+                      | JSON.Object(opd) => {
+                          let od = Dict.make()
+                          switch Js.Dict.get(opd, "action") {
+                          | Some(JSON.String(a)) => Dict.set(od, "action", JSON.String(a))
+                          | _ => ()
+                          }
+                          switch Js.Dict.get(opd, "success") {
+                          | Some(JSON.Boolean(b)) => Dict.set(od, "success", JSON.Boolean(b))
+                          | _ => Dict.set(od, "success", JSON.Boolean(false))
+                          }
+                          switch Js.Dict.get(opd, "error") {
+                          | Some(JSON.String(e)) => Dict.set(od, "error", JSON.String(e))
+                          | Some(JSON.Null) | None => Dict.set(od, "error", JSON.Null)
+                          | _ => Dict.set(od, "error", JSON.Null)
+                          }
+                          JSON.Object(od)
+                        }
+                      | _ => JSON.Null
+                      }
+                    })
+                    Dict.set(result, "operations", JSON.Array(shapedOps))
+                  }
+                | _ => ()
+                }
+                Promise.resolve(result)
+              }
+            | Error(e) => Promise.resolve(shapeErr(e))
+            }
+          })
+      }
+    }
+  }
+}
+
+// createIndex — DAO: CREATE [UNIQUE] INDEX ... ON ...
+let createIndex = (
+  facade: t,
+  ~tableName: string,
+  ~indexName: string,
+  ~columns: array<string>,
+  ~unique: bool=false,
+  ~ignoreNulls: bool=false,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="create_index") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.createIndex(indexName, tableName, columns, ~unique, ~ignoreNulls)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// dropIndex — DAO: DROP INDEX ... ON ...
+let dropIndex = (
+  facade: t,
+  ~tableName: string,
+  ~indexName: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="drop_index") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.dropIndex(indexName, tableName)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// getIndexes — DAO TableDefs(t).Indexes
+let getIndexes = (
+  facade: t,
+  ~tableName: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(adapter) =>
+    adapter.getIndexes(tableName)
+      ->Promise.then(r => {
+        switch r {
+        | Ok(indexes) => {
+            let result = Dict.make()
+            Dict.set(result, "success", JSON.Boolean(true))
+            let idxArray = Array.map(indexes, idx => {
+              let d = Dict.make()
+              Dict.set(d, "name", JSON.String(idx.name))
+              Dict.set(d, "table", JSON.String(tableName))
+              Dict.set(d, "columns", JSON.Array(Array.map(idx.columns, s => JSON.String(s))))
+              Dict.set(d, "unique", JSON.Boolean(idx.isUnique))
+              Dict.set(d, "ignoreNulls", JSON.Boolean(idx.ignoreNulls))
+              JSON.Object(d)
+            })
+            Dict.set(result, "indexes", JSON.Array(idxArray))
+            Dict.set(result, "count", JSON.Number(Int.toFloat(Array.length(indexes))))
+            Promise.resolve(result)
+          }
+        | Error(e) => Promise.resolve(shapeErr(e))
+        }
+      })
+  }
+}
+
+// setQuerySql — DAO QueryDefs(name).SQL = sql
+let setQuerySql = (
+  facade: t,
+  ~queryName: string,
+  ~sql: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="set_query_sql") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.setQuerySql(queryName, sql)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// deleteQuery — DAO QueryDefs.Delete
+let deleteQuery = (
+  facade: t,
+  ~queryName: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="delete_query") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.deleteQuery(queryName)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// generateSql — exportSchemaDdl: writes ddl_tables.sql + ddl_relationships.sql
+let generateSql = (
+  facade: t,
+  ~outputPath: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(adapter) =>
+    adapter.generateSql(outputPath)
+      ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
   }
 }
 
