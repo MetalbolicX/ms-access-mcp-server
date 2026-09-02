@@ -1,0 +1,10 @@
+{
+  "operation": "delete_query",
+  "args": {
+    "connection_name": "northwind",
+    "query_name": "qry_ParityTest"
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

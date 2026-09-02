@@ -56,6 +56,15 @@ export interface Facade {
   deleteData: (facade: Facade, table: string, whereDict: Record<string, JsonT>, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   executeRawSql: (facade: Facade, sql: string, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   exportData: (facade: Facade, sql: string, filePath: string, format: string, opts?: ExportOpts) => Promise<Record<string, JsonT>>;
+  createTable: (facade: Facade, opts: CreateTableOpts) => Promise<Record<string, JsonT>>;
+  deleteTable: (facade: Facade, opts: DeleteTableOpts) => Promise<Record<string, JsonT>>;
+  alterTable: (facade: Facade, opts: AlterTableOpts) => Promise<Record<string, JsonT>>;
+  createIndex: (facade: Facade, opts: CreateIndexOpts) => Promise<Record<string, JsonT>>;
+  dropIndex: (facade: Facade, opts: DropIndexOpts) => Promise<Record<string, JsonT>>;
+  getIndexes: (facade: Facade, opts: GetIndexesOpts) => Promise<Record<string, JsonT>>;
+  setQuerySql: (facade: Facade, opts: SetQuerySqlOpts) => Promise<Record<string, JsonT>>;
+  deleteQuery: (facade: Facade, opts: DeleteQueryOpts) => Promise<Record<string, JsonT>>;
+  generateSql: (facade: Facade, opts: GenerateSqlOpts) => Promise<Record<string, JsonT>>;
 }
 
 export interface ConnectOpts {
@@ -83,4 +92,72 @@ export type RealFactory = () => Promise<unknown>;
 export interface FacadeModule {
   make: (opts: FacadeMakeOpts) => Facade;
   default: (factory: BindingFactory) => unknown;
+}
+
+// ---------------------------------------------------------------------------
+// DDL operations added in plan 034
+// ---------------------------------------------------------------------------
+export interface CreateTableOpts {
+  tableName: string;
+  columns: Record<string, JsonT>[];
+  name?: string;
+}
+
+export interface DeleteTableOpts {
+  tableName: string;
+  name?: string;
+}
+
+export interface AlterTableOpts {
+  tableName: string;
+  operations: Record<string, JsonT>[];
+  name?: string;
+}
+
+export interface CreateIndexOpts {
+  tableName: string;
+  indexName: string;
+  columns: string[];
+  unique?: boolean;
+  ignoreNulls?: boolean;
+  name?: string;
+}
+
+export interface DropIndexOpts {
+  tableName: string;
+  indexName: string;
+  name?: string;
+}
+
+export interface GetIndexesOpts {
+  tableName: string;
+  name?: string;
+}
+
+export interface SetQuerySqlOpts {
+  queryName: string;
+  sql: string;
+  name?: string;
+}
+
+export interface DeleteQueryOpts {
+  queryName: string;
+  name?: string;
+}
+
+export interface GenerateSqlOpts {
+  outputPath: string;
+  name?: string;
+}
+
+export interface DdlResult {
+  success: boolean;
+  error?: string;
+  operations?: AlterTableOpResult[];
+}
+
+export interface AlterTableOpResult {
+  action: string;
+  success: boolean;
+  error?: string;
 }

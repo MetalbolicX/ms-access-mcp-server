@@ -1,0 +1,11 @@
+{
+  "operation": "set_query_sql",
+  "args": {
+    "connection_name": "northwind",
+    "query_name": "qry_ParityTest",
+    "sql": "SELECT CustomerID, CompanyName FROM Customers"
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

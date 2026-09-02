@@ -1,0 +1,11 @@
+{
+  "operation": "drop_index",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "Customers",
+    "index_name": "ParityTest_IX"
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

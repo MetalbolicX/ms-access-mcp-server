@@ -304,6 +304,102 @@ def _shape_export_data(
 
 
 # ---------------------------------------------------------------------------
+# DDL shape functions — mirror OdbcAdapter return shapes into ddlResult envelope
+# ddlResult: {success: bool, error?: string}
+# alterTable: {success: bool, operations: [{action, success, error?}], error?: string}
+# getIndexes: {success: bool, indexes: [], count: int}
+# ---------------------------------------------------------------------------
+
+def _shape_ddl_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap OdbcAdapter DDL result to {success, error}."""
+    return {
+        "success": bool(result.get("success")),
+        "error": result.get("error", None),
+    }
+
+
+def _shape_create_table(adapter: OdbcAdapter, table_name: str, columns: list[dict[str, Any]]) -> dict[str, Any]:
+    """Wrap adapter.create_table — ReScript ddlResult: {success, error?}."""
+    result = adapter.create_table(table_name, columns)
+    return _shape_ddl_result(result)
+
+
+def _shape_delete_table(adapter: OdbcAdapter, table_name: str) -> dict[str, Any]:
+    """Wrap adapter.delete_table — ReScript ddlResult: {success, error?}."""
+    result = adapter.delete_table(table_name)
+    return _shape_ddl_result(result)
+
+
+def _shape_alter_table(adapter: OdbcAdapter, table_name: str, operations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Wrap adapter.alter_table — ReScript: {success, operations: [{action, success, error?}], error?}."""
+    result = adapter.alter_table(table_name, operations)
+    # ReScript alterTable returns: {success, operations: [{action, success, error?}], error?}
+    ops = result.get("operations", [])
+    shaped_ops = []
+    for op in ops:
+        shaped_ops.append({
+            "action": op.get("action"),
+            "success": bool(op.get("success")),
+            "error": op.get("error", None),
+        })
+    return {
+        "success": bool(result.get("success")),
+        "operations": shaped_ops,
+        "error": result.get("error", None),
+    }
+
+
+def _shape_create_index(
+    adapter: OdbcAdapter,
+    table_name: str,
+    index_name: str,
+    columns: list[str],
+    unique: bool = False,
+    ignore_nulls: bool = False,
+) -> dict[str, Any]:
+    """Wrap adapter.create_index — ReScript ddlResult: {success, error?}."""
+    result = adapter.create_index(table_name, index_name, columns, unique=unique, ignore_nulls=ignore_nulls)
+    return _shape_ddl_result(result)
+
+
+def _shape_drop_index(adapter: OdbcAdapter, table_name: str, index_name: str) -> dict[str, Any]:
+    """Wrap adapter.drop_index — ReScript ddlResult: {success, error?}."""
+    result = adapter.drop_index(table_name, index_name)
+    return _shape_ddl_result(result)
+
+
+def _shape_get_indexes(adapter: OdbcAdapter, table_name: str) -> dict[str, Any]:
+    """Wrap adapter.get_indexes — ReScript: {success, indexes: [], count: int}."""
+    indexes = adapter.get_indexes(table_name)
+    index_dicts = []
+    for idx in indexes:
+        index_dicts.append({
+            "name": idx.name,
+            "table": idx.table,
+            "columns": list(idx.columns),
+            "unique": idx.unique,
+            "ignoreNulls": False,
+        })
+    return {
+        "success": True,
+        "indexes": index_dicts,
+        "count": len(index_dicts),
+    }
+
+
+def _shape_set_query_sql(adapter: OdbcAdapter, query_name: str, sql: str) -> dict[str, Any]:
+    """Wrap adapter.set_query_sql — ReScript ddlResult: {success, error?}."""
+    result = adapter.set_query_sql(query_name, sql)
+    return _shape_ddl_result(result)
+
+
+def _shape_delete_query(adapter: OdbcAdapter, query_name: str) -> dict[str, Any]:
+    """Wrap adapter.delete_query — ReScript ddlResult: {success, error?}."""
+    result = adapter.delete_query(query_name)
+    return _shape_ddl_result(result)
+
+
+# ---------------------------------------------------------------------------
 # Operation dispatch
 # ---------------------------------------------------------------------------
 
@@ -360,6 +456,30 @@ def run_case(case: dict[str, Any]) -> dict[str, Any]:
             if file_path == "REPLACE_AT_RUNTIME":
                 file_path = _export_path()
             return _shape_export_data(adapter, args["sql"], file_path, args["format"])
+        # DDL operations — no create_query (winax limitation, 034-F-001)
+        if operation == "create_table":
+            return _shape_create_table(adapter, args["table_name"], args["columns"])
+        if operation == "delete_table":
+            return _shape_delete_table(adapter, args["table_name"])
+        if operation == "alter_table":
+            return _shape_alter_table(adapter, args["table_name"], args["operations"])
+        if operation == "create_index":
+            return _shape_create_index(
+                adapter,
+                args["table_name"],
+                args["index_name"],
+                args["columns"],
+                unique=args.get("unique", False),
+                ignore_nulls=args.get("ignore_nulls", False),
+            )
+        if operation == "drop_index":
+            return _shape_drop_index(adapter, args["table_name"], args["index_name"])
+        if operation == "get_indexes":
+            return _shape_get_indexes(adapter, args["table_name"])
+        if operation == "set_query_sql":
+            return _shape_set_query_sql(adapter, args["query_name"], args["sql"])
+        if operation == "delete_query":
+            return _shape_delete_query(adapter, args["query_name"])
         raise ValueError(f"unknown operation: {operation}")
     finally:
         try:

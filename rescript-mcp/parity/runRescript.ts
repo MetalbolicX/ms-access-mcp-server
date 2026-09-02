@@ -122,6 +122,16 @@ interface FacadeModule {
   deleteData: (facade: FacadeRecord, table: string, whereDict: Record<string, JsonT>, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   executeRawSql: (facade: FacadeRecord, sql: string, name: string | undefined, confirm: boolean, dryRun: boolean) => Promise<Record<string, JsonT>>;
   exportData: (facade: FacadeRecord, sql: string, filePath: string, format: string, delimiter?: string, header?: boolean, name?: string) => Promise<Record<string, JsonT>>;
+  // DDL operations (034 plan) — skip createQuery per 034-F-001
+  createTable: (facade: FacadeRecord, opts: { tableName: string; columns: Record<string, JsonT>[]; name?: string }) => Promise<Record<string, JsonT>>;
+  deleteTable: (facade: FacadeRecord, opts: { tableName: string; name?: string }) => Promise<Record<string, JsonT>>;
+  alterTable: (facade: FacadeRecord, opts: { tableName: string; operations: Record<string, JsonT>[]; name?: string }) => Promise<Record<string, JsonT>>;
+  createIndex: (facade: FacadeRecord, opts: { tableName: string; indexName: string; columns: string[]; unique?: boolean; ignoreNulls?: boolean; name?: string }) => Promise<Record<string, JsonT>>;
+  dropIndex: (facade: FacadeRecord, opts: { tableName: string; indexName: string; name?: string }) => Promise<Record<string, JsonT>>;
+  getIndexes: (facade: FacadeRecord, opts: { tableName: string; name?: string }) => Promise<Record<string, JsonT>>;
+  setQuerySql: (facade: FacadeRecord, opts: { queryName: string; sql: string; name?: string }) => Promise<Record<string, JsonT>>;
+  deleteQuery: (facade: FacadeRecord, opts: { queryName: string; name?: string }) => Promise<Record<string, JsonT>>;
+  generateSql: (facade: FacadeRecord, opts: { outputPath: string; name?: string }) => Promise<Record<string, JsonT>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +209,69 @@ async function runOperation(Facade: FacadeModule, facade: FacadeRecord, operatio
       }
       return await Facade.exportData(facade, args.sql as string, filePath, args.format as string);
     }
+
+    // DDL operations (034 plan) — skip create_query (winax limitation, 034-F-001)
+    case "create_table":
+      return await Facade.createTable(facade, {
+        tableName: args.table_name as string,
+        columns: args.columns as Record<string, JsonT>[],
+        name: args.name as string | undefined,
+      });
+
+    case "delete_table":
+      return await Facade.deleteTable(facade, {
+        tableName: args.table_name as string,
+        name: args.name as string | undefined,
+      });
+
+    case "alter_table":
+      return await Facade.alterTable(facade, {
+        tableName: args.table_name as string,
+        operations: args.operations as Record<string, JsonT>[],
+        name: args.name as string | undefined,
+      });
+
+    case "create_index":
+      return await Facade.createIndex(facade, {
+        tableName: args.table_name as string,
+        indexName: args.index_name as string,
+        columns: args.columns as string[],
+        unique: (args.unique as boolean) ?? false,
+        ignoreNulls: (args.ignore_nulls as boolean) ?? false,
+        name: args.name as string | undefined,
+      });
+
+    case "drop_index":
+      return await Facade.dropIndex(facade, {
+        tableName: args.table_name as string,
+        indexName: args.index_name as string,
+        name: args.name as string | undefined,
+      });
+
+    case "get_indexes":
+      return await Facade.getIndexes(facade, {
+        tableName: args.table_name as string,
+        name: args.name as string | undefined,
+      });
+
+    case "set_query_sql":
+      return await Facade.setQuerySql(facade, {
+        queryName: args.query_name as string,
+        sql: args.sql as string,
+        name: args.name as string | undefined,
+      });
+
+    case "delete_query":
+      return await Facade.deleteQuery(facade, {
+        queryName: args.query_name as string,
+        name: args.name as string | undefined,
+      });
+
+    case "generate_sql":
+      return await Facade.generateSql(facade, {
+        outputPath: args.output_path as string,
+        name: args.name as string | undefined,
+      });
 
     default:
       throw new Error(`unknown operation: ${operation}`);

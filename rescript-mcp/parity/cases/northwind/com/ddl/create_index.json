@@ -1,0 +1,14 @@
+{
+  "operation": "create_index",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "Customers",
+    "index_name": "ParityTest_IX",
+    "columns": ["CustomerID"],
+    "unique": false,
+    "ignore_nulls": false
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

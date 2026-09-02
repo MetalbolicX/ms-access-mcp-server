@@ -1,0 +1,14 @@
+{
+  "operation": "create_table",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "ParityTest_Tmp",
+    "columns": [
+      {"name": "ID", "type": "INT", "size": null, "nullable": false},
+      {"name": "Name", "type": "VARCHAR", "size": 100, "nullable": true}
+    ]
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

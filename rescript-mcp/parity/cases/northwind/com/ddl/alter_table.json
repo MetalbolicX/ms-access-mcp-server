@@ -1,0 +1,13 @@
+{
+  "operation": "alter_table",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "Customers",
+    "operations": [
+      {"action": "add_column", "column": {"name": "TestCol", "type": "VARCHAR", "size": 50, "nullable": true}}
+    ]
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

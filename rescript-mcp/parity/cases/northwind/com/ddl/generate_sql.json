@@ -1,0 +1,10 @@
+{
+  "operation": "generate_sql",
+  "args": {
+    "connection_name": "northwind",
+    "output_path": "REPLACE_AT_RUNTIME"
+  },
+  "variant": "com",
+  "mutating": false,
+  "volatileFields": []
+}

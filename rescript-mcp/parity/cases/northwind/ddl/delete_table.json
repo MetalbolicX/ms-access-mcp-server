@@ -1,0 +1,10 @@
+{
+  "operation": "delete_table",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "ParityTest_Tmp"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": []
+}

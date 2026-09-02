@@ -14,10 +14,12 @@
 // "child crashed").
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const _require = createRequire(import.meta.url);
 
 // Resolve the compiled facade module via pathToFileURL so Windows paths
 // (D:\...) parse as URLs and the runtime doesn't try to resolve them as
@@ -31,6 +33,11 @@ const compositionPath = pathToFileURL(
 
 const Facade = await import(facadePath);
 const Composition = await import(compositionPath);
+
+// PARITY_VARIANT env var is set by run.ts (com | odbc). When com, the
+// facade factory must build a COM-backed binding so this side mirrors
+// the Python oracle's WinComAdapter (also variant-dispatched).
+const useCom = process.env.PARITY_VARIANT === "com";
 
 // ---------------------------------------------------------------------------
 // JSON.t adapter — convert plain JS values into the variant encoding the
@@ -77,7 +84,12 @@ function toOption(v) {
 async function runOperation(facade, operation, args) {
   switch (operation) {
     case "connect_access":
-      return await Facade.connectAccess(facade, args.dbPath ?? process.env.ACCESS_TEST_DB);
+      return await Facade.connectAccess(
+        facade,
+        args.dbPath ?? process.env.ACCESS_TEST_DB,
+        undefined,
+        useCom,
+      );
 
     case "disconnect_access":
       return await Facade.disconnectAccess(facade);
@@ -113,10 +125,6 @@ async function runOperation(facade, operation, args) {
       return await Facade.getDatabaseStatistics(facade);
 
     case "insert_data":
-      // ReScript's JSON.t at the FFI boundary is treated as a plain JS value
-      // (the compiler emits typeof/object checks instead of {TAG,_0} pattern
-      // matches), so pass the plain dict directly — jsToJsonT wrapping breaks
-      // insertData's switch into Object|Array|_.
       return await Facade.insertData(facade, args.table, jsToJsonDict(args.data));
 
     case "update_data": {
@@ -158,6 +166,69 @@ async function runOperation(facade, operation, args) {
       return await Facade.exportData(facade, args.sql, filePath, args.format);
     }
 
+    // DDL operations (034 plan) — skip create_query (winax limitation, 034-F-001)
+    case "create_table":
+      return await Facade.createTable(facade, {
+        tableName: args.table_name,
+        columns: args.columns,
+        name: args.name,
+      });
+
+    case "delete_table":
+      return await Facade.deleteTable(facade, {
+        tableName: args.table_name,
+        name: args.name,
+      });
+
+    case "alter_table":
+      return await Facade.alterTable(facade, {
+        tableName: args.table_name,
+        operations: args.operations,
+        name: args.name,
+      });
+
+    case "create_index":
+      return await Facade.createIndex(facade, {
+        tableName: args.table_name,
+        indexName: args.index_name,
+        columns: args.columns,
+        unique: args.unique ?? false,
+        ignoreNulls: args.ignore_nulls ?? false,
+        name: args.name,
+      });
+
+    case "drop_index":
+      return await Facade.dropIndex(facade, {
+        tableName: args.table_name,
+        indexName: args.index_name,
+        name: args.name,
+      });
+
+    case "get_indexes":
+      return await Facade.getIndexes(facade, {
+        tableName: args.table_name,
+        name: args.name,
+      });
+
+    case "set_query_sql":
+      return await Facade.setQuerySql(facade, {
+        queryName: args.query_name,
+        sql: args.sql,
+        name: args.name,
+      });
+
+    case "delete_query":
+      return await Facade.deleteQuery(facade, {
+        queryName: args.query_name,
+        name: args.name,
+      });
+
+    case "generate_sql":
+      return await Facade.generateSql(facade, {
+        outputPath: args.output_path,
+        name: args.name,
+      });
+
     default:
       throw new Error(`unknown operation: ${operation}`);
   }
@@ -185,6 +256,10 @@ async function main() {
     .split(";")
     .filter((s) => s.length > 0);
 
+// PARITY_VARIANT env var is set by run.ts (com | odbc). When com, the
+  // facade factory must build a COM-backed binding so this side mirrors
+  // the Python oracle's WinComAdapter (also variant-dispatched).
+
   const facade = Facade.make(
     undefined,
     Composition.realFactory,
@@ -211,7 +286,7 @@ async function main() {
     if (!dbPath) {
       throw new Error("ACCESS_TEST_DB not set");
     }
-    const connectResult = await Facade.connectAccess(facade, dbPath);
+    const connectResult = await Facade.connectAccess(facade, dbPath, undefined, useCom);
     if (!connectResult.success) {
       // Return the connect failure as the envelope so the differ can
       // compare failure shapes.
@@ -229,6 +304,13 @@ async function main() {
       await Facade.disconnectAccess(facade);
     } catch {
       // ignore
+    }
+    // Per plan 030 finding: Access teardown after Quit() takes 2-3s.
+    // If the v8 isolate disposes COM proxies before Access.exe fully
+    // releases them, Node crashes inside MultiIsolatePlatform::DisposeIsolate
+    // with "RemoveEnvironmentCleanupHook ... env != nullptr".
+    if (process.env.PARITY_VARIANT === "com") {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
 

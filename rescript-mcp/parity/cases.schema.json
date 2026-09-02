@@ -8,7 +8,7 @@
   "required": ["operation", "args", "variant", "mutating"],
   "properties": {
     "operation": {
-      "description": "The facade operation to invoke. One of the 17 v1 facade ops (plan 006's list).",
+      "description": "The facade operation to invoke. 17 v1 ops (plan 006) + 8 DDL ops (plan 034, skip create_query per 034-F-001).",
       "type": "string",
       "enum": [
         "connect_access",
@@ -27,7 +27,16 @@
         "insert_data",
         "update_data",
         "delete_data",
-        "export_data"
+        "export_data",
+        "create_table",
+        "delete_table",
+        "alter_table",
+        "create_index",
+        "drop_index",
+        "get_indexes",
+        "set_query_sql",
+        "delete_query",
+        "generate_sql"
       ]
     },
     "args": {
