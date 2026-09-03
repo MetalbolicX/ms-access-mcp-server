@@ -1714,5 +1714,95 @@ testAsync("ComDdl: linked-table chain — create/get/refresh/recreate/unlink", c
           })
       }
     })
+                    ->ignore
+})
+
+// ---------------------------------------------------------------------------
+// Plan 038 Step 6: Real-COM executeSqlScript probe test
+// ---------------------------------------------------------------------------
+
+testAsync("ComDdl: executeSqlScript — parity script executes 3 statements", cb => {
+  probe()
+    ->Promise.then(available => {
+      if !available {
+        Console.log("ComDdl executeSqlScript: skipped (Access unavailable)")
+        cb(~planned=0, ())
+        Promise.resolve()
+      } else {
+        let pid: string = %raw("process.pid.toString()")
+        let tempDir = switch Dict.get(NodeJs.Process.process.env, "TEMP") {
+          | Some(t) => t
+          | None => Dict.get(NodeJs.Process.process.env, "TMP")->Option.getWithDefault("")
+        }
+        let dbCopyPath = tempDir ++ "\\parity_northwind_copy_" ++ pid ++ ".accdb"
+        let scriptPath = tempDir ++ "\\parity_execute_sql_script_" ++ pid ++ ".sql"
+        let northwindPath = "D:\\code\\python\\ms-access-mcp-server\\db\\northwind.accdb"
+
+        // Write the D9 parity script (LF newlines, trailing newline)
+        let scriptContent = "-- parity linked script header comment\nCREATE TABLE [ParityScriptTest] ([ID] INTEGER, [Label] TEXT);\n/* mid-file block comment */\nINSERT INTO [ParityScriptTest] ([ID], [Label]) VALUES (1, 'alpha');\nINSERT INTO [ParityScriptTest] ([ID], [Label]) VALUES (2, 'beta');\n"
+        let _ = NodeJs.Fs.writeFileSync(scriptPath, NodeJs.Buffer.fromString(scriptContent))
+
+        // Copy the fixture to temp (NEVER use fixture directly)
+        let _ = Bindings.TsBridge.fsCopyFileSync(northwindPath, dbCopyPath)
+
+        let adapter = ComDataAdapter.DaoAdapter.make()
+        ComDataAdapter.DaoAdapter.connect(adapter, dbCopyPath)
+          ->Promise.then(connectResult => {
+            switch connectResult {
+            | Error(e) => {
+                Console.log("ComDdl executeSqlScript: connect failed: " ++ Errors._message(e))
+                // Cleanup temp files even on connect failure
+                let _ = if NodeJs.Fs.existsSync(scriptPath) { NodeJs.Fs.unlinkSync(scriptPath) }
+                let _ = if NodeJs.Fs.existsSync(dbCopyPath) { NodeJs.Fs.unlinkSync(dbCopyPath) }
+                cb(~planned=1, ())
+                Promise.resolve()
+              }
+            | Ok(_) => {
+                let cleanup = () => {
+                  ComDataAdapter.DaoAdapter.deleteTable(adapter, "ParityScriptTest")
+                    ->Promise.then(_ => {
+                      ComDataAdapter.DaoAdapter.disconnect(adapter)
+                        ->Promise.then(_ => {
+                          let _ = if NodeJs.Fs.existsSync(scriptPath) { NodeJs.Fs.unlinkSync(scriptPath) }
+                          let _ = if NodeJs.Fs.existsSync(dbCopyPath) { NodeJs.Fs.unlinkSync(dbCopyPath) }
+                          Promise.resolve()
+                        })
+                    })
+                }
+
+                ComDataAdapter.executeSqlScript(adapter, scriptPath)
+                  ->Promise.then(scriptResult => {
+                    switch scriptResult {
+                    | Error(e) => {
+                        Console.log("ComDdl executeSqlScript: execute failed: " ++ Errors._message(e))
+                        cleanup()->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                        Promise.resolve()
+                      }
+                    | Ok(result) => {
+                        let ok = result.success
+                        let count = result.statementsExecuted
+                        let failStmt = result.failingStatement
+                        let failLine = result.failingLine
+                        let errCode = result.accessErrorCode
+                        let errMsg = result.accessErrorMessage
+                        let scriptErr = result.error
+                        assertion(~operator="equal", (a, b) => a == b, ok, true)
+                        assertion(~operator="equal", (a, b) => a == b, count, 3)
+                        assertion(~operator="equal", (a, b) => a == b, failStmt, None)
+                        assertion(~operator="equal", (a, b) => a == b, failLine, None)
+                        assertion(~operator="equal", (a, b) => a == b, errCode, None)
+                        assertion(~operator="equal", (a, b) => a == b, errMsg, None)
+                        assertion(~operator="equal", (a, b) => a == b, scriptErr, None)
+                        cleanup()->Promise.then(_ => { cb(~planned=7, ()); Promise.resolve() })->ignore
+                        Promise.resolve()
+                      }
+                    }
+                  })
+              }
+            }
+          })
+      }
+    })
     ->ignore
 })
+
