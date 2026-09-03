@@ -66,6 +66,13 @@ export interface Facade {
   deleteQuery: (facade: Facade, queryName: string, name?: string) => Promise<Record<string, JsonT>>;
   createQuery: (facade: Facade, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
   generateSql: (facade: Facade, outputPath: string, name?: string) => Promise<Record<string, JsonT>>;
+  // Linked-table + SQL-script operations (plan 038)
+  getLinkedTables: (facade: Facade, opts?: { name?: string }) => Promise<Record<string, JsonT>>;
+  createLinkedTable: (facade: Facade, tableName: string, sourceTable: string, connectString: string, name?: string) => Promise<Record<string, JsonT>>;
+  refreshLinkedTable: (facade: Facade, tableName: string, connectString: string | undefined, name?: string) => Promise<Record<string, JsonT>>;
+  recreateLinkedTable: (facade: Facade, tableName: string, sourceTable: string, connectString: string, attributes: number | undefined, name?: string) => Promise<Record<string, JsonT>>;
+  unlinkTable: (facade: Facade, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
+  executeSqlScript: (facade: Facade, scriptPath: string, name?: string) => Promise<Record<string, JsonT>>;
 }
 
 export interface ConnectOpts {

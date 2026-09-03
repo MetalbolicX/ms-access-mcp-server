@@ -419,6 +419,83 @@ def _shape_generate_sql(adapter: WinComAdapter, output_path: str) -> dict[str, A
     return _shape_ddl_result(result)
 
 
+def _shape_get_linked_tables(adapter: OdbcAdapter) -> dict[str, Any]:
+    """Wrap adapter.get_linked_tables — ReScript linkedTablesResult: {success, error?, linkedTables: []}.
+
+    Python failure (NotImplementedError) returns just {success, error} — no linkedTables key.
+    The ReScript shaper _shapeLinkedTablesResult follows the same pattern (failure = no linked_tables).
+    """
+    try:
+        return adapter.get_linked_tables()
+    except NotImplementedError as e:
+        return {"success": False, "error": str(e)}
+
+
+def _shape_create_linked_table(adapter: OdbcAdapter, name: str, source_table: str, connect_string: str) -> dict[str, Any]:
+    """Wrap adapter.create_linked_table — ReScript ddlResult: {success, error?}.
+
+    ODBC stub: if the adapter returns an error dict (rather than raising
+    NotImplementedError), normalize it to the COM-only message so the harness
+    matches the ReScript ODBC stub.
+    """
+    try:
+        result = adapter.create_linked_table(name, source_table, connect_string)
+        if not result.get("success") and result.get("error"):
+            return {"success": False, "error": "create_linked_table requires COM automation (WinComAdapter)"}
+        return _shape_ddl_result(result)
+    except NotImplementedError as e:
+        return {"success": False, "error": str(e)}
+
+
+def _shape_refresh_linked_table(adapter: OdbcAdapter, table_name: str, connect_string: str | None = None) -> dict[str, Any]:
+    """Wrap adapter.refresh_linked_table — ReScript ddlResult: {success, error?}."""
+    try:
+        result = adapter.refresh_linked_table(table_name, connect_string)
+        return _shape_ddl_result(result)
+    except NotImplementedError as e:
+        return {"success": False, "error": str(e)}
+
+
+def _shape_recreate_linked_table(adapter: OdbcAdapter, name: str, source_table: str, connect_string: str, attributes: int | None = None) -> dict[str, Any]:
+    """Wrap adapter.recreate_linked_table — ReScript ddlResult: {success, error?}.
+
+    ODBC stub: if the adapter returns an error dict (rather than raising
+    NotImplementedError), normalize it to the COM-only message.
+    """
+    try:
+        result = adapter.recreate_linked_table(name, source_table, connect_string, attributes)
+        if not result.get("success") and result.get("error"):
+            return {"success": False, "error": "recreate_linked_table requires COM automation (WinComAdapter)"}
+        return _shape_ddl_result(result)
+    except NotImplementedError as e:
+        return {"success": False, "error": str(e)}
+
+
+def _shape_unlink_table(adapter: OdbcAdapter, table_name: str) -> dict[str, Any]:
+    """Wrap adapter.unlink_table — ReScript ddlResult: {success, error?}."""
+    try:
+        result = adapter.unlink_table(table_name)
+        return _shape_ddl_result(result)
+    except NotImplementedError as e:
+        return {"success": False, "error": str(e)}
+
+
+def _shape_execute_sql_script(adapter: OdbcAdapter, script_path: str) -> dict[str, Any]:
+    """Wrap adapter.execute_sql_script — ReScript sqlScriptResult: full 7-key envelope."""
+    try:
+        return adapter.execute_sql_script(script_path)
+    except NotImplementedError as e:
+        return {
+            "success": False,
+            "statements_executed": 0,
+            "error": str(e),
+            "failing_statement": None,
+            "failing_line": None,
+            "access_error_code": None,
+            "access_error_message": None,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Operation dispatch helpers
 # ---------------------------------------------------------------------------
@@ -484,6 +561,46 @@ def _run_op(adapter: OdbcAdapter, step: dict[str, Any]) -> dict[str, Any]:
         if isinstance(adapter, WinComAdapter):
             return _shape_generate_sql(adapter, args["output_path"])
         return {"success": False, "error": "Not available via ODBC"}
+    # Linked-table + SQL-script operations (plan 038)
+    if operation == "get_linked_tables":
+        return _shape_get_linked_tables(adapter)
+    if operation == "create_linked_table":
+        connect_string = args.get("connect_string", "")
+        if "REPLACE_SOURCE_DB" in connect_string:
+            connect_string = connect_string.replace("REPLACE_SOURCE_DB", os.environ.get("PARITY_SOURCE_DB", ""))
+        return _shape_create_linked_table(adapter, args["name"], args["source_table"], connect_string)
+    if operation == "refresh_linked_table":
+        connect_string = args.get("connect_string", "")
+        if "REPLACE_SOURCE_DB" in connect_string:
+            connect_string = connect_string.replace("REPLACE_SOURCE_DB", os.environ.get("PARITY_SOURCE_DB", ""))
+        return _shape_refresh_linked_table(adapter, args["table_name"], connect_string or None)
+    if operation == "recreate_linked_table":
+        connect_string = args.get("connect_string", "")
+        if "REPLACE_SOURCE_DB" in connect_string:
+            connect_string = connect_string.replace("REPLACE_SOURCE_DB", os.environ.get("PARITY_SOURCE_DB", ""))
+        return _shape_recreate_linked_table(
+            adapter,
+            args["name"],
+            args["source_table"],
+            connect_string,
+            args.get("attributes"),
+        )
+    if operation == "unlink_table":
+        return _shape_unlink_table(adapter, args["table_name"])
+    if operation == "execute_sql_script":
+        script_path = args.get("script_path", "")
+        if script_path == "REPLACE_AT_RUNTIME":
+            script_content = (
+                "-- parity linked script header comment\n"
+                "CREATE TABLE [ParityScriptTest] ([ID] INTEGER, [Label] TEXT);\n"
+                "/* mid-file block comment */\n"
+                "INSERT INTO [ParityScriptTest] ([ID], [Label]) VALUES (1, 'alpha');\n"
+                "INSERT INTO [ParityScriptTest] ([ID], [Label]) VALUES (2, 'beta');\n"
+            )
+            fd, script_path = tempfile.mkstemp(suffix=".sql", prefix="parity_script_")
+            os.write(fd, script_content.encode("utf-8"))
+            os.close(fd)
+        return _shape_execute_sql_script(adapter, script_path)
     raise ValueError(f"unknown operation: {operation}")
 
 

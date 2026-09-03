@@ -1,0 +1,11 @@
+{
+  "operation": "refresh_linked_table",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "lnk_test",
+    "connect_string": ";DATABASE=REPLACE_SOURCE_DB"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": []
+}

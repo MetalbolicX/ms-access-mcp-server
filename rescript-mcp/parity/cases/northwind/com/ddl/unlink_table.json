@@ -1,0 +1,21 @@
+{
+  "operation": "unlink_table",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "lnk_categories"
+  },
+  "variant": "com",
+  "mutating": true,
+  "volatileFields": [],
+  "setup": [
+    {
+      "operation": "create_linked_table",
+      "args": {
+        "connection_name": "northwind",
+        "name": "lnk_categories",
+        "source_table": "categories",
+        "connect_string": ";DATABASE=REPLACE_SOURCE_DB"
+      }
+    }
+  ]
+}

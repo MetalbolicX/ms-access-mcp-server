@@ -1,0 +1,10 @@
+{
+  "operation": "execute_sql_script",
+  "args": {
+    "connection_name": "northwind",
+    "script_path": "REPLACE_AT_RUNTIME"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": []
+}

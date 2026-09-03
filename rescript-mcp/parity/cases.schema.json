@@ -8,7 +8,7 @@
   "required": ["operation", "args", "variant", "mutating"],
   "properties": {
     "operation": {
-      "description": "The facade operation to invoke. 17 v1 ops (plan 006) + 9 DDL ops (plan 034, including create_query).",
+      "description": "The facade operation to invoke. 17 v1 ops (plan 006) + 9 DDL ops (plan 034) + 6 linked-table/SQL-script ops (plan 038).",
       "type": "string",
       "enum": [
         "connect_access",
@@ -37,7 +37,13 @@
         "set_query_sql",
         "delete_query",
         "create_query",
-        "generate_sql"
+        "generate_sql",
+        "get_linked_tables",
+        "create_linked_table",
+        "refresh_linked_table",
+        "recreate_linked_table",
+        "unlink_table",
+        "execute_sql_script"
       ]
     },
     "args": {

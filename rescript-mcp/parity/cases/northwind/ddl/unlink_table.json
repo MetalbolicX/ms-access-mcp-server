@@ -1,0 +1,10 @@
+{
+  "operation": "unlink_table",
+  "args": {
+    "connection_name": "northwind",
+    "table_name": "lnk_test"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": []
+}

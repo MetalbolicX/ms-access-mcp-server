@@ -116,6 +116,13 @@ if (process.env.PARITY_VARIANT === "com") {
 // ACCESS_MCP_ALLOWED_DIRS if the user provided one. Without this, the
 // ReScript facade's PathGuard rejects the per-side temp copies as
 // "path not allowed".
+// PARITY_SOURCE_DB — path to the linked-table source fixture
+const PARITY_SOURCE_DB = join(REPO_ROOT, "db", "postgres.accdb");
+if (!existsSync(PARITY_SOURCE_DB)) {
+  console.error(`parity: PARITY_SOURCE_DB not found at ${PARITY_SOURCE_DB}`);
+  process.exit(1);
+}
+
 const pinnedEnv: Record<string, string> = {
   ...process.env,
   ACCESS_MCP_ALLOWED_DIRS: [
@@ -127,6 +134,7 @@ const pinnedEnv: Record<string, string> = {
     .join(";"),
   ACCESS_MCP_READONLY: "false",
   ACCESS_TEST_ASSUME_CE: "1",
+  PARITY_SOURCE_DB,
 };
 // ACCESS_TEST_DB must be set AFTER ...process.env to override any inherited value
 pinnedEnv.ACCESS_TEST_DB = fixture;
@@ -211,7 +219,7 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
  * reads ACCESS_TEST_DB internally.
  */
 function runPython(childFixturePath: string, casePath: string, variant: string): DriverResult | DriverError {
-  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant };
+  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant, PARITY_SOURCE_DB };
   return runChild(PYTHON, [PYTHON_DRIVER, casePath], env, "python");
 }
 
@@ -220,7 +228,7 @@ function runPython(childFixturePath: string, casePath: string, variant: string):
  * reads ACCESS_TEST_DB internally.
  */
 function runRescript(childFixturePath: string, casePath: string, variant: string): DriverResult | DriverError {
-  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant };
+  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant, PARITY_SOURCE_DB };
   return runChild(NODE, [RS_RUNNER_JS, casePath], env, "rescript");
 }
 

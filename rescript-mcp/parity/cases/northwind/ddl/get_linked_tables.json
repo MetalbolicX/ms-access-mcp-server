@@ -1,0 +1,9 @@
+{
+  "operation": "get_linked_tables",
+  "args": {
+    "connection_name": "northwind"
+  },
+  "variant": "odbc",
+  "mutating": false,
+  "volatileFields": []
+}
