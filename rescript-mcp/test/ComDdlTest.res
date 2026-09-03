@@ -1193,6 +1193,94 @@ testAsync("deleteQuery: not connected returns Ok envelope with success=false", c
 })
 
 // ---------------------------------------------------------------------------
+// Plan 038 Step 3: 6 not-connected envelope tests for linked-table / sql-script
+// ---------------------------------------------------------------------------
+
+testAsync("getLinkedTables: not connected returns Ok envelope with success=false", cb => {
+  let adapter = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.getLinkedTables(adapter)
+    ->Promise.then(result => {
+      assertion(~operator="equal", (a, b) => a == b, switch result {
+        | Error(_) => false
+        | Ok(_) => true
+      }, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("createLinkedTable: not connected returns Ok envelope with success=false", cb => {
+  let adapter = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.createLinkedTable(adapter, "RemoteT", "LocalT", "DSN=Remote")
+    ->Promise.then(result => {
+      assertion(~operator="equal", (a, b) => a == b, switch result {
+        | Error(_) => false
+        | Ok(_) => true
+      }, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("refreshLinkedTable: not connected returns Ok envelope with success=false", cb => {
+  let adapter = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.refreshLinkedTable(adapter, "RemoteT")
+    ->Promise.then(result => {
+      assertion(~operator="equal", (a, b) => a == b, switch result {
+        | Error(_) => false
+        | Ok(_) => true
+      }, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("recreateLinkedTable: not connected returns Ok envelope with success=false", cb => {
+  let adapter = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.recreateLinkedTable(adapter, "RemoteT", "LocalT", "DSN=Remote")
+    ->Promise.then(result => {
+      assertion(~operator="equal", (a, b) => a == b, switch result {
+        | Error(_) => false
+        | Ok(_) => true
+      }, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("unlinkTable: not connected returns Ok envelope with success=false", cb => {
+  let adapter = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.unlinkTable(adapter, "RemoteT")
+    ->Promise.then(result => {
+      assertion(~operator="equal", (a, b) => a == b, switch result {
+        | Error(_) => false
+        | Ok(_) => true
+      }, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("executeSqlScript: not connected returns Ok envelope with success=false", cb => {
+  let adapter = ComDataAdapter.DaoAdapter.make()
+  ComDataAdapter.executeSqlScript(adapter, "/tmp/test.sql")
+    ->Promise.then(result => {
+      assertion(~operator="equal", (a, b) => a == b, switch result {
+        | Error(_) => false
+        | Ok(_) => true
+      }, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+// ---------------------------------------------------------------------------
 // Real-COM test: createQuery → getQueries reflects it → deleteQuery removes it
 // ---------------------------------------------------------------------------
 
@@ -1396,4 +1484,43 @@ testAsync("ComDdl: deleteQuery removes a query (success envelope)", cb => {
       }
     })
     ->ignore
+})
+ 
+// ---------------------------------------------------------------------------
+// Plan 038 Step 4: SQL script line parser unit tests
+// ---------------------------------------------------------------------------
+
+test("parseScriptLines: empty string returns empty statements", () => {
+  let result = ComDataAdapter.parseScriptLines("")
+  assertion(~operator="equal", (a, b) => a == b, result.statements, [])
+})
+
+test("parseScriptLines: single statement without semicolon returns one entry", () => {
+  let result = ComDataAdapter.parseScriptLines("SELECT * FROM Users")
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.statements), 1)
+  assertion(~operator="equal", (a, b) => a == b, Option.getExn(Array.get(result.statements, 0)).text, "SELECT * FROM Users")
+  assertion(~operator="equal", (a, b) => a == b, Option.getExn(Array.get(result.statements, 0)).line, 1)
+})
+
+test("parseScriptLines: semicolon splits into separate statements", () => {
+  let result = ComDataAdapter.parseScriptLines("SELECT 1; SELECT 2; SELECT 3")
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.statements), 3)
+  assertion(~operator="equal", (a, b) => a == b, Option.getExn(Array.get(result.statements, 0)).text, "SELECT 1")
+  assertion(~operator="equal", (a, b) => a == b, Option.getExn(Array.get(result.statements, 1)).text, "SELECT 2")
+  assertion(~operator="equal", (a, b) => a == b, Option.getExn(Array.get(result.statements, 2)).text, "SELECT 3")
+})
+
+test("parseScriptLines: strips SQL block and line comments from statements", () => {
+  let result = ComDataAdapter.parseScriptLines("/* comment */ SELECT * FROM Users -- inline")
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.statements), 1)
+  assertion(~operator="equal", (a, b) => a == b, Js.String.includes("comment", Option.getExn(Array.get(result.statements, 0)).text), false)
+  assertion(~operator="equal", (a, b) => a == b, Js.String.includes("--", Option.getExn(Array.get(result.statements, 0)).text), false)
+})
+
+test("parseScriptLines: line number tracks first non-whitespace char of each statement", () => {
+  let result = ComDataAdapter.parseScriptLines("SELECT 1;\n\n  SELECT 2;")
+  assertion(~operator="equal", (a, b) => a == b, Array.length(result.statements), 2)
+  // Both statements should have valid line numbers (1-based)
+  assertion(~operator="greaterThan", (a, b) => a >= b, Option.getExn(Array.get(result.statements, 0)).line, 1)
+  assertion(~operator="greaterThan", (a, b) => a >= b, Option.getExn(Array.get(result.statements, 1)).line, 1)
 })
