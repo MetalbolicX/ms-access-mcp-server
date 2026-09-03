@@ -160,6 +160,147 @@ let _formatValue: JSON.t => string = (j: JSON.t): string => {
 }
 
 // ---------------------------------------------------------------------------
+// SQL Script Line Parser
+// Mirrors Python wincom.py _parse_script_lines + _strip_sql_comments (lines 1024-1198)
+// ---------------------------------------------------------------------------
+
+// Strip SQL single-line (--) and block (/* */) comments from a string.
+// Follows Python _strip_sql_comments: removes -- comments, then /* */ blocks,
+// then collapses multiple blank lines.  Manual implementation avoids Js.Re.replace
+// (not available in this ReScript version's Js.Re module).
+let _stripSqlComments: string => string = (sql: string): string => {
+  let len = String.length(sql)
+  let rec loop = (i: int, acc: string, inBlock: bool): string => {
+    if i >= len {
+      acc
+    } else {
+      let ch = Js.String.charAt(i, sql)
+      if inBlock {
+        // Inside /* ... */ — look for */
+        if ch == "*" && i + 1 < len && Js.String.charAt(i + 1, sql) == "/" {
+          loop(i + 2, acc, false)
+        } else {
+          loop(i + 1, acc, true)
+        }
+      } else {
+        if ch == "-" && i + 1 < len && Js.String.charAt(i + 1, sql) == "-" {
+          // Skip to end of line (-- comment)
+          let rec skipLine = (j: int): int => {
+            if j >= len { len }
+            else if Js.String.charAt(j, sql) == "\n" { j }
+            else { skipLine(j + 1) }
+          }
+          loop(skipLine(i + 2), acc, false)
+        } else if ch == "/" && i + 1 < len && Js.String.charAt(i + 1, sql) == "*" {
+          // Start of /* */ block comment
+          let rec skipBlock = (j: int): int => {
+            if j >= len { len }
+            else if Js.String.charAt(j, sql) == "*" && j + 1 < len && Js.String.charAt(j + 1, sql) == "/" {
+              j + 2
+            } else { skipBlock(j + 1) }
+          }
+          loop(skipBlock(i + 2), acc, false)
+        } else {
+          loop(i + 1, acc ++ ch, false)
+        }
+      }
+    }
+  }
+  let noComments = loop(0, "", false)
+  // Collapse multiple blank lines into one
+  let rec collapseBlanks = (s: string): string => {
+    let idx = Js.String.indexOf("\n\n", s)
+    if idx < 0 { s }
+    else {
+      let prefix = Js.String.substring(s, ~from=0, ~to_=idx)
+      let suffixLen = String.length(s) - idx - 2
+      let suffix = Js.String.substring(s, ~from=idx + 2, ~to_=String.length(s))
+      // Skip leading whitespace on suffix to avoid accumulating indent
+      let trimmedSuffix = if String.length(suffix) > 0 && (Js.String.charAt(0, suffix) == " " || Js.String.charAt(0, suffix) == "\t") {
+        let rec skipWs = (j: int, max: int): string => {
+          if j >= max { Js.String.substring(suffix, ~from=j, ~to_=max) }
+          else {
+            let c = Js.String.charAt(j, suffix)
+            if c == " " || c == "\t" { skipWs(j + 1, max) }
+            else { Js.String.substring(suffix, ~from=j, ~to_=max) }
+          }
+        }
+        skipWs(0, String.length(suffix))
+      } else { suffix }
+      collapseBlanks(prefix ++ "\n" ++ trimmedSuffix)
+    }
+  }
+  collapseBlanks(noComments)
+}
+
+// Parse a raw SQL script into executable statements with original 1-based line numbers.
+// Mirrors Python _parse_script_lines: splits on ';', strips comments per-chunk.
+type _parsedStatement = {text: string, line: int}
+type _parseResult = {statements: array<_parsedStatement>}
+
+  let parseScriptLines: string => _parseResult = (rawSql: string): _parseResult => {
+  if String.length(Js.String.trim(rawSql)) == 0 {
+    {statements: []}
+  } else {
+    let statements: array<_parsedStatement> = []
+    let sql = rawSql
+    let rec loop = (pos: int, remaining: string): unit => {
+      if String.length(remaining) == 0 {
+        ()
+      } else {
+        let semiIdx = Js.String.indexOf(";", remaining)
+        let (chunk, rest) = if semiIdx >= 0 {
+          (
+            Js.String.substring(remaining, ~from=0, ~to_=semiIdx),
+            Js.String.substring(remaining, ~from=semiIdx + 1, ~to_=String.length(remaining)),
+          )
+        } else {
+          (remaining, "")
+        }
+        let stripped = Js.String.trim(chunk)
+        if String.length(stripped) == 0 {
+          let advance = String.length(chunk) + (if semiIdx >= 0 { 1 } else { 0 })
+          loop(pos + advance, rest)
+        } else {
+          // Find first non-whitespace char to get accurate line number
+          let firstContent = {
+            let rec skipWs = (i: int, max: int): int => {
+              if i >= max { max }
+              else {
+                let c = Js.String.charAt(i, chunk)
+                if c == " " || c == "\t" { skipWs(i + 1, max) }
+                else { i }
+              }
+            }
+            skipWs(0, String.length(chunk))
+          }
+          let stmtPos = pos + firstContent
+          let lineNum = {
+            let prefix = Js.String.substring(sql, ~from=0, ~to_=stmtPos)
+            let rec countNl = (s: string, acc: int): int => {
+              let idx = Js.String.indexOf("\n", s)
+              if idx < 0 { acc } else { countNl(Js.String.substring(s, ~from=idx + 1, ~to_=String.length(s)), acc + 1) }
+            }
+            countNl(prefix, 0) + 1
+          }
+          let clean = _stripSqlComments(stripped)
+          if String.length(Js.String.trim(clean)) == 0 {
+            let advance = String.length(chunk) + (if semiIdx >= 0 { 1 } else { 0 })
+            loop(pos + advance, rest)
+          } else {
+            statements->Array.push({text: clean, line: lineNum})
+            let advance = String.length(chunk) + (if semiIdx >= 0 { 1 } else { 0 })
+            loop(pos + advance, rest)
+          }
+        }
+      }
+    }
+    loop(0, sql)
+    {statements: statements}
+  }
+}
+
+// ---------------------------------------------------------------------------
 // DAO/Access type t — implements DATA_ADAPTER + SCHEMA_ADAPTER
 // ---------------------------------------------------------------------------
 
