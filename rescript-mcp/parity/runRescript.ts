@@ -134,6 +134,13 @@ interface FacadeModule {
   deleteQuery: (facade: FacadeRecord, queryName: string, name?: string) => Promise<Record<string, JsonT>>;
   createQuery: (facade: FacadeRecord, queryName: string, sql: string, name?: string) => Promise<Record<string, JsonT>>;
   generateSql: (facade: FacadeRecord, outputPath: string, name?: string) => Promise<Record<string, JsonT>>;
+  // Linked-table + SQL-script operations (plan 038)
+  getLinkedTables: (facade: FacadeRecord, name?: string) => Promise<Record<string, JsonT>>;
+  createLinkedTable: (facade: FacadeRecord, tableName: string, sourceTable: string, connectString: string, name?: string) => Promise<Record<string, JsonT>>;
+  refreshLinkedTable: (facade: FacadeRecord, tableName: string, connectString: string | undefined, name?: string) => Promise<Record<string, JsonT>>;
+  recreateLinkedTable: (facade: FacadeRecord, tableName: string, sourceTable: string, connectString: string, attributes: number | undefined, name?: string) => Promise<Record<string, JsonT>>;
+  unlinkTable: (facade: FacadeRecord, tableName: string, name?: string) => Promise<Record<string, JsonT>>;
+  executeSqlScript: (facade: FacadeRecord, scriptPath: string, name?: string) => Promise<Record<string, JsonT>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +249,58 @@ async function runOperation(Facade: FacadeModule, facade: FacadeRecord, operatio
 
     case "generate_sql":
       return await Facade.generateSql(facade, args.output_path as string, args.name as string | undefined);
+
+    // Linked-table + SQL-script operations (plan 038)
+    case "get_linked_tables":
+      return await Facade.getLinkedTables(facade, args.name as string | undefined);
+
+    case "create_linked_table": {
+      let connectString = args.connect_string as string;
+      if (connectString.includes("REPLACE_SOURCE_DB")) {
+        connectString = connectString.replace(/REPLACE_SOURCE_DB/g, process.env.PARITY_SOURCE_DB ?? "");
+      }
+      return await Facade.createLinkedTable(facade, args.name as string ?? "lnk", args.source_table as string, connectString, undefined);
+    }
+
+    case "refresh_linked_table": {
+      let connectString = args.connect_string as string;
+      if (connectString.includes("REPLACE_SOURCE_DB")) {
+        connectString = connectString.replace(/REPLACE_SOURCE_DB/g, process.env.PARITY_SOURCE_DB ?? "");
+      }
+      return await Facade.refreshLinkedTable(facade, args.table_name as string, connectString, args.name as string | undefined);
+    }
+
+    case "recreate_linked_table": {
+      let connectString = args.connect_string as string;
+      if (connectString.includes("REPLACE_SOURCE_DB")) {
+        connectString = connectString.replace(/REPLACE_SOURCE_DB/g, process.env.PARITY_SOURCE_DB ?? "");
+      }
+      return await Facade.recreateLinkedTable(facade, args.name as string ?? "lnk", args.source_table as string, connectString, args.attributes as number | undefined, undefined);
+    }
+
+    case "unlink_table":
+      return await Facade.unlinkTable(facade, args.table_name as string, args.name as string | undefined);
+
+    case "execute_sql_script": {
+      let scriptPath = args.script_path as string;
+      if (scriptPath === "REPLACE_AT_RUNTIME") {
+        const { tmpdir: td } = await import("node:os");
+        const { join: j } = await import("node:path");
+        const { writeFileSync: wf } = await import("node:fs");
+        const scriptDir = process.env.PARITY_EXPORT_DIR ?? td();
+        scriptPath = j(scriptDir, `parity_script_${process.pid}.sql`);
+        const scriptContent = [
+          "-- parity linked script header comment",
+          "CREATE TABLE [ParityScriptTest] ([ID] INTEGER, [Label] TEXT);",
+          "/* mid-file block comment */",
+          "INSERT INTO [ParityScriptTest] ([ID], [Label]) VALUES (1, 'alpha');",
+          "INSERT INTO [ParityScriptTest] ([ID], [Label]) VALUES (2, 'beta');",
+          "",
+        ].join("\n");
+        wf(scriptPath, scriptContent, "utf8");
+      }
+      return await Facade.executeSqlScript(facade, scriptPath, args.name as string | undefined);
+    }
 
     default:
       throw new Error(`unknown operation: ${operation}`);
