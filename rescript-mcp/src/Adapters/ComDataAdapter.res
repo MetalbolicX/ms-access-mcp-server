@@ -2565,6 +2565,177 @@ let asInstance = (self: DaoAdapter.t): Adapters.Instances.dataAdapterInstance =>
 }
 
 // ---------------------------------------------------------------------------
+// Plan 038: linked-table + SQL-script stub implementations (not-connected guards only)
+// ---------------------------------------------------------------------------
+
+// getLinkedTables — guard triple, full implementation in Step 5
+let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
+  if !self.isConnected {
+    Promise.resolve(Ok({success: false, error: Some("Not connected"), linkedTables: []}))
+  } else {
+    switch self.session {
+    | None => Promise.resolve(Ok({success: false, error: Some("No session"), linkedTables: []}))
+    | Some(session) => {
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({success: false, error: Some("No DB handle"), linkedTables: []}))
+        | Some(_db) => {
+            // Full implementation replaces this in Step 5
+            Promise.resolve(Ok({success: false, error: Some("Not connected"), linkedTables: []}))
+          }
+        }
+      }
+    }
+  }
+};
+
+// createLinkedTable — guard triple, full implementation in Step 5
+let createLinkedTable = (
+  self: DaoAdapter.t,
+  name: string,
+  sourceTable: string,
+  connectString: string,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  if !self.isConnected {
+    Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+  } else {
+    switch self.session {
+    | None => Promise.resolve(Ok({success: false, error: Some("No session")}))
+    | Some(session) => {
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
+        | Some(_db) => {
+            // Full implementation replaces this in Step 5
+            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+          }
+        }
+      }
+    }
+  }
+};
+
+// refreshLinkedTable — guard triple, full implementation in Step 5
+let refreshLinkedTable = (
+  self: DaoAdapter.t,
+  name: string,
+  ~connectString: option<string>=?,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  if !self.isConnected {
+    Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+  } else {
+    switch self.session {
+    | None => Promise.resolve(Ok({success: false, error: Some("No session")}))
+    | Some(session) => {
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
+        | Some(_db) => {
+            // Full implementation replaces this in Step 5
+            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+          }
+        }
+      }
+    }
+  }
+};
+
+// recreateLinkedTable — guard triple, full implementation in Step 5
+let recreateLinkedTable = (
+  self: DaoAdapter.t,
+  name: string,
+  sourceTable: string,
+  connectString: string,
+  ~attributes: option<int>=?,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  if !self.isConnected {
+    Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+  } else {
+    switch self.session {
+    | None => Promise.resolve(Ok({success: false, error: Some("No session")}))
+    | Some(session) => {
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
+        | Some(_db) => {
+            // Full implementation replaces this in Step 5
+            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+          }
+        }
+      }
+    }
+  }
+};
+
+// unlinkTable — guard triple, full implementation in Step 5
+let unlinkTable = (self: DaoAdapter.t, name: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  if !self.isConnected {
+    Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+  } else {
+    switch self.session {
+    | None => Promise.resolve(Ok({success: false, error: Some("No session")}))
+    | Some(session) => {
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
+        | Some(_db) => {
+            // Full implementation replaces this in Step 5
+            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+          }
+        }
+      }
+    }
+  }
+};
+
+// executeSqlScript — guard triple, full implementation in Step 6
+let executeSqlScript = (self: DaoAdapter.t, scriptPath: string): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
+  if !self.isConnected {
+    Promise.resolve(Ok({
+      success: false,
+      error: Some("Not connected"),
+      statementsExecuted: 0,
+      failingStatement: None,
+      failingLine: None,
+      accessErrorCode: None,
+      accessErrorMessage: None,
+    }))
+  } else {
+    switch self.session {
+    | None => Promise.resolve(Ok({
+      success: false,
+      error: Some("No session"),
+      statementsExecuted: 0,
+      failingStatement: None,
+      failingLine: None,
+      accessErrorCode: None,
+      accessErrorMessage: None,
+    }))
+    | Some(session) => {
+        switch ComSession.getCurrentDb(session) {
+        | None => Promise.resolve(Ok({
+          success: false,
+          error: Some("No DB handle"),
+          statementsExecuted: 0,
+          failingStatement: None,
+          failingLine: None,
+          accessErrorCode: None,
+          accessErrorMessage: None,
+        }))
+        | Some(_db) => {
+            // Full implementation replaces this in Step 6
+            Promise.resolve(Ok({
+              success: false,
+              error: Some("Not connected"),
+              statementsExecuted: 0,
+              failingStatement: None,
+              failingLine: None,
+              accessErrorCode: None,
+              accessErrorMessage: None,
+            }))
+          }
+        }
+      }
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // asSchemaInstance — produce an Instances.schemaAdapterInstance from a DaoAdapter.t
 // ---------------------------------------------------------------------------
 
@@ -2594,5 +2765,21 @@ let asSchemaInstance = (self: DaoAdapter.t): Adapters.Instances.schemaAdapterIns
     createRelationship: (name, table, cols, foreignTable, foreignCols) =>
       DaoAdapter.createRelationship(self, name, table, cols, foreignTable, foreignCols),
     deleteRelationship: (name, table) => DaoAdapter.deleteRelationship(self, name, table),
+    // Plan 038: linked-table + SQL-script
+    getLinkedTables: () => getLinkedTables(self),
+    createLinkedTable: (name, sourceTable, connectString) =>
+      createLinkedTable(self, name, sourceTable, connectString),
+    refreshLinkedTable: (name, ~connectString=?) =>
+      switch connectString {
+      | Some(v) => refreshLinkedTable(self, name, ~connectString=?v)
+      | None => refreshLinkedTable(self, name)
+      },
+    recreateLinkedTable: (name, sourceTable, connectString, ~attributes=?) =>
+      switch attributes {
+      | Some(v) => recreateLinkedTable(self, name, sourceTable, connectString, ~attributes=?v)
+      | None => recreateLinkedTable(self, name, sourceTable, connectString)
+      },
+    unlinkTable: name => unlinkTable(self, name),
+    executeSqlScript: scriptPath => executeSqlScript(self, scriptPath),
   }
 }

@@ -117,10 +117,10 @@ testAsync("FakeSchemaAdapter.asInstance: getTables returns Ok([]) with no fake t
     ->ignore
 })
 
-test("FakeSchemaAdapter.asInstance: all 22 schema methods are callable", () => {
-  let fake = Fakes.FakeSchemaAdapter.make(~name="test-schema-all-22")
+test("FakeSchemaAdapter.asInstance: all 28 schema methods are callable", () => {
+  let fake = Fakes.FakeSchemaAdapter.make(~name="test-schema-all-28")
   let instance = Fakes.FakeSchemaAdapter.asInstance(fake)
-  // Call each method — all should type-check (22 fields on schemaAdapterInstance)
+  // Call each method — all should type-check (28 fields on schemaAdapterInstance)
   ignore(instance.connect("/tmp/test.accdb"))
   ignore(instance.disconnect())
   ignore(instance.isConnected())
@@ -143,6 +143,13 @@ test("FakeSchemaAdapter.asInstance: all 22 schema methods are callable", () => {
   ignore(instance.dropIndex("I1", "T1"))
   ignore(instance.createRelationship("R1", "T1", ["C1"], "T2", ["C2"]))
   ignore(instance.deleteRelationship("R1", "T1"))
-  // All 22 compiled — test passes (no assertion needed; compile-time check)
-  assertion(~operator="equal", (a, b) => a == b, 22, 22)
+  // Plan 038: 6 new linked-table + SQL-script methods
+  ignore(instance.getLinkedTables())
+  ignore(instance.createLinkedTable("lnk1", "categories", ";DATABASE=test.accdb"))
+  ignore(instance.refreshLinkedTable("lnk1"))
+  ignore(instance.recreateLinkedTable("lnk1", "categories", ";DATABASE=test.accdb"))
+  ignore(instance.unlinkTable("lnk1"))
+  ignore(instance.executeSqlScript("/tmp/test.sql"))
+  // All 28 compiled — test passes (no assertion needed; compile-time check)
+  assertion(~operator="equal", (a, b) => a == b, 28, 28)
 })

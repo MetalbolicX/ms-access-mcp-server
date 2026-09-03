@@ -84,6 +84,34 @@ type indexInfo = {
   ignoreNulls: bool,
 }
 
+// ---------------------------------------------------------------------------
+// Linked-table + SQL-script result records (plan 038)
+// ---------------------------------------------------------------------------
+
+type linkedTableInfo = {
+  name: string,
+  sourceTable: string,
+  connectString: string,
+  type_: string,  // @as "type"
+  attributes: int,
+}
+
+type linkedTablesResult = {
+  success: bool,
+  error: option<string>,
+  linkedTables: array<linkedTableInfo>,
+}
+
+type sqlScriptResult = {
+  success: bool,
+  error: option<string>,
+  statementsExecuted: int,
+  failingStatement: option<string>,
+  failingLine: option<int>,
+  accessErrorCode: option<int>,
+  accessErrorMessage: option<string>,
+}
+
 type columnSchema = {
   name: string,
   sourceType: string,
@@ -157,4 +185,12 @@ module type SCHEMA_ADAPTER = {
   let dropIndex: (t, string, string) => Promise.t<result<ddlResult, Errors.t>>
   let createRelationship: (t, string, string, array<string>, string, array<string>) => Promise.t<result<ddlResult, Errors.t>>
   let deleteRelationship: (t, string, string) => Promise.t<result<ddlResult, Errors.t>>
+
+  // Plan 038: linked-table operations + SQL script execution
+  let getLinkedTables: t => Promise.t<result<linkedTablesResult, Errors.t>>
+  let createLinkedTable: (t, string, string, string) => Promise.t<result<ddlResult, Errors.t>>
+  let refreshLinkedTable: (t, string, ~connectString: option<string>=?) => Promise.t<result<ddlResult, Errors.t>>
+  let recreateLinkedTable: (t, string, string, string, ~attributes: option<int>=?) => Promise.t<result<ddlResult, Errors.t>>
+  let unlinkTable: (t, string) => Promise.t<result<ddlResult, Errors.t>>
+  let executeSqlScript: (t, string) => Promise.t<result<sqlScriptResult, Errors.t>>
 }

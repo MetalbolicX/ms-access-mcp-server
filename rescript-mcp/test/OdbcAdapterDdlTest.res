@@ -749,3 +749,158 @@ testAsync("DDL error: dropIndex returns Error(Driver error) when fake fails", cb
     }))
 })
 
+// ---------------------------------------------------------------------------
+// Step 1: ODBC stubs for 6 new linked-table / SQL-script operations
+// All return Ok({success: false, error: Some(<exact string>)}) on non-connected adapter
+// ---------------------------------------------------------------------------
+
+testAsync("ODBC stub: getLinkedTables returns COM-only error on non-connected adapter", cb => {
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.getLinkedTables(adapter)
+    ->Promise.then(result => {
+      switch result {
+      | Ok(r) => {
+          assertion(~operator="equal", (a, b) => a == b, r.success, false)
+            assertion(~operator="equal", (a, b) => a == b, r.error, Some("get_linked_tables requires COM automation (WinComAdapter)"))
+            assertion(~operator="equal", (a, b) => a == b, Array.length(r.linkedTables), 0)
+          }
+        | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+        Promise.resolve()
+      })
+        ->Promise.then(() => {
+      cb(~planned=3, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("ODBC stub: createLinkedTable returns COM-only error on non-connected adapter", cb => {
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.createLinkedTable(adapter, "lnk_test", "categories", ";DATABASE=test.accdb")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(r) => {
+          assertion(~operator="equal", (a, b) => a == b, r.success, false)
+            assertion(~operator="equal", (a, b) => a == b, r.error, Some("create_linked_table requires COM automation (WinComAdapter)"))
+          }
+        | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+        Promise.resolve()
+      })
+        ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("ODBC stub: refreshLinkedTable returns COM-only error on non-connected adapter", cb => {
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.refreshLinkedTable(adapter, "lnk_test")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(r) => {
+          assertion(~operator="equal", (a, b) => a == b, r.success, false)
+            assertion(~operator="equal", (a, b) => a == b, r.error, Some("refresh_linked_table requires COM automation (WinComAdapter)"))
+          }
+        | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+        Promise.resolve()
+      })
+        ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("ODBC stub: recreateLinkedTable returns COM-only error on non-connected adapter", cb => {
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.recreateLinkedTable(adapter, "lnk_test", "categories", ";DATABASE=test.accdb")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(r) => {
+          assertion(~operator="equal", (a, b) => a == b, r.success, false)
+            assertion(~operator="equal", (a, b) => a == b, r.error, Some("recreate_linked_table requires COM automation (WinComAdapter)"))
+          }
+        | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+        Promise.resolve()
+      })
+        ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("ODBC stub: unlinkTable returns COM-only error on non-connected adapter", cb => {
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.unlinkTable(adapter, "lnk_test")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(r) => {
+          assertion(~operator="equal", (a, b) => a == b, r.success, false)
+            assertion(~operator="equal", (a, b) => a == b, r.error, Some("unlink_table requires COM automation (WinComAdapter)"))
+          }
+        | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+        Promise.resolve()
+      })
+        ->Promise.then(() => {
+      cb(~planned=2, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+
+testAsync("ODBC stub: executeSqlScript returns COM-only error on non-connected adapter", cb => {
+  let adapter = makeAdapterDdl()
+  ignore(OdbcAdapter.executeSqlScript(adapter, "/tmp/test.sql")
+    ->Promise.then(result => {
+      switch result {
+      | Ok(r) => {
+          assertion(~operator="equal", (a, b) => a == b, r.success, false)
+          assertion(~operator="equal", (a, b) => a == b, r.error, Some("execute_sql_script requires COM (WinComAdapter)"))
+          assertion(~operator="equal", (a, b) => a == b, r.statementsExecuted, 0)
+          assertion(~operator="equal", (a, b) => a == b, r.failingStatement, None)
+          assertion(~operator="equal", (a, b) => a == b, r.failingLine, None)
+          assertion(~operator="equal", (a, b) => a == b, r.accessErrorCode, None)
+            assertion(~operator="equal", (a, b) => a == b, r.accessErrorMessage, None)
+          }
+        | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+        Promise.resolve()
+      })
+        ->Promise.then(() => {
+      cb(~planned=7, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_e => {
+      assertion(~operator="equal", (a, b) => a == b, false, true)
+      cb(~planned=1, ())
+      Promise.resolve()
+    }))
+})
+

@@ -1541,6 +1541,82 @@ let setQuerySql = (
 }
 
 // ---------------------------------------------------------------------------
+// Plan 038: linked-table + SQL-script ODBC stubs (COM-only operations)
+// ---------------------------------------------------------------------------
+
+// getLinkedTables — ODBC has no linked-table concept
+let getLinkedTables = (_adapter: t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
+  Promise.resolve(Ok(({
+    success: false,
+    error: Some("get_linked_tables requires COM automation (WinComAdapter)"),
+    linkedTables: [],
+  }: Interfaces.linkedTablesResult)))
+}
+
+// createLinkedTable — ODBC has no linked-table concept
+let createLinkedTable = (
+  _adapter: t,
+  _name: string,
+  _sourceTable: string,
+  _connectString: string,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  Promise.resolve(Ok(({
+    success: false,
+    error: Some("create_linked_table requires COM automation (WinComAdapter)"),
+  }: Interfaces.ddlResult)))
+}
+
+// refreshLinkedTable — ODBC has no linked-table concept
+let refreshLinkedTable = (
+  _adapter: t,
+  _name: string,
+  ~connectString: option<string>=?,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  Promise.resolve(Ok(({
+    success: false,
+    error: Some("refresh_linked_table requires COM automation (WinComAdapter)"),
+  }: Interfaces.ddlResult)))
+}
+
+// recreateLinkedTable — ODBC has no linked-table concept
+let recreateLinkedTable = (
+  _adapter: t,
+  _name: string,
+  _sourceTable: string,
+  _connectString: string,
+  ~attributes: option<int>=?,
+): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  Promise.resolve(Ok(({
+    success: false,
+    error: Some("recreate_linked_table requires COM automation (WinComAdapter)"),
+  }: Interfaces.ddlResult)))
+}
+
+// unlinkTable — ODBC has no linked-table concept
+let unlinkTable = (_adapter: t, _name: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  Promise.resolve(Ok(({
+    success: false,
+    error: Some("unlink_table requires COM automation (WinComAdapter)"),
+  }: Interfaces.ddlResult)))
+}
+
+// executeSqlScript — ODBC uses SqlBuilder, not ADO script execution
+let executeSqlScript = (
+  _adapter: t,
+  _scriptPath: string,
+): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
+  Promise.resolve(Ok(({
+    success: false,
+    error: Some("execute_sql_script requires COM (WinComAdapter)"),
+    statementsExecuted: 0,
+    failingStatement: None,
+    failingLine: None,
+    accessErrorCode: None,
+    accessErrorMessage: None,
+  }: Interfaces.sqlScriptResult)))
+}
+
+// ---------------------------------------------------------------------------
 // asInstance — produce an Instances.dataAdapterInstance from an OdbcAdapter.t
 // ---------------------------------------------------------------------------
 

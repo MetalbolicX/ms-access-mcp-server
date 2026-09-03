@@ -482,6 +482,39 @@ module FakeSchemaAdapter = {
     Promise.resolve(Ok({success: true, error: None}))
   }
 
+  // Plan 038: linked-table operations + SQL script execution
+  let getLinkedTables = (_self: t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
+    Promise.resolve(Ok({success: true, error: None, linkedTables: []}))
+  }
+
+  let createLinkedTable = (_self: t, _name: string, _sourceTable: string, _connectString: string): Promise.t<result<ddlResult, Errors.t>> => {
+    Promise.resolve(Ok({success: true, error: None}))
+  }
+
+  let refreshLinkedTable = (_self: t, _name: string, ~connectString: option<string>=?): Promise.t<result<ddlResult, Errors.t>> => {
+    Promise.resolve(Ok({success: true, error: None}))
+  }
+
+  let recreateLinkedTable = (_self: t, _name: string, _sourceTable: string, _connectString: string, ~attributes: option<int>=?): Promise.t<result<ddlResult, Errors.t>> => {
+    Promise.resolve(Ok({success: true, error: None}))
+  }
+
+  let unlinkTable = (_self: t, _name: string): Promise.t<result<ddlResult, Errors.t>> => {
+    Promise.resolve(Ok({success: true, error: None}))
+  }
+
+  let executeSqlScript = (_self: t, _scriptPath: string): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
+    Promise.resolve(Ok({
+      success: true,
+      error: None,
+      statementsExecuted: 0,
+      failingStatement: None,
+      failingLine: None,
+      accessErrorCode: None,
+      accessErrorMessage: None,
+    }))
+  }
+
   // asInstance — produce an Instances.schemaAdapterInstance from a FakeSchemaAdapter.t
   let asInstance = (self: t): Adapters.Instances.schemaAdapterInstance => {
     {
@@ -509,6 +542,22 @@ module FakeSchemaAdapter = {
       createRelationship: (name, table, cols, fTable, fCols) =>
         createRelationship(self, name, table, cols, fTable, fCols),
       deleteRelationship: (name, table) => deleteRelationship(self, name, table),
+      // Plan 038
+      getLinkedTables: () => getLinkedTables(self),
+      createLinkedTable: (name, sourceTable, connectString) =>
+        createLinkedTable(self, name, sourceTable, connectString),
+      refreshLinkedTable: (name, ~connectString=?) =>
+        switch connectString {
+        | Some(v) => refreshLinkedTable(self, name, ~connectString=?v)
+        | None => refreshLinkedTable(self, name)
+        },
+      recreateLinkedTable: (name, sourceTable, connectString, ~attributes=?) =>
+        switch attributes {
+        | Some(v) => recreateLinkedTable(self, name, sourceTable, connectString, ~attributes=?v)
+        | None => recreateLinkedTable(self, name, sourceTable, connectString)
+        },
+      unlinkTable: name => unlinkTable(self, name),
+      executeSqlScript: scriptPath => executeSqlScript(self, scriptPath),
     }
   }
 }

@@ -21,6 +21,8 @@ type ddlResult = Interfaces.ddlResult
 type queryInfo = Interfaces.queryInfo
 type columnSchema = Interfaces.columnSchema
 type indexInfo = Interfaces.indexInfo
+type linkedTablesResult = Interfaces.linkedTablesResult
+type sqlScriptResult = Interfaces.sqlScriptResult
 
 // ---------------------------------------------------------------------------
 // dataAdapterInstance — 9-field record-of-closures (record type, not class)
@@ -65,4 +67,11 @@ type schemaAdapterInstance = {
   dropIndex: (string, string) => Promise.t<result<ddlResult, Errors.t>>,
   createRelationship: (string, string, array<string>, string, array<string>) => Promise.t<result<ddlResult, Errors.t>>,
   deleteRelationship: (string, string) => Promise.t<result<ddlResult, Errors.t>>,
+  // Plan 038: linked-table operations + SQL script execution
+  getLinkedTables: unit => Promise.t<result<linkedTablesResult, Errors.t>>,
+  createLinkedTable: (string, string, string) => Promise.t<result<ddlResult, Errors.t>>,
+  refreshLinkedTable: (string, ~connectString: option<string>=?) => Promise.t<result<ddlResult, Errors.t>>,
+  recreateLinkedTable: (string, string, string, ~attributes: option<int>=?) => Promise.t<result<ddlResult, Errors.t>>,
+  unlinkTable: string => Promise.t<result<ddlResult, Errors.t>>,
+  executeSqlScript: string => Promise.t<result<sqlScriptResult, Errors.t>>,
 }

@@ -122,6 +122,22 @@ let asSchemaInstance = (dataT: OdbcAdapter.t): Instances.schemaAdapterInstance =
         }
       }
     },
+    // Plan 038: linked-table + SQL-script stubs (ODBC has no linked-table support)
+    getLinkedTables: () => OdbcAdapter.getLinkedTables(dataT),
+    createLinkedTable: (name, sourceTable, connectString) =>
+      OdbcAdapter.createLinkedTable(dataT, name, sourceTable, connectString),
+    refreshLinkedTable: (name, ~connectString=?) =>
+      switch connectString {
+      | Some(v) => OdbcAdapter.refreshLinkedTable(dataT, name, ~connectString=?v)
+      | None => OdbcAdapter.refreshLinkedTable(dataT, name)
+      },
+    recreateLinkedTable: (name, sourceTable, connectString, ~attributes=?) =>
+      switch attributes {
+      | Some(v) => OdbcAdapter.recreateLinkedTable(dataT, name, sourceTable, connectString, ~attributes=?v)
+      | None => OdbcAdapter.recreateLinkedTable(dataT, name, sourceTable, connectString)
+      },
+    unlinkTable: name => OdbcAdapter.unlinkTable(dataT, name),
+    executeSqlScript: scriptPath => OdbcAdapter.executeSqlScript(dataT, scriptPath),
   }
 }
 
