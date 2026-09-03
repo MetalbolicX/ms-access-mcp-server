@@ -1647,7 +1647,11 @@ class WinComAdapter(
                 for col in columns:
                     col_name = col["name"]
                     col_type = col.get("type", "Text")
-                    col_size = col.get("size", 255)
+                    # Treat explicit null `size` as default 255 to mirror the
+                    # ReScript adapter's _accessSqlType fallback. Without this
+                    # guard, _access_sql_type emits `VARCHAR(None)` which DAO
+                    # rejects with "Syntax error in field definition" (036-F-003).
+                    col_size = col.get("size") or 255
                     required = col.get("required", False)
                     is_autoincrement = col.get("is_autoincrement", False)
                     is_pk = col.get("primary_key", False)
