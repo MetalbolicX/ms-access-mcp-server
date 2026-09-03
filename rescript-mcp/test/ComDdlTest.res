@@ -49,6 +49,9 @@ let copyFixture: string => string = (suffix: string) => {
   dst
 }
 
+// Linked-table attributes: dbAttachExclusive | dbAttachMake (=-2147483648)
+let linkedTableAttrs = -2147483647 - 1
+
 // ---------------------------------------------------------------------------
 // Direct fixture path (for testing without copy)
 // ---------------------------------------------------------------------------
@@ -1523,4 +1526,193 @@ test("parseScriptLines: line number tracks first non-whitespace char of each sta
   // Both statements should have valid line numbers (1-based)
   assertion(~operator="greaterThan", (a, b) => a >= b, Option.getExn(Array.get(result.statements, 0)).line, 1)
   assertion(~operator="greaterThan", (a, b) => a >= b, Option.getExn(Array.get(result.statements, 1)).line, 1)
+})
+
+// ---------------------------------------------------------------------------
+// Plan 038 Step 4: Real-COM linked-table chain (createLinkedTable → getLinkedTables → refreshLinkedTable → recreateLinkedTable → unlinkTable)
+// ---------------------------------------------------------------------------
+
+testAsync("ComDdl: linked-table chain — create/get/refresh/recreate/unlink", cb => {
+  probe()
+    ->Promise.then(available => {
+      if !available {
+        Console.log("ComDdl linked-table chain: skipped (Access unavailable)")
+        cb(~planned=0, ())
+        Promise.resolve()
+      } else {
+        let suffix = uniqueSuffix()
+        let dbPath = if useDirectFixture {
+          testDbPath
+        } else {
+          copyFixture(suffix)
+        }
+        let adapter = ComDataAdapter.DaoAdapter.make()
+        ComDataAdapter.DaoAdapter.connect(adapter, dbPath)
+          ->Promise.then(connectResult => {
+            switch connectResult {
+            | Error(e) => {
+                Console.log("ComDdl linked-table chain: connect failed: " ++ Errors._message(e))
+                cb(~planned=1, ())
+                Promise.resolve()
+              }
+            | Ok(_) => {
+                let linkedTableName = "LinkedUsers_" ++ suffix
+                // Use test_db.accdb itself as the source so we have a valid ODBC/Access connect string
+                let connectStr = ";DATABASE=" ++ testDbPath
+                let attrs = linkedTableAttrs // dbAttachExclusive | dbAttachMake
+
+                ComDataAdapter.createLinkedTable(adapter, linkedTableName, "Users", connectStr)
+                  ->Promise.then(createResult => {
+                    switch createResult {
+                    | Error(e) => {
+                        Console.log("ComDdl linked-table chain: createLinkedTable failed: " ++ Errors._message(e))
+                        ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                        Promise.resolve()
+                      }
+                    | Ok(result) => {
+                        if !result.success {
+                          Console.log("ComDdl linked-table chain: createLinkedTable failed: " ++ (switch result.error {
+                            | Some(e) => e
+                            | None => "unknown"
+                          }))
+                          ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                          Promise.resolve()
+                        } else {
+                          // getLinkedTables should include the new linked table
+                          ComDataAdapter.getLinkedTables(adapter)
+                            ->Promise.then(getResult => {
+                              switch getResult {
+                              | Error(e) => {
+                                  Console.log("ComDdl linked-table chain: getLinkedTables failed: " ++ Errors._message(e))
+                                  ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                  Promise.resolve()
+                                }
+                              | Ok(linkedResult) => {
+                                  if !linkedResult.success {
+                                    Console.log("ComDdl linked-table chain: getLinkedTables returned success=false: " ++ (switch linkedResult.error {
+                                      | Some(e) => e
+                                      | None => "unknown"
+                                    }))
+                                    ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                    Promise.resolve()
+                                  } else {
+                                    let found = linkedResult.linkedTables->Array.some(lt => lt.name === linkedTableName)
+                                    assertion(~operator="equal", (a, b) => a == b, found, true)
+                                    // refreshLinkedTable — same connect, should stay valid
+                                    ComDataAdapter.refreshLinkedTable(adapter, linkedTableName, ~connectString=connectStr)
+                                      ->Promise.then(refreshResult => {
+                                        switch refreshResult {
+                                        | Error(e) => {
+                                            Console.log("ComDdl linked-table chain: refreshLinkedTable failed: " ++ Errors._message(e))
+                                            ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                            Promise.resolve()
+                                          }
+                                        | Ok(refreshOk) => {
+                                            if !refreshOk.success {
+                                              Console.log("ComDdl linked-table chain: refreshLinkedTable failed: " ++ (switch refreshOk.error {
+                                                | Some(e) => e
+                                                | None => "unknown"
+                                              }))
+                                              ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                              Promise.resolve()
+                                            } else {
+                                              // recreateLinkedTable — new name, same source
+                                              let recreatedName = linkedTableName ++ "_recreated"
+                                              ComDataAdapter.recreateLinkedTable(adapter, recreatedName, "Users", connectStr, ~attributes=attrs)
+                                                ->Promise.then(recreateResult => {
+                                                  switch recreateResult {
+                                                  | Error(e) => {
+                                                      Console.log("ComDdl linked-table chain: recreateLinkedTable failed: " ++ Errors._message(e))
+                                                      ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                                      Promise.resolve()
+                                                    }
+                                                  | Ok(recreateOk) => {
+                                                      if !recreateOk.success {
+                                                        Console.log("ComDdl linked-table chain: recreateLinkedTable failed: " ++ (switch recreateOk.error {
+                                                          | Some(e) => e
+                                                          | None => "unknown"
+                                                        }))
+                                                        ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                                        Promise.resolve()
+                                                      } else {
+                                                        // Verify recreated table appears in getLinkedTables
+                                                        ComDataAdapter.getLinkedTables(adapter)
+                                                          ->Promise.then(getResult2 => {
+                                                            switch getResult2 {
+                                                            | Error(e) => {
+                                                                Console.log("ComDdl linked-table chain: getLinkedTables after recreate failed: " ++ Errors._message(e))
+                                                                ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                                                Promise.resolve()
+                                                              }
+                                                            | Ok(linkedResult2) => {
+                                                                let foundRecreated = linkedResult2.linkedTables->Array.some(lt => lt.name === recreatedName)
+                                                                assertion(~operator="equal", (a, b) => a == b, foundRecreated, true)
+                                                                // unlinkTable the original
+                                                                ComDataAdapter.unlinkTable(adapter, linkedTableName)
+                                                                  ->Promise.then(unlinkResult => {
+                                                                    switch unlinkResult {
+                                                                    | Error(e) => {
+                                                                        Console.log("ComDdl linked-table chain: unlinkTable failed: " ++ Errors._message(e))
+                                                                        ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                                                        Promise.resolve()
+                                                                      }
+                                                                    | Ok(unlinkOk) => {
+                                                                        if !unlinkOk.success {
+                                                                          Console.log("ComDdl linked-table chain: unlinkTable failed: " ++ (switch unlinkOk.error {
+                                                                            | Some(e) => e
+                                                                            | None => "unknown"
+                                                                          }))
+                                                                          ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                                                          Promise.resolve()
+                                                                        } else {
+                                                                          // Verify original is gone from getLinkedTables
+                                                                          ComDataAdapter.getLinkedTables(adapter)
+                                                                            ->Promise.then(getResult3 => {
+                                                                              switch getResult3 {
+                                                                              | Error(e) => {
+                                                                                  Console.log("ComDdl linked-table chain: getLinkedTables after unlink failed: " ++ Errors._message(e))
+                                                                                  ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                                                                                  Promise.resolve()
+                                                                                }
+                                                                              | Ok(linkedResult3) => {
+                                                                                  let foundAfterUnlink = linkedResult3.linkedTables->Array.some(lt => lt.name === linkedTableName)
+                                                                                  assertion(~operator="equal", (a, b) => a == b, foundAfterUnlink, false)
+                                                                                  // Clean up recreated table too
+                                                                                  ComDataAdapter.unlinkTable(adapter, recreatedName)
+                                                                                    ->Promise.then(_ => {
+                                                                                      ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=2, ()); Promise.resolve() })->ignore
+                                                                                      Promise.resolve()
+                                                                                    })
+                                                                                }
+                                                                              }
+                                                                            })
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  })
+                                                              }
+                                                            }
+                                                          })
+                                                      }
+                                                    }
+                                                  }
+                                                })
+                                            }
+                                          }
+                                        }
+                                      })
+                                  }
+                                }
+                              }
+                            })
+                        }
+                      }
+                    }
+                  })
+              }
+            }
+          })
+      }
+    })
+    ->ignore
 })

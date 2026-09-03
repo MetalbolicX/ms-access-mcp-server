@@ -301,6 +301,25 @@ type _parseResult = {statements: array<_parsedStatement>}
 }
 
 // ---------------------------------------------------------------------------
+// _stripPassword — strip PWD= from connect string (ConnectPolicy.sanitize)
+// Case-sensitive regex PWD=[^;]*;?  — exact port of connect_policy.py:162
+// ---------------------------------------------------------------------------
+
+let _stripPassword = (cs: string): string =>
+  %raw("cs => cs.replace(/PWD=[^;]*;?/g, '')")(cs)
+
+// ---------------------------------------------------------------------------
+// _classifyConnectType — classify linked-table connect string by prefix
+// Returns "ODBC" / "Access" / "Excel" (default "ODBC")
+// ---------------------------------------------------------------------------
+
+let _classifyConnectType = (cs: string): string =>
+  if cs->String.startsWith("ODBC") { "ODBC" }
+  else if cs->String.startsWith("Access") { "Access" }
+  else if cs->String.startsWith("Excel") { "Excel" }
+  else { "ODBC" }
+
+// ---------------------------------------------------------------------------
 // DAO/Access type t — implements DATA_ADAPTER + SCHEMA_ADAPTER
 // ---------------------------------------------------------------------------
 
@@ -2729,7 +2748,8 @@ let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTa
   }
 };
 
-// createLinkedTable — guard triple, full implementation in Step 5
+// createLinkedTable — create a new linked table via TableDefs.Append
+// Precedent: :2410-2411 object-arg pattern for Append; CreateQueryDef :1421-1434
 let createLinkedTable = (
   self: DaoAdapter.t,
   name: string,
@@ -2744,9 +2764,77 @@ let createLinkedTable = (
     | Some(session) => {
         switch ComSession.getCurrentDb(session) {
         | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
-        | Some(_db) => {
-            // Full implementation replaces this in Step 5
-            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+        | Some(db) => {
+            // Step 1: CreateTableDef(name)
+            Bindings.Winax.WINAX_BINDING.invokeAsObject(db, "CreateTableDef", [ComInterfaces.VStr(name)])
+            ->Promise.then(tdefResult => {
+              switch tdefResult {
+              | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+              | Ok(tdefJson) => {
+                  let tdef: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefJson)
+                  // Step 2: set SourceTableName
+                  Bindings.Winax.WINAX_BINDING.set(tdef, "SourceTableName", ComInterfaces.VStr(sourceTable))
+                  ->Promise.then(_r1 => {
+                    // Step 3: set Connect (full string)
+                    Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(connectString))
+                    ->Promise.then(_r2 => {
+                      // Step 4: set Attributes — use signed form (DAO Long is signed; 0x80000000 == -2147483648)
+                      Bindings.Winax.WINAX_BINDING.set(tdef, "Attributes", ComInterfaces.VInt(-2147483648))
+                      ->Promise.then(_r3 => {
+                        // Step 5: Get TableDefs and Append
+                        Bindings.Winax.WINAX_BINDING.get(db, "TableDefs")
+                        ->Promise.then(tableDefsResult => {
+                          switch tableDefsResult {
+                          | Error(e) => {
+                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                              Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                            }
+                          | Ok(tableDefsJson) => {
+                              let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
+                              let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t")(Obj.magic(tdef))
+                              Bindings.Winax.WINAX_BINDING.invoke(tableDefs, "Append", [tdefAsVariant])
+                              ->Promise.then(_r4 => {
+                                Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                // Step 6: set Connect to password-stripped
+                                Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(_stripPassword(connectString)))
+                                ->Promise.then(_r5 => {
+                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                  Promise.resolve(Ok({success: true, error: None}))
+                                })
+                                ->Promise.catch(e6 => {
+                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                  Promise.resolve(Ok({success: false, error: Some(_exnMessage(e6))}))
+                                })
+                              })
+                              ->Promise.catch(e5 => {
+                                Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                Promise.resolve(Ok({success: false, error: Some(_exnMessage(e5))}))
+                              })
+                            }
+                          }
+                        })
+                      })
+                      ->Promise.catch(e3 => {
+                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                        Promise.resolve(Ok({success: false, error: Some(_exnMessage(e3))}))
+                      })
+                    })
+                    ->Promise.catch(e2 => {
+                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                      Promise.resolve(Ok({success: false, error: Some(_exnMessage(e2))}))
+                    })
+                  })
+                  ->Promise.catch(e1 => {
+                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                    Promise.resolve(Ok({success: false, error: Some(_exnMessage(e1))}))
+                  })
+                }
+              }
+            })
+            ->Promise.catch(e0 => {
+              Promise.resolve(Ok({success: false, error: Some(_exnMessage(e0))}))
+            })
           }
         }
       }
@@ -2754,7 +2842,8 @@ let createLinkedTable = (
   }
 };
 
-// refreshLinkedTable — guard triple, full implementation in Step 5
+// refreshLinkedTable — D6: look up TableDefs(name), optionally set Connect, call RefreshLink, strip password
+// Precedent: createLinkedTable pattern; named-access via invokeAsObject :1313
 let refreshLinkedTable = (
   self: DaoAdapter.t,
   name: string,
@@ -2768,9 +2857,46 @@ let refreshLinkedTable = (
     | Some(session) => {
         switch ComSession.getCurrentDb(session) {
         | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
-        | Some(_db) => {
-            // Full implementation replaces this in Step 5
-            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+        | Some(db) => {
+            Bindings.Winax.WINAX_BINDING.invokeAsObject(db, "TableDefs", [ComInterfaces.VStr(name)])
+            ->Promise.then(tdefResult => {
+              switch tdefResult {
+              | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+              | Ok(tdefJson) => {
+                  let tdef: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefJson)
+                  let setConnectOpt = switch connectString {
+                  | Some(cs) =>
+                    Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(cs))
+                    ->Promise.then(_ => Promise.resolve(Ok()))
+                  | None => Promise.resolve(Ok())
+                  }
+                  setConnectOpt->Promise.then(_ => {
+                    Bindings.Winax.WINAX_BINDING.invoke(tdef, "RefreshLink", [])
+                    ->Promise.then(_ => {
+                      let readRaw = %raw("(h) => h && h.__p__ && h.__p__.Connect != null ? h.__p__.Connect : ''")(tdef)
+                      Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(_stripPassword(readRaw)))
+                      ->Promise.then(_ => {
+                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                        Promise.resolve(Ok({success: true, error: None}))
+                      })
+                      ->Promise.catch(e => {
+                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                        Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                      })
+                    })
+                    ->Promise.catch(e => {
+                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                      Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                    })
+                  })
+                  ->Promise.catch(e => {
+                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                    Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                  })
+                }
+              }
+            })
+            ->Promise.catch(e => Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))})))
           }
         }
       }
@@ -2778,7 +2904,8 @@ let refreshLinkedTable = (
   }
 };
 
-// recreateLinkedTable — guard triple, full implementation in Step 5
+// recreateLinkedTable — D6: capture old attrs, delete, create with sourceTable/connect, restore attrs
+// Precedent: createLinkedTable pattern; collection Delete :1354-1370
 let recreateLinkedTable = (
   self: DaoAdapter.t,
   name: string,
@@ -2794,9 +2921,105 @@ let recreateLinkedTable = (
     | Some(session) => {
         switch ComSession.getCurrentDb(session) {
         | None => Promise.resolve(Ok({success: false, error: Some("No DB handle")}))
-        | Some(_db) => {
-            // Full implementation replaces this in Step 5
-            Promise.resolve(Ok({success: false, error: Some("Not connected")}))
+        | Some(db) => {
+              let resolveAttrs: unit => Promise.t<int> = () =>
+                switch attributes {
+                | Some(a) => Promise.resolve(a)
+                | None =>
+                  Bindings.Winax.WINAX_BINDING.invokeAsObject(db, "TableDefs", [ComInterfaces.VStr(name)])
+                  ->Promise.then(result =>
+                    switch result {
+                    | Error(_) => Promise.resolve(-2147483648)
+                    | Ok(tdefJson) => {
+                        let tdef: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefJson)
+                        let rawAttrs: float = %raw("(h) => h && h.__p__ ? (Number(h.__p__.Attributes) || 0) : 2147483648")(tdef)
+                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                        Promise.resolve(Float.toInt(rawAttrs))
+                      }
+                    }
+                  )
+                }
+            resolveAttrs()->Promise.then(attrs => {
+              Bindings.Winax.WINAX_BINDING.get(db, "TableDefs")
+              ->Promise.then(tableDefsResult =>
+                switch tableDefsResult {
+                | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                | Ok(tableDefsJson) => {
+                    let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
+                    Bindings.Winax.WINAX_BINDING.invoke(tableDefs, "Delete", [ComInterfaces.VStr(name)])
+                    ->Promise.then(_ => {
+                      Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                      Bindings.Winax.WINAX_BINDING.invokeAsObject(db, "CreateTableDef", [ComInterfaces.VStr(name)])
+                      ->Promise.then(tdefResult =>
+                        switch tdefResult {
+                        | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                        | Ok(tdefJson) => {
+                            let tdef: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefJson)
+                            Bindings.Winax.WINAX_BINDING.set(tdef, "SourceTableName", ComInterfaces.VStr(sourceTable))
+                            ->Promise.then(_ => {
+                              Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(connectString))
+                              ->Promise.then(_ => {
+                                Bindings.Winax.WINAX_BINDING.set(tdef, "Attributes", ComInterfaces.VInt(attrs))
+                                ->Promise.then(_ => {
+                                  Bindings.Winax.WINAX_BINDING.get(db, "TableDefs")
+                                  ->Promise.then(tdefsResult =>
+                                    switch tdefsResult {
+                                    | Error(e) => {
+                                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                        Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                                      }
+                                    | Ok(tdefsJson) => {
+                                        let tdefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefsJson)
+                                        let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t")(Obj.magic(tdef))
+                                        Bindings.Winax.WINAX_BINDING.invoke(tdefs, "Append", [tdefAsVariant])
+                                        ->Promise.then(_ => {
+                                          Bindings.Winax.WINAX_BINDING.release(tdefs)->ignore
+                                          Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(_stripPassword(connectString)))
+                                          ->Promise.then(_ => {
+                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                            Promise.resolve(Ok({success: true, error: None}))
+                                          })
+                                          ->Promise.catch(e6 => {
+                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                            Promise.resolve(Ok({success: false, error: Some(_exnMessage(e6))}))
+                                          })
+                                        })
+                                        ->Promise.catch(e5 => {
+                                          Bindings.Winax.WINAX_BINDING.release(tdefs)->ignore
+                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                          Promise.resolve(Ok({success: false, error: Some(_exnMessage(e5))}))
+                                        })
+                                      }
+                                    }
+                                  )
+                                })
+                                ->Promise.catch(e4 => {
+                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                  Promise.resolve(Ok({success: false, error: Some(_exnMessage(e4))}))
+                                })
+                              })
+                              ->Promise.catch(e3 => {
+                                Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                Promise.resolve(Ok({success: false, error: Some(_exnMessage(e3))}))
+                              })
+                            })
+                            ->Promise.catch(e2 => {
+                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                              Promise.resolve(Ok({success: false, error: Some(_exnMessage(e2))}))
+                            })
+                          }
+                        }
+                      )
+                      ->Promise.catch(e1 => Promise.resolve(Ok({success: false, error: Some(_exnMessage(e1))})))
+                    })
+                    ->Promise.catch(e => {
+                      Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                      Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                    })
+                  }
+                }
+              )
+            })
           }
         }
       }
