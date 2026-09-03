@@ -19,7 +19,7 @@
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawnSync, execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { SpawnSyncReturns } from "node:child_process";
 
@@ -167,7 +167,27 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
     encoding: "utf8",
     timeout: 60_000,
   });
+  const text = (result.stdout ?? "").trim();
+
+  // Plan 036 T4: tolerate non-zero exit IF the child wrote a valid envelope
+  // to stdout before crashing. This accommodates the COM winax teardown
+  // crash (033-F-001: "MultiIsolatePlatform::DisposeIsolate", exit 134)
+  // which happens AFTER the ReScript child has already serialized the
+  // result. The envelope is the contract; the exit code is secondary.
+  // A genuine crash that prevents serialization (no stdout) still produces
+  // driverError via the empty-output check below.
   if (result.status !== 0) {
+    if (text) {
+      try {
+        const envelope = JSON.parse(text) as DriverEnvelope;
+        return { ok: true, result: envelope, stderr: (result.stderr ?? "").slice(0, 2000) };
+      } catch {
+        // stdout present but not valid JSON — fall through to driver error
+      }
+    }
+    if (!text) {
+      return { ok: false, driverError: `${label} exit ${result.status} (no output)`, stderr: (result.stderr ?? "").slice(0, 2000) };
+    }
     return {
       ok: false,
       driverError: `${label} exit ${result.status}`,
@@ -175,7 +195,6 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
       stdout: result.stdout ?? "",
     };
   }
-  const text = (result.stdout ?? "").trim();
   if (!text) {
     return { ok: false, driverError: `${label} produced no output`, stderr: (result.stderr ?? "").slice(0, 1000) };
   }
@@ -263,6 +282,19 @@ pinnedEnv.ACCESS_MCP_ALLOWED_DIRS = [
 for (const caseFile of caseFiles) {
   const casePath = join(casesDir, caseFile);
   const caseObj: CaseFile = JSON.parse(readFileSync(casePath, "utf8"));
+  const variant = (caseObj as CaseFile).variant ?? "odbc";
+
+  // Plan 036 T4: kill any lingering MSACCESS.EXE before each COM case so
+  // the 033-F-001 teardown crash from the previous ReScript child doesn't
+  // leave Access holding the .accdb lock (otherwise the next python WinCom
+  // child hits "You already have the database open"). No-op for ODBC.
+  if (variant === "com" && process.platform === "win32") {
+    try {
+      execSync("taskkill /F /IM MSACCESS.EXE 2>nul", { stdio: "ignore", shell: "cmd.exe" });
+    } catch {
+      // taskkill exits 1 when no process matches; that's fine
+    }
+  }
 
   // Skip short-circuit: skip cases are excluded from matched/errored counts
   if (caseObj.skip === true) {
@@ -272,7 +304,6 @@ for (const caseFile of caseFiles) {
   }
 
   const mutating = caseObj.mutating === true || Array.isArray(caseObj.setup);
-  const variant = (caseObj as CaseFile).variant ?? "odbc";
   const needsConnect = caseObj.operation !== "connect_access";
 
   // Allocate per-side fixture copies for mutating cases. For non-
@@ -297,7 +328,7 @@ for (const caseFile of caseFiles) {
     runChild(
       PYTHON,
       [PYTHON_DRIVER, JSON.stringify({ operation: "connect_access", args: {} })],
-      { ...pinnedEnv, ACCESS_TEST_DB: pyFixture, PARITY_EXPORT_DIR: tmpdir() },
+      { ...pinnedEnv, ACCESS_TEST_DB: pyFixture, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant },
       "python-prime",
     );
   }

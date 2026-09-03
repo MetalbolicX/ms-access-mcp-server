@@ -15,7 +15,5 @@
       }
     }
   ],
-  "skip": true,
-  "skipReason": "Python oracle uses ODBC.create_query which Access ACE rejects (CREATE VIEW with bracketed identifier fails); oracle cannot establish prerequisite state for this case on either variant",
   "volatileFields": []
 }

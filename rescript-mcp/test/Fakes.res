@@ -56,6 +56,20 @@ module CallLog = {
       }
     )
   }
+
+  // methodCalled — true if a SchemaCall with the given method name was logged.
+  // Added for plan 036 T2 Facade.createQuery / setQuerySql / deleteQuery tests.
+  // Uses List.filter (known-good in this codebase) + length check, since
+  // List.exists label shape differs across rescript stdlib versions.
+  let methodCalled = (name: string): bool => {
+    let matches = List.filter(entries.contents, e =>
+      switch e {
+      | SchemaCall(_, m) => m == name
+      | _ => false
+      }
+    )
+    List.length(matches) > 0
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -388,22 +402,25 @@ module FakeSchemaAdapter = {
   }
 
   let createQuery = (
-    _self: t,
+    self: t,
     _queryName: string,
     _sql: string,
   ): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "createQuery"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 
   let setQuerySql = (
-    _self: t,
+    self: t,
     _queryName: string,
     _sql: string,
   ): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "setQuerySql"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 
-  let deleteQuery = (_self: t, _queryName: string): Promise.t<result<ddlResult, Errors.t>> => {
+  let deleteQuery = (self: t, _queryName: string): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "deleteQuery"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 

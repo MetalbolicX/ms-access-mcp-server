@@ -370,6 +370,23 @@ async function main() {
   }
 
   process.stdout.write(JSON.stringify(envelope));
+
+  // Plan 036 T4: explicit process.exit(0) after the envelope is serialized.
+  // The COM winax binding triggers a native teardown crash (033-F-001) during
+  // V8 isolate disposal AFTER the event loop drains, which surfaces as exit
+  // 134 / "MultiIsolatePlatform::DisposeIsolate" and is misinterpreted by the
+  // parent runner. Since the result is already on stdout, a clean exit
+  // sidesteps the crash. The runner's missing-stdout ⇒ DRIVER-error contract
+  // (run.ts:180) still holds: a genuine crash that prevents serialization
+  // will produce no stdout and be classified correctly.
+  //
+  // For the COM variant, the 5s teardown sleep must run BEFORE exit so the
+  // Access.Application releases the .accdb lock (otherwise the next Python
+  // WinCom child hits "You already have the database open").
+  if (useCom) {
+    await new Promise<void>((r) => setTimeout(r, 5000));
+  }
+  process.exit(0);
 }
 
 main().catch((err: unknown) => {

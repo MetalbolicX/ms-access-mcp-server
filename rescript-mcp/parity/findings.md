@@ -591,3 +591,156 @@ rejected), so the COM `generate_sql` parity case must skip.
 
 ### Status
 034-F-004 **RESOLVED**. Plan 035 marked **DONE**.
+
+---
+
+## 036-F-001: Python Parity Oracle COM Path Silently Degraded to ODBC
+
+**Finding ID**: 036-F-001
+**Phase**: Plan 036 T1 (parity oracle COM fix)
+**Discovered**: Plan 036 (2026-09-02), branch `rescript/036-parity-oracle-com-fix`
+**Severity**: High — COM parity was unproven for the entire pre-existing COM suite
+
+### Summary
+`rescript-mcp/scripts/parity_driver.py:36` imported a module
+`ms_access_mcp.adapters.win_com_adapter` that does not exist. The real
+`WinComAdapter` lives in `adapters/wincom.py`. The `ImportError` fallback
+(`:38-39`) set `_HAS_WINCOM=False`, so `_connect` (`:112-119`) always
+constructed an `OdbcAdapter` — even when `PARITY_VARIANT=com`. Consequence:
+`parity:northwind:com:ddl`'s "6 matched" was actually an ODBC oracle vs a
+COM subject, not real COM parity.
+
+### Root cause
+Stale import line carried over from when a `win_com_adapter` shim may have
+existed; the real implementation path was always `wincom.py` (per
+`wincom.py:45-54`).
+
+### Fix
+Changed the import to `from ms_access_mcp.adapters.wincom import WinComAdapter`.
+Verified `WinComAdapter` resolves at runtime. `_HAS_WINCOM` is now `True`.
+
+### Status
+**RESOLVED** — Plan 036 T1.1. Oracle now actually runs COM for
+`PARITY_VARIANT=com`.
+
+---
+
+## 036-F-002: Prime Spawn Dropped `PARITY_VARIANT`
+
+**Finding ID**: 036-F-002
+**Phase**: Plan 036 T1 (parity oracle COM fix)
+**Discovered**: Plan 036 (2026-09-02)
+**Severity**: Medium — the prime spawn (used by COM cases needing a
+pre-connect) silently used the wrong variant.
+
+### Summary
+`rescript-mcp/parity/run.ts:297-302` (the python `connect_access` prime
+spawn) forwarded `ACCESS_TEST_DB` and `PARITY_EXPORT_DIR` but not
+`PARITY_VARIANT`. The measured-child contract at `:195` and `:204` does
+forward it, so a single case's measured run was correct — but a prime
+spawn for a COM case opened an ODBC connection on the python side, while
+the measured run opened a COM one. State drift between prime and measured
+on the python side.
+
+### Fix
+Added `PARITY_VARIANT: variant` to the prime spawn's forwarded env.
+Aligned with the measured-child contract.
+
+### Status
+**RESOLVED** — Plan 036 T1.2.
+
+---
+
+## 036-F-003: `WinComAdapter.create_table` Produces `VARCHAR(None)` for Explicit `size: null`
+
+**Finding ID**: 036-F-003
+**Phase**: Plan 036 T1.4 (oracle flip triage)
+**Discovered**: Plan 036 (2026-09-02)
+**Severity**: Medium — Python adapter bug, surfaces for any user passing
+`"size": null` in a `create_table` call.
+
+### Summary
+`src/ms_access_mcp/adapters/wincom.py` (and `dao.py`) computed column size
+with `col.get("size", 255)`. When the JSON had `"size": null`, the `get`
+returned `None` (not the default), which propagated to
+`_access_sql_type(None)` and produced `f"VARCHAR({None})"` → SQL
+`VARCHAR(None)`. DAO rejected with "Syntax error in field definition" (jet
+error 5003292). The ReScript side handled `size: null` correctly (its
+`int` type coerced null to 0, the default branch sized to 255).
+
+### Fix
+One-line guard: `col_size = col.get("size") or 255` (treats `None` as
+default 255), mirroring the ReScript `_accessSqlType` fallback. Also
+documented with a comment citing 036-F-003.
+
+### Status
+**RESOLVED** — Plan 036 T1.4. The `cases/northwind/com/ddl/create_table.json`
+case now matches (case args kept as `INT`/`VARCHAR` per user intent; the
+adapter is now correct).
+
+---
+
+## 033-F-001 REFRAMED: Crash Happens During the Op, Not Post-Serialization
+
+**Finding ID**: 033-F-001 (reframed)
+**Phase**: Plan 036 T4 (033-F-001 workaround)
+**Discovered**: Plan 033 (original); reframed in Plan 036
+**Severity**: High — un-skippable without a real winax dispose-ordering fix.
+
+### Original framing (plan 033)
+COM teardown native crash on child exit (`MultiIsolatePlatform::DisposeIsolate`,
+exit 134), post-serialization. Implied the result was safely on stdout and
+the exit code was incidental.
+
+### Reframed finding (plan 036)
+The crash for `generate_sql` happens DURING the op (no stdout is written;
+runner classifies as DRIVER exit 134 with no output). The post-serialization
+theory was wrong for this op. The runner contract (T4) now tolerates
+non-zero exit IF stdout carries a valid envelope, and the runner kills
+`MSACCESS.EXE` before each COM case to avoid "You already have the database
+open" from the prior ReScript child. These together un-skip the OTHER
+previously-skipped cases (`delete_query`, `set_query_sql`) but NOT
+`generate_sql` on COM.
+
+### Fix applied
+- `runRescript.ts`: after envelope serialization, a 5s COM teardown sleep
+  (when `useCom`) followed by `process.exit(0)` — defensive but ineffective
+  for the during-op crash.
+- `run.ts` `runChild`: tolerates non-zero exit when stdout is a valid
+  envelope (the contract improvement).
+- `run.ts` main loop: `taskkill /F /IM MSACCESS.EXE` before each COM case
+  on Windows.
+- `com/ddl/generate_sql.json` re-marked `skip: true` with an updated
+  reason citing 033-F-001 and the during-op reframe.
+
+### Status
+033-F-001 **REFRAMED — open for real fix**. Plan 036 T4 partial: runner
+improvements landed; the `generate_sql` COM case stays skipped. Plan 037
+or later should investigate the winax dispose-ordering root cause.
+
+---
+
+## 036-F-004: `parity_driver._shape_get_indexes` Referenced Nonexistent `IndexInfo.table`
+
+**Finding ID**: 036-F-004
+**Phase**: Plan 036 T1.4 (oracle flip triage)
+**Discovered**: Plan 036 (2026-09-02)
+**Severity**: Low — Python oracle shaper bug, masked by ODBC's `[]` return
+for indexes (the loop never ran).
+
+### Summary
+`rescript-mcp/scripts/parity_driver.py:378` (now 382) did
+`"table": idx.table` on `IndexInfo` objects. The `IndexInfo` Pydantic model
+(`src/ms_access_mcp/models/database.py:91-98`) has no `table` field — it's
+`{name, columns, is_unique, is_primary, ignore_nulls}`. The implicit
+`table_name` argument supplies the table. Also: `idx.unique` and
+`idx.ignoreNulls` are `is_unique` and `ignore_nulls` on the model. With
+the COM oracle now active, indexes are returned, so the loop runs and the
+shaper AttributeErrors with `'IndexInfo' object has no attribute 'table'`.
+
+### Fix
+Shaper rewritten to use `table_name` argument and the correct Pydantic
+field names. Comment notes ODBC's `[]` by contract.
+
+### Status
+**RESOLVED** — Plan 036 T1.4.

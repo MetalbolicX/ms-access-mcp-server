@@ -846,7 +846,8 @@ let getDatabaseStatistics = (
 // DDL operations — mirror ISchemaAdapter surface (034 plan)
 // Guard order: assertNotReadonly, schemaAdapterForName
 // Disconnected message: "Not connected to database"
-// No createQuery here — winax limitation (034-F-001)
+// createQuery is wired here (034-F-001 resolved in plan 034; landed in
+// plan 036 closing the latent TypeError in the parity runner dispatch).
 // ---------------------------------------------------------------------------
 
 // shapeDdlResult — unwrap result<ddlResult, Errors.t> into {success, error}
@@ -1138,6 +1139,30 @@ let deleteQuery = (
       | Error(err) => Promise.resolve(shapeErr(err))
       | Ok(adapter) =>
         adapter.deleteQuery(queryName)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// createQuery — DAO QueryDefs.Append (or CREATE VIEW on ODBC)
+// Closes the latent TypeError the parity runner exposed: the schema adapter
+// surface, the typed facade.d.ts, and runRescript dispatch all expected a
+// Facade.createQuery that the wrapper module itself never exported.
+let createQuery = (
+  facade: t,
+  ~queryName: string,
+  ~sql: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="create_query") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.createQuery(queryName, sql)
           ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
       }
     }

@@ -2145,3 +2145,94 @@ test("Facade: no Bindings imports in Facade.res source", () => {
   let hasNoBindings = true
   assertion(~operator="equal", (a, b) => a == b, hasNoBindings, true)
 })
+
+// ---------------------------------------------------------------------------
+// DDL surface — plan 036 T2 (closes Facade.createQuery + parity wiring)
+// ---------------------------------------------------------------------------
+
+testAsync("createQuery: routes to schema adapter createQuery and returns success envelope", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("cq-happy"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.createQuery(facade, ~queryName="qry_NewQ", ~sql="SELECT 1")
+        ->Promise.then(result => {
+          let isSuccess = getDictBool(result, "success") == Some(true)
+          let noError = switch getDictStr(result, "error") {
+          | Some(_) => false
+          | None => true
+          }
+          let adapterCalled = Fakes.CallLog.methodCalled("createQuery")
+          assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, noError, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+          cb(~planned=3, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("createQuery: readonly rejects with Read-only mode error and does not call adapter", cb => {
+  let readonlyFacade = Facade.make(
+    ~factory=makeFakeFactory(),
+    ~comAvailable=false,
+    ~readonly=() => true,
+    ~allowedDirs=() => [NodeJs.Os.homedir()],
+  )
+  Facade.connectAccess(readonlyFacade, ~dbPath=testPath("cq-ro"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.createQuery(readonlyFacade, ~queryName="qry_Ro", ~sql="SELECT 1")
+        ->Promise.then(result => {
+          let isFailure = getDictBool(result, "success") == Some(false)
+          let hasRoError = switch getDictStr(result, "error") {
+          | Some(msg) => String.includes(msg, "Read-only mode")
+          | None => false
+          }
+          let adapterNotCalled = Fakes.CallLog.methodCalled("createQuery") == false
+          assertion(~operator="equal", (a, b) => a == b, isFailure, true)
+          assertion(~operator="equal", (a, b) => a == b, hasRoError, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterNotCalled, true)
+          cb(~planned=3, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("setQuerySql: routes to schema adapter setQuerySql and returns success envelope", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("sqs-happy"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.setQuerySql(facade, ~queryName="qry_NewQ", ~sql="SELECT 2")
+        ->Promise.then(result => {
+          let isSuccess = getDictBool(result, "success") == Some(true)
+          let adapterCalled = Fakes.CallLog.methodCalled("setQuerySql")
+          assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+          cb(~planned=2, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("deleteQuery: routes to schema adapter deleteQuery and returns success envelope", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("dq-happy"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.deleteQuery(facade, ~queryName="qry_Doomed")
+        ->Promise.then(result => {
+          let isSuccess = getDictBool(result, "success") == Some(true)
+          let adapterCalled = Fakes.CallLog.methodCalled("deleteQuery")
+          assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+          cb(~planned=2, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})

@@ -33,7 +33,7 @@ from ms_access_mcp.adapters.odbc import OdbcAdapter  # noqa: E402
 
 # Import WinComAdapter for COM variant
 try:
-    from ms_access_mcp.adapters.win_com_adapter import WinComAdapter  # noqa: E402
+    from ms_access_mcp.adapters.wincom import WinComAdapter  # noqa: E402
     _HAS_WINCOM = True
 except ImportError:
     _HAS_WINCOM = False
@@ -369,16 +369,20 @@ def _shape_drop_index(adapter: OdbcAdapter, table_name: str, index_name: str) ->
 
 
 def _shape_get_indexes(adapter: OdbcAdapter, table_name: str) -> dict[str, Any]:
-    """Wrap adapter.get_indexes — ReScript: {success, indexes: [], count: int}."""
+    """Wrap adapter.get_indexes - ReScript: {success, indexes: [], count: int}.
+
+    IndexInfo model: {name, columns, is_unique, is_primary, ignore_nulls}.
+    The `table` field is implicit (table_name arg); ODBC returns [] by contract.
+    """
     indexes = adapter.get_indexes(table_name)
     index_dicts = []
     for idx in indexes:
         index_dicts.append({
             "name": idx.name,
-            "table": idx.table,
+            "table": table_name,
             "columns": list(idx.columns),
-            "unique": idx.unique,
-            "ignoreNulls": False,
+            "unique": idx.is_unique,
+            "ignoreNulls": idx.ignore_nulls,
         })
     return {
         "success": True,
@@ -402,6 +406,16 @@ def _shape_delete_query(adapter: OdbcAdapter, query_name: str) -> dict[str, Any]
 def _shape_create_query(adapter: OdbcAdapter, query_name: str, sql: str) -> dict[str, Any]:
     """Wrap adapter.create_query — ReScript ddlResult: {success, error?}."""
     result = adapter.create_query(query_name, sql)
+    return _shape_ddl_result(result)
+
+
+def _shape_generate_sql(adapter: WinComAdapter, output_path: str) -> dict[str, Any]:
+    """Wrap adapter.generate_sql — ReScript ddlResult: {success, error?}.
+
+    Python returns {success, path, statements, tables}; the ReScript facade
+    shaper drops the extended fields, so we normalize to {success, error} here.
+    """
+    result = adapter.generate_sql(output_path)
     return _shape_ddl_result(result)
 
 
@@ -466,7 +480,9 @@ def _run_op(adapter: OdbcAdapter, step: dict[str, Any]) -> dict[str, Any]:
     if operation == "create_query":
         return _shape_create_query(adapter, args["query_name"], args["sql"])
     if operation == "generate_sql":
-        # ODBC variant does not support generate_sql (DAO-only)
+        # WinCom/DAO can write DDL; ODBC cannot.
+        if isinstance(adapter, WinComAdapter):
+            return _shape_generate_sql(adapter, args["output_path"])
         return {"success": False, "error": "Not available via ODBC"}
     raise ValueError(f"unknown operation: {operation}")
 

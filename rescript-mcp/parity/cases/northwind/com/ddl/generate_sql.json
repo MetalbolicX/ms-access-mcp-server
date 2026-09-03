@@ -7,6 +7,6 @@
   "variant": "com",
   "mutating": true,
   "skip": true,
-  "skipReason": "033-F-001 COM teardown native crash (ReScript exit 134, MultiIsolatePlatform::DisposeIsolate)",
+  "skipReason": "033-F-001 COM teardown native crash happens during generateSql (ReScript exit 134 with no stdout); not post-serialization as plan 036 T4 theorized. Real fix requires winax dispose-ordering work tracked separately. The runner contract (T4) now tolerates non-zero exit + valid stdout, and the MSACCESS pre-cleanup is in place, so this case is un-skippable only by a real 033-F-001 fix.",
   "volatileFields": []
 }
