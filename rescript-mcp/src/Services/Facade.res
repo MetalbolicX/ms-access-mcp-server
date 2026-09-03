@@ -871,6 +871,85 @@ let _shapeDdlResult = (r: result<Interfaces.ddlResult, Errors.t>): dict<JSON.t> 
   }
 }
 
+// _shapeLinkedTablesResult — Python success has NO error key; failure has NO linked_tables key.
+// Emit per-outcome keys exactly.
+let _shapeLinkedTablesResult = (r: result<Interfaces.linkedTablesResult, Errors.t>): dict<JSON.t> => {
+  switch r {
+  | Ok({success, error, linkedTables}) => {
+      let result = Dict.make()
+      Dict.set(result, "success", JSON.Boolean(success))
+      if success {
+        let arr = Array.map(linkedTables, lt => {
+          let d = Dict.make()
+          Dict.set(d, "name", JSON.String(lt.name))
+          Dict.set(d, "source_table", JSON.String(lt.sourceTable))
+          Dict.set(d, "connect_string", JSON.String(lt.connectString))
+          Dict.set(d, "type", JSON.String(lt.type_))
+          Dict.set(d, "attributes", JSON.Number(Int.toFloat(lt.attributes)))
+          JSON.Object(d)
+        })
+        Dict.set(result, "linked_tables", JSON.Array(arr))
+      } else {
+        Dict.set(result, "error", switch error {
+          | Some(e) => JSON.String(e)
+          | None => JSON.Null
+        })
+      }
+      result
+    }
+  | Error(e) => {
+      let result = Dict.make()
+      Dict.set(result, "success", JSON.Boolean(false))
+      Dict.set(result, "error", JSON.String(Errors._message(e)))
+      result
+    }
+  }
+}
+
+// _shapeSqlScriptResult — Python envelopes always carry all 7 keys
+// (wincom.py:1103-1137). Emit per-outcome keys exactly.
+let _shapeSqlScriptResult = (r: result<Interfaces.sqlScriptResult, Errors.t>): dict<JSON.t> => {
+  switch r {
+  | Ok({success, error, statementsExecuted, failingStatement, failingLine, accessErrorCode, accessErrorMessage}) => {
+      let result = Dict.make()
+      Dict.set(result, "success", JSON.Boolean(success))
+      Dict.set(result, "statements_executed", JSON.Number(Int.toFloat(statementsExecuted)))
+      Dict.set(result, "failing_statement", switch failingStatement {
+        | Some(s) => JSON.String(s)
+        | None => JSON.Null
+      })
+      Dict.set(result, "failing_line", switch failingLine {
+        | Some(n) => JSON.Number(Int.toFloat(n))
+        | None => JSON.Null
+      })
+      Dict.set(result, "access_error_code", switch accessErrorCode {
+        | Some(n) => JSON.Number(Int.toFloat(n))
+        | None => JSON.Null
+      })
+      Dict.set(result, "access_error_message", switch accessErrorMessage {
+        | Some(s) => JSON.String(s)
+        | None => JSON.Null
+      })
+      Dict.set(result, "error", switch error {
+        | Some(e) => JSON.String(e)
+        | None => JSON.Null
+      })
+      result
+    }
+  | Error(e) => {
+      let result = Dict.make()
+      Dict.set(result, "success", JSON.Boolean(false))
+      Dict.set(result, "statements_executed", JSON.Number(0.0))
+      Dict.set(result, "failing_statement", JSON.Null)
+      Dict.set(result, "failing_line", JSON.Null)
+      Dict.set(result, "access_error_code", JSON.Null)
+      Dict.set(result, "access_error_message", JSON.Null)
+      Dict.set(result, "error", JSON.String(Errors._message(e)))
+      result
+    }
+  }
+}
+
 // _dictToColumnSchema — convert Python oracle dict {name, type, size?, nullable?}
 // to Interfaces.columnSchema {name, sourceType, maxLength, allowNull, isAutoincrement, defaultValue}
 // Used when the harness sends Python-format column dicts.
@@ -1288,6 +1367,134 @@ let _jsonValueToString = (v: JSON.t): string => {
   | JSON.Null => ""
   | JSON.Array(_) => JSON.stringify(JSON.Array([]))
   | JSON.Object(_) => JSON.stringify(JSON.Object(Dict.make()))
+  }
+}
+
+// getLinkedTables — generateSql precedent: no readonly guard
+let getLinkedTables = (
+  facade: t,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(adapter) =>
+    adapter.getLinkedTables()
+      ->Promise.then(r => Promise.resolve(_shapeLinkedTablesResult(r)))
+  }
+}
+
+// createLinkedTable — readonly guard, then schema adapter
+let createLinkedTable = (
+  facade: t,
+  ~tableName: string,
+  ~sourceTable: string,
+  ~connectString: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="create_linked_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.createLinkedTable(tableName, sourceTable, connectString)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// refreshLinkedTable — readonly guard, then schema adapter
+let refreshLinkedTable = (
+  facade: t,
+  ~tableName: string,
+  ~connectString: option<string>=?,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="refresh_linked_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) => {
+          let result = switch connectString {
+          | Some(cs) => adapter.refreshLinkedTable(tableName, ~connectString=Some(cs))
+          | None => adapter.refreshLinkedTable(tableName)
+          }
+          result->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+        }
+      }
+    }
+  }
+}
+
+// recreateLinkedTable — readonly guard, then schema adapter
+let recreateLinkedTable = (
+  facade: t,
+  ~tableName: string,
+  ~sourceTable: string,
+  ~connectString: string,
+  ~attributes: option<int>=?,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="recreate_linked_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) => {
+          let result = switch attributes {
+          | Some(attrs) => adapter.recreateLinkedTable(tableName, sourceTable, connectString, ~attributes=Some(attrs))
+          | None => adapter.recreateLinkedTable(tableName, sourceTable, connectString)
+          }
+          result->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+        }
+      }
+    }
+  }
+}
+
+// unlinkTable — readonly guard, then schema adapter
+let unlinkTable = (
+  facade: t,
+  ~tableName: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="unlink_table") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.unlinkTable(tableName)
+          ->Promise.then(r => Promise.resolve(_shapeDdlResult(r)))
+      }
+    }
+  }
+}
+
+// executeSqlScript — readonly guard, then schema adapter
+let executeSqlScript = (
+  facade: t,
+  ~scriptPath: string,
+  ~name: option<string>=?,
+): Promise.t<dict<JSON.t>> => {
+  let connName = name->Option.getWithDefault("default")
+  switch assertNotReadonly(facade, ~opName="execute_sql_script") {
+  | Error(err) => Promise.resolve(shapeErr(err))
+  | Ok(_) => {
+      switch schemaAdapterForName(facade, ~name=connName, ~notConnectedMsg="Not connected to database") {
+      | Error(err) => Promise.resolve(shapeErr(err))
+      | Ok(adapter) =>
+        adapter.executeSqlScript(scriptPath)
+          ->Promise.then(r => Promise.resolve(_shapeSqlScriptResult(r)))
+      }
+    }
   }
 }
 

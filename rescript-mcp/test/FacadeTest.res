@@ -2236,3 +2236,136 @@ testAsync("deleteQuery: routes to schema adapter deleteQuery and returns success
     })
     ->ignore
 })
+
+// ---------------------------------------------------------------------------
+// Linked-table + SQL-script surface — plan 038 T2
+// ---------------------------------------------------------------------------
+
+testAsync("getLinkedTables: routes to schema adapter and returns linked_tables key", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("glt-happy"))
+    ->Promise.then(_r => {
+      Facade.getLinkedTables(facade)
+        ->Promise.then(result => {
+          let isSuccess = getDictBool(result, "success") == Some(true)
+          let hasLinkedTables = Js.Dict.get(result, "linked_tables") != None
+          assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, hasLinkedTables, true)
+          cb(~planned=2, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("createLinkedTable: routes to schema adapter and returns success envelope", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("clt-happy"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.createLinkedTable(facade, ~tableName="lnk_Test", ~sourceTable="categories", ~connectString=";DATABASE=test.accdb")
+        ->Promise.then(result => {
+          let isSuccess = getDictBool(result, "success") == Some(true)
+          let adapterCalled = Fakes.CallLog.methodCalled("createLinkedTable")
+          assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+          cb(~planned=2, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("createLinkedTable: readonly rejects with Read-only mode error and does not call adapter", cb => {
+  let readonlyFacade = Facade.make(
+    ~factory=makeFakeFactory(),
+    ~comAvailable=false,
+    ~readonly=() => true,
+    ~allowedDirs=() => [NodeJs.Os.homedir()],
+  )
+  Facade.connectAccess(readonlyFacade, ~dbPath=testPath("clt-ro"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.createLinkedTable(readonlyFacade, ~tableName="lnk_Test", ~sourceTable="categories", ~connectString=";DATABASE=test.accdb")
+        ->Promise.then(result => {
+          let isFailure = getDictBool(result, "success") == Some(false)
+          let hasRoError = switch getDictStr(result, "error") {
+          | Some(msg) => String.includes(msg, "Read-only mode")
+          | None => false
+          }
+          let adapterNotCalled = Fakes.CallLog.methodCalled("createLinkedTable") == false
+          assertion(~operator="equal", (a, b) => a == b, isFailure, true)
+          assertion(~operator="equal", (a, b) => a == b, hasRoError, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterNotCalled, true)
+          cb(~planned=3, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("refreshLinkedTable: routes to schema adapter and returns success envelope", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("rlt-happy"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.refreshLinkedTable(facade, ~tableName="lnk_Test", ~connectString=";DATABASE=test.accdb")
+        ->Promise.then(result => {
+          let isSuccess = getDictBool(result, "success") == Some(true)
+          let adapterCalled = Fakes.CallLog.methodCalled("refreshLinkedTable")
+          assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+          cb(~planned=2, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("executeSqlScript: routes to schema adapter and returns sql_script result envelope", cb => {
+  let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+  Facade.connectAccess(facade, ~dbPath=testPath("ess-happy"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.executeSqlScript(facade, ~scriptPath="/tmp/test.sql")
+        ->Promise.then(result => {
+          let hasStatementsExecuted = Js.Dict.get(result, "statements_executed") != None
+          let hasSuccess = Js.Dict.get(result, "success") != None
+          let adapterCalled = Fakes.CallLog.methodCalled("executeSqlScript")
+          assertion(~operator="equal", (a, b) => a == b, hasStatementsExecuted, true)
+          assertion(~operator="equal", (a, b) => a == b, hasSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+          cb(~planned=3, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})
+
+testAsync("executeSqlScript: readonly rejects with Read-only mode error and does not call adapter", cb => {
+  let readonlyFacade = Facade.make(
+    ~factory=makeFakeFactory(),
+    ~comAvailable=false,
+    ~readonly=() => true,
+    ~allowedDirs=() => [NodeJs.Os.homedir()],
+  )
+  Facade.connectAccess(readonlyFacade, ~dbPath=testPath("ess-ro"))
+    ->Promise.then(_r => {
+      Fakes.CallLog.reset()
+      Facade.executeSqlScript(readonlyFacade, ~scriptPath="/tmp/test.sql")
+        ->Promise.then(result => {
+          let isFailure = getDictBool(result, "success") == Some(false)
+          let hasRoError = switch getDictStr(result, "error") {
+          | Some(msg) => String.includes(msg, "Read-only mode")
+          | None => false
+          }
+          let adapterNotCalled = Fakes.CallLog.methodCalled("executeSqlScript") == false
+          assertion(~operator="equal", (a, b) => a == b, isFailure, true)
+          assertion(~operator="equal", (a, b) => a == b, hasRoError, true)
+          assertion(~operator="equal", (a, b) => a == b, adapterNotCalled, true)
+          cb(~planned=3, ())
+          Promise.resolve()
+        })
+    })
+    ->ignore
+})

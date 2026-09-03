@@ -287,6 +287,16 @@ testAsync("ComDataAdapter: asInstance produces dataAdapterInstance with all meth
 testAsync("ComDataAdapter: asSchemaInstance produces schemaAdapterInstance with all 22 methods", cb => {
   let emptyDdlResult: Interfaces.ddlResult = {success: false, error: Some("Not available via COM")}
   let successDdlResult: Interfaces.ddlResult = {success: true, error: None}
+  let emptyLinkedTablesResult: Interfaces.linkedTablesResult = {success: true, error: None, linkedTables: []}
+  let successSqlScriptResult: Interfaces.sqlScriptResult = {
+    success: true,
+    error: None,
+    statementsExecuted: 0,
+    failingStatement: None,
+    failingLine: None,
+    accessErrorCode: None,
+    accessErrorMessage: None,
+  }
   let emptySchemaPlan: (array<Interfaces.tableSchema>, Interfaces.unknownMetadata) = (
     [],
     {primaryKeys: false, foreignKeys: false, defaults: false, indexes: false, autoincrement: false}
@@ -314,9 +324,16 @@ testAsync("ComDataAdapter: asSchemaInstance produces schemaAdapterInstance with 
     dropIndex: (_name, _table) => Promise.resolve(Ok(successDdlResult)),
     createRelationship: (_name, _table, _cols, _fTable, _fCols) => Promise.resolve(Ok(successDdlResult)),
     deleteRelationship: (_name, _table) => Promise.resolve(Ok(successDdlResult)),
+    // Plan 038: linked-table + SQL-script
+    getLinkedTables: () => Promise.resolve(Ok(emptyLinkedTablesResult)),
+    createLinkedTable: (_name, _sourceTable, _connectString) => Promise.resolve(Ok(successDdlResult)),
+    refreshLinkedTable: (_name, ~connectString=?) => Promise.resolve(Ok(successDdlResult)),
+    recreateLinkedTable: (_name, _sourceTable, _connectString, ~attributes=?) => Promise.resolve(Ok(successDdlResult)),
+    unlinkTable: (_name) => Promise.resolve(Ok(successDdlResult)),
+    executeSqlScript: (_scriptPath) => Promise.resolve(Ok(successSqlScriptResult)),
   }
   // Verify the instance has all required methods by checking the record can be constructed
-  // All 22 schemaAdapterInstance methods are present in the record literal above
+  // All 28 schemaAdapterInstance methods are present in the record literal above
   let hasAllMethods = true  // if we got here, the record literal was valid
   assertion(~operator="equal", (a, b) => a == b, hasAllMethods, true)
   cb(~planned=1, ())
