@@ -6,6 +6,18 @@
 // WINAX_BINDING module type (must match Winax.resi)
 // ---------------------------------------------------------------------------
 
+// Preserved COM error record — plan 039. Keeps the numeric scode and structured
+// description for callers (e.g. executeSqlScript) that need accessErrorCode
+// parity with the Python oracle. Exported through WINAX_BINDING below.
+type preservedError = {
+  message: string,
+  number: option<int>,
+  code: option<int>,
+  hresult: option<int>,
+  description: option<string>,
+  source: option<string>,
+}
+
 module type WINAX_BINDING = {
   // Object lifecycle
   let createObject: string => Promise.t<result<ComInterfaces.comObject, Errors.t>>
@@ -32,6 +44,15 @@ module type WINAX_BINDING = {
 
   // Error mapping
   let mapDispatchError: (string, option<string>, option<string>, option<int>) => Errors.t
+
+  // Plan 039: structured-error invoke — preserves .number/.description for
+  // accessErrorCode parity. Same call path as invoke, but the catch returns
+  // the raw COM error fields instead of flattening to a string.
+  let invokePreservingError: (
+    ComInterfaces.comObject,
+    string,
+    array<ComInterfaces.variant>,
+  ) => Promise.t<result<JSON.t, preservedError>>
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +256,41 @@ module WINAX_BINDING: WINAX_BINDING = {
         })
     }
   : (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>>
+  )
+
+  // ------------------------------------------------------------------
+  // invokePreservingError — plan 039. Same call path as `invoke`, but the
+  // catch arm returns the raw COM error fields (scode, description, source)
+  // instead of flattening to a string via mapDispatchError. This preserves
+  // accessErrorCode for parity with the Python oracle's _extract_com_error.
+  // The %raw body is a FUNCTION LITERAL `(e) => {...}` — never an IIFE
+  // (see ComDataAdapter.res:57-59 for the rationale).
+  // ------------------------------------------------------------------
+
+  let invokePreservingError: (
+    ComInterfaces.comObject,
+    string,
+    array<ComInterfaces.variant>,
+  ) => Promise.t<result<JSON.t, preservedError>> = (
+    (obj: ComInterfaces.comObject, method: string, args: array<ComInterfaces.variant>) => {
+      _importWinax(())
+        ->Promise.then(m => {
+          let rawMod = TsBridge.unwrapWinaxModule(m)
+          let rawArgs: array<JSON.t> = Array.map(args, v => variantToJson(v))
+          let value: JSON.t = TsBridge.winaxInvokeMethod(rawMod, obj, method, rawArgs)
+          Promise.resolve(Ok(value))
+        })
+        ->Promise.catch(e => {
+          let captured: preservedError = %raw(
+            "(e) => { var inner = (e && typeof e === 'object' && e._1 && typeof e._1 === 'object') ? e._1 : e; var numOrNull = function(v) { return (typeof v === 'number' && v !== 0) ? v : null; }; var strOrNull = function(v) { return (typeof v === 'string' && v.length > 0) ? v : null; }; if (!inner || typeof inner !== 'object') { return { message: 'Unknown error', number: null, code: null, hresult: null, description: null, source: null }; } return { message: (inner.message !== undefined && inner.message !== null && inner.message !== '') ? String(inner.message) : 'Unknown error', number: numOrNull(inner.number), code: numOrNull(inner.code), hresult: numOrNull(inner.hresult), description: strOrNull(inner.description), source: strOrNull(inner.source) }; }"
+          )(e)
+          Promise.resolve(Error(captured))
+        })
+    }: (
+      ComInterfaces.comObject,
+      string,
+      array<ComInterfaces.variant>,
+    ) => Promise.t<result<JSON.t, preservedError>>
   )
 
   // ------------------------------------------------------------------
