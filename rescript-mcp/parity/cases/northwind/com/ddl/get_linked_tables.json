@@ -6,6 +6,8 @@
   "variant": "com",
   "mutating": true,
   "volatileFields": [],
+  "skip": true,
+  "skipReason": "038-F-007: winax TableDefs.Item(i) native crash (exit 134); MSysObjects approach destabilizes shared MSACCESS session (038-F-008). ODBC parity (13+2) covers the op contract; COM enumeration deferred to a winax dispose-ordering plan.",
   "setup": [
     {
       "operation": "create_linked_table",

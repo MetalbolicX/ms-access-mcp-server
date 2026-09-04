@@ -2729,7 +2729,17 @@ let asInstance = (self: DaoAdapter.t): Adapters.Instances.dataAdapterInstance =>
 // ---------------------------------------------------------------------------
 
 // getLinkedTables — enumerate DAO TableDefs and retain linked-table entries.
-// Plan 038 §D6: get -> getCount -> parallel getItem -> per-tdef __p__ reads -> filter by linked-bit mask.
+// Plan 041 escape hatch (SKIPPED — see plans/041 and parity/findings.md
+// 038-F-007). Both attempted approaches were rejected:
+//   - Approach A (named probing via getTables()-derived candidates) crashes
+//     because getTables() itself uses Item(index) on TableDefs and triggers
+//     the 038-F-007 native crash in this env.
+//   - Approach B (MSysObjects Type=6 SELECT) was reverted in 038-F-008 for
+//     destabilizing the shared MSACCESS session across cases; the
+//     cross-process stability probe for the leak fix is not feasible without
+//     the mandatory 3-run COM-parity stability gate.
+// Returns the safe-empty stub envelope so the case can be marked skipped
+// rather than FAIL/ERROR.
 let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
   if !self.isConnected {
     Promise.resolve(Ok({success: false, error: Some("Not connected"), linkedTables: []}))
@@ -2739,26 +2749,14 @@ let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTa
     | Some(session) => {
         switch ComSession.getCurrentDb(session) {
         | None => Promise.resolve(Ok({success: false, error: Some("No DB handle"), linkedTables: []}))
-        | Some(db) =>
-          Bindings.Winax.WINAX_BINDING.get(db, "TableDefs")
-          ->Promise.then(handleResult => switch handleResult {
-          | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e)), linkedTables: []}))
-          | Ok(tableDefsJson) => {
-              let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
-              Bindings.Winax.WINAX_BINDING.getCount(tableDefs)
-              ->Promise.then(countResult => switch countResult {
-              | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e)), linkedTables: []}))
-              | Ok(_count) =>
-                // Skip per-item iteration: winax getItem on TableDefs in this env
-                // crashes the native binding (exit 134). Return success with empty
-                // array — Python returns the linked tables from setup, so this case
-                // will diff at $.linked_tables, but won't crash other cases.
-                // 038-F-005 documents the underlying issue.
-                Promise.resolve(Ok({success: true, error: None, linkedTables: []}))
-              })
-            }
-          })
-          ->Promise.catch(e => Promise.resolve(Ok({success: false, error: Some(_exnMessage(e)), linkedTables: []})))
+        | Some(_db) =>
+          // Skip per-item iteration: winax getItem on TableDefs in this env
+          // crashes the native binding (exit 134). Return success with empty
+          // array — Python returns the linked tables from setup, so this case
+          // will diff at $.linked_tables, but won't crash other cases.
+          // 038-F-005 documents the underlying issue. Plan 041 documented both
+          // attempts as rejected and marked this case skipped.
+          Promise.resolve(Ok({success: true, error: None, linkedTables: []}))
         }
       }
     }

@@ -909,7 +909,28 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 2. Investigate winax dispose-ordering for collection iteration (broader than plan 038; related to 033-F-001).
 3. Mark get_linked_tables.json as skipped with this finding note, accepting ODBC parity as the achievable coverage for this op until winax enumeration is fixed.
 
-**Status**: OPEN. Documented in ComDataAdapter.res getLinkedTables impl comment.
+**Status**: SKIPPED via plan 041 escape hatch. Both attempted approaches were rejected and the case file `parity/cases/northwind/com/ddl/get_linked_tables.json` now carries `skip: true` with the prescribed skipReason. See "Plan 041 outcome" below.
+
+### Plan 041 outcome
+
+Plan 041 (commit pending at this writing) attempted two approaches against the live COM harness at HEAD `6a51380`:
+
+- **Approach A — named probing** (preferred): pull candidate names from `DaoAdapter.getTables(self)` (which uses `_getTablesImpl` -> `getItem(tableDefsHandle, VInt(i))`) and probe each via `getItem(tableDefs, VStr(name))`. Result: **the case body crashed natively (exit 134, no stdout)**. Root cause: `getTables()` itself iterates TableDefs by index using the same `getItem(tableDefsHandle, VInt(i))` call that 038-F-007 says crashes. The candidate-name source triggers the same crash before the named probe ever runs. Approach A abandoned per plan STOP condition ("setup-created `lnk_categories` is missed → abandon A immediately" — generalized to "any candidate-name path that depends on Item(index) iteration is dead").
+
+- **Approach B — trusted MSysObjects** (gated): standalone throwaway probe script (`$TEMP\probe041\probe_msys_followup.mjs`, raw winax 3.6.9) opened a scratch fixture copy, ran `SELECT Name, Connect FROM MSysObjects WHERE Type = 6` via `OpenRecordset`, explicitly called `rs.Close()` + `rs.Release()`, then ran a `CreateTableDef` + `Append` + `TableDefs.Delete` follow-up. Result: the follow-up DAO op was clean in the same process (single-process leak hypothesis supported — 038-F-008's regression may have been an unclosed-recordset leak). However, the 038-F-008 regression manifested in **subsequent** cases (delete_table / drop_index), not the same process; the standalone probe cannot validate cross-case stability. Implementing B in the live ReScript adapter would require:
+  1. A new MSysObjects query helper bound to the existing `_executeQueryImpl` pattern (`invokeAsObject(db, "OpenRecordset", [VStr(sql)])`) with explicit `Close` + `release(rs)` on every exit path.
+  2. A field-shaping mapper (MSysObjects lacks `SourceTableName` / `Attributes`; `attributes` would have to be hard-coded to `-2147483648` per plan §3).
+  3. The mandatory 3-run COM parity stability gate (~30 minutes minimum) — and per the 038-F-008 lesson, one clean run proves nothing.
+
+Given the high risk (a B implementation that destabilizes the shared session would block the suite for the next 3 runs minimum) vs. the achievable outcome (the escape hatch is an accepted outcome per plan §Done criteria), Approach B was not implemented.
+
+- **Approach C — escape hatch** (selected): added `"skip": true` with the prescribed `skipReason` to the case file. The ReScript adapter's `getLinkedTables` retains its safe-empty-stub body (returns `success: true, linkedTables: []`) so the case is short-circuited by the runner before the body executes. Expected tally: COM **10 matched + 3 mismatched + 0 errored + 2 skipped** (refresh/recreate remain mismatched per plan 040's blocker; generate_sql remains skipped per 033-F-001); ODBC parity 13+2 unchanged.
+
+### Resolution paths (unchanged from earlier doc)
+
+1. Winax dispose-ordering fix that makes `TableDefs.Item(i)` collection iteration safe (would also unblock `generate_sql` per 033-F-001 and the 040-F-001 Branch 4a path).
+2. A `WINAX_BINDING` primitive that bypasses `variantToJson` for raw COM proxy args (the 040-F-001 / 040-Branch-4b blocker).
+3. ODBC parity (13+2) already covers the op contract.
 
 ---
 
@@ -945,3 +966,58 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 **Result**: REVERTED to the stable baseline. The collection is fetched fresh per call, so missing collection refresh is not the root cause.
 
 **Status**: RESOLVED by reverting. 038-F-005 remains OPEN.
+
+---
+
+## 040-F-001: variantToJson strips COM proxy envelopes — Branch 4b blocked without binding change
+
+**Finding ID**: 040-F-001
+**Phase**: Plan 040 probe + Branch 4b variant 1 attempt
+**Discovered**: Plan 040 (2026-09-04), at commit 6a51380
+**Severity**: Blocking — 038-F-005 cannot be resolved by the planned branches without a binding-layer change
+
+### Summary
+
+Plan 040's probe revealed that `variantToJson` in `Bindings/Winax.res:94-108` (compiled at `lib/bs/src/Bindings/Winax.res.mjs:26-45`) returns `null` for any object that doesn't match a ReScript variant ADT constructor (`VBool`/`VStr`/`VInt`/etc.). At runtime, a `{__p__: rawProxy}` wrapper produced by `%raw("v => ({ __p__: v })")` has no `TAG` property, so it falls into the `default` arm and becomes `null`.
+
+This means the **Append** call in `createLinkedTable` (ComDataAdapter.res:2810-2812) and `recreateLinkedTable` (ComDataAdapter.res:2989-2991) always receives `[null]` as the TableDef argument, regardless of how the local `tdefAsVariant` is constructed. DAO silently no-ops on a null append, which is why subsequent named lookups fail with "Item not found in this collection" (DAO.TableDefs -2146825023) — the link was never appended.
+
+### Probe evidence
+
+Three standalone Node probes were run against `db\northwind.accdb` copies in `$TEMP\probe040` using winax 3.6.9 directly (bypassing the ReScript bridge):
+
+- **Test A** (current ReScript wrapper passed to Append): `Append THREW: Operation is not supported for this type of object. code= -2146825037` — winax rejects the wrapper.
+- **Test B** (raw proxy passed to Append, bypasses bridge): `Count=81, named Item('lnk_probe')=lnk_probe` — works perfectly.
+- **Test C** (named lookup on a fresh collection after raw Append): `Count=81, named='lnk_probe', lastIdx='lnk_probe'` — works.
+- **Variant 1 / Variant 2 unwraps** (`t && t.__p__ ? t.__p__ : t` / `h.__p__`): both succeed at the standalone probe level.
+
+Python oracle on the same fixture: `db.TableDefs('lnk_probe') OK`, `RefreshLink OK`. Divergence is provably ReScript-side.
+
+### Attempted fix (Branch 4b variant 1)
+
+Changed both Append sites in `ComDataAdapter.res`:
+```rescript
+let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t && t.__p__ ? t.__p__ : t")(Obj.magic(tdef))
+```
+
+**Result**: Both target cases moved from `FAIL` to `ERRORED exit 134` (v8 native crash during isolate teardown — `DispObject::~scalar deleting destructor`, `RemoveEnvironmentCleanupHook` assertion). The new behavior is different from the baseline (silent "Item not found") but does NOT flip the cases to PASS.
+
+The crash is in the same family as 033-F-001 (v8 isolate teardown ordering), which the plan §6 marks as pre-existing flake. The correlation: previously Append silently no-op'd (null TableDef arg → DAO no-op → no native proxy added → release was a no-op → clean teardown). With the unwrap, Append receives the raw proxy, which succeeds, but the new DB state surfaces a different teardown bug that was previously latent.
+
+Reverted per plan §STOP conditions (Branch 4b variant 1 did not flip to PASS).
+
+### Why neither Branch 4a nor Branch 4b works as written
+
+- **Branch 4a** (`getItem(collection, VStr(name))`) replaces the named lookup, not the Append. Since Append never lands the link, no lookup variant can find it. Branch 4a addresses a non-existent bug.
+- **Branch 4b variants 1 & 2** unwrap the variant, but `variantToJson` immediately re-strips the unwrapped proxy to `null` because the raw proxy has no `TAG` property. The unwrap is a no-op at the bridge boundary.
+
+### Resolution paths (out of plan 040 scope)
+
+1. **Modify `variantToJson`** in `Bindings/Winax.res:94-108` to detect `{__p__: ...}` envelopes and return the inner proxy. A 3-line change. Touches the binding layer — out of plan 040 scope per its STOP conditions ("new binding surface = design decision, out of scope").
+2. **Add a new `WINAX_BINDING` primitive** `invokeMethodWithRawArgs` that skips `variantToJson` and passes args directly to `_unwrap(obj)[method](...args)`. Same scope concern.
+3. **Change the Append call sites to use a different API path** that doesn't go through `invoke` (e.g., direct `_unwrap(tableDefs).Append(_unwrap(tdef))` via `%raw`). Same scope concern.
+4. **Promote `_unwrap` to the variant ADT layer** by adding a `VComObject` constructor with a runtime tag that variantToJson recognizes. Design decision.
+
+### Status
+
+038-F-005 remains OPEN. 040-F-001 is the documented blocker. Plan 040 reverted; working tree at 6a51380; build clean; no commit made. Next session should consider option 1 (smallest viable binding change) and re-run plan 040 with a re-scoped plan that explicitly permits the `variantToJson` modification.
