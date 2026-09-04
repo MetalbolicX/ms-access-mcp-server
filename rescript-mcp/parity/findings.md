@@ -882,3 +882,31 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 **Summary**: ReScript's executeSqlScript extracts ADO error info via _exnMessage which returns the JS error's .message string but does NOT surface scode (the COM 32-bit error code) or the structured error description. Python's execute_sql_script extracts -2147217900 from exc.com_error.args[0]. Plan §Maintenance notes explicitly deferred this: "winax does not expose scode through the extractor; the failing-script parity case is deferred — see Out of scope."
 
 **Status**: Expected divergence per plan. The failing-script execute_sql_script parity case is deferred until a future plan adds _exnCode to the extractor. Until then, $.access_error_code will mismatch whenever the failing path is exercised.
+
+## 038-F-007: winax TableDefs.Item(i) crashes on this machine (exit 134)
+
+**Finding ID**: 038-F-007
+**Phase**: Plan 038 step 5 follow-up
+**Discovered**: Plan 038 (2026-09-03), at commit (pending)
+**Severity**: Blocking — getLinkedTables cannot iterate TableDefs via winax in this env
+
+**Summary**: ReScript's winax binding crashes (native exit 134, no stdout) when calling TableDefs.Item(index) against db/postgres.accdb. The Python win32com binding handles the same operation fine. The crash reproduces with both parallel (Array.map + Promise.all) and sequential (recursive loop) iteration patterns; both crash on the first getItem call.
+
+**Reproduction**:
+1. WINAX_BINDING.get(db, "TableDefs") returns the TableDefs collection handle — works.
+2. WINAX_BINDING.getCount(tableDefs) returns the count — works.
+3. WINAX_BINDING.getItem(tableDefs, VInt(0)) (which dispatches to invokeAsObject(tableDefs, "Item", [VInt(0)])) — crashes.
+
+**Workaround applied**: getLinkedTables returns success with empty linkedTables: [] array. The COM case get_linked_tables.json now fails parity at $.linked_tables (Python returns the setup-created links, ReScript returns empty) but does not crash the winax binding, allowing other cases to run.
+
+**Root cause hypothesis**: The winax binding's invokeAsObject("Item", [index]) either:
+- Disposes the parent collection handle incorrectly on first item access.
+- Fails to marshal the VInt(0) variant to a COM-safe I4.
+- Has a native crash specific to this machine's Access version + Node.js version combination.
+
+**Resolution paths** (out of plan 038 scope):
+1. Use a different DAO API to enumerate linked tables without iterating TableDefs.Item — e.g., open a second OpenDatabase and read MSysObjects where Type = 6 (linked table). Bypasses the TableDefs collection entirely.
+2. Investigate winax dispose-ordering for collection iteration (broader than plan 038; related to 033-F-001).
+3. Mark get_linked_tables.json as skipped with this finding note, accepting ODBC parity as the achievable coverage for this op until winax enumeration is fixed.
+
+**Status**: OPEN. Documented in ComDataAdapter.res getLinkedTables impl comment.
