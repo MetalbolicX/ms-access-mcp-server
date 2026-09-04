@@ -836,3 +836,49 @@ ecreateLinkedTable's ttributes parameter also uses the signed form when computi
 **Summary**: Same int-range overflow as 038-F-003 but checked across OdbcAdapter.res for completeness. No 2147483648 literal exists there today; the 6 ODBC stubs at OdbcAdapter.res:1548-1617 return only string error envelopes and don't touch numeric Long values.
 
 **Status**: INFORMATIONAL ï¿½ no action required.
+
+## 038-F-001 RESOLVED — Python WinComAdapter linked-table + executeSqlScript implemented
+
+**Resolution** (commit 6726c04):
+The 5 linked-table methods already delegated to the composed DaoAdapter (parity by construction per plan §Current state). The blocking bug was WinComAdapter.connect() never setting self._dao._connected = True after a successful DAO connection, causing DaoAdapter._connected to stay False and every linked-table op to short-circuit with "Not connected". Fix at wincom.py:237: sync the flag on connect/disconnect.
+
+**Verification:**
+- parity:northwind:com:ddl: 8 matched + 5 mismatched + 1 errored + 1 skipped ? **9 matched + 5 mismatched + 0 errored + 1 skipped** (delete_table moved from errored to matched).
+- parity:northwind:ddl: 13 matched + 2 skipped (unchanged, ODBC).
+- All 5 Python methods exist and delegate correctly (wincom.py:852-876). mypy strict clean.
+
+## 038-F-005: ReScript COM session fails to connect to db/postgres.accdb for linked-table + executeSqlScript ops
+
+**Finding ID**: 038-F-005
+**Phase**: Plan 038 option 1 follow-up
+**Discovered**: Plan 038 (2026-09-03), at commit 6726c04
+**Severity**: Blocking — 5 of 6 new COM cases fail parity on this Access-env-restricted machine
+
+**Summary**: After Python implementation (038-F-001 RESOLVED), 5 COM cases still mismatch:
+- ecreate_linked_table — Python returns DAO error (-2147352567, 'Exception occurred.', 'Invalid argument.', ...). ReScript returns null (success). Python sees the setup-created link and tries to recreate; ReScript doesn't see it (or recreates successfully with no error).
+- efresh_linked_table — Python returns null (success). ReScript returns Item not found in this collection (DAO.TableDefs error -2146825023). Python refreshes the link successfully; ReScript can't find it.
+- unlink_table — Python returns null (success). ReScript returns Not connected. Python unlinks; ReScript's COM guard fires.
+- get_linked_tables — Python returns {"success": true, "linked_tables": [...]}. ReScript returns the Not connected envelope (no linked_tables key, since the shaper omits the array on the failure path).
+- execute_sql_script — diff at $.access_error_code. Python extracts -2147217900 from exc.com_error.args[0]. ReScript returns None (per plan §Maintenance notes: winax does not expose scode through the extractor; the failing-script parity case is deferred).
+
+**Root cause hypothesis**: ReScript's winax COM session against db/postgres.accdb is not establishing on this machine. The 9 pre-existing test failures (ComIntegration 495-500, ComExecuteQuery 645-647) all involve MSACCESS.EXE, suggesting Access availability is limited. Python's win32com path connects (some operations succeed); ReScript's winax path doesn't (operations return Not connected).
+
+**Partial mitigation applied** (commit pending): Removed the ODBC-stub error normalization from _shape_recreate_linked_table, _shape_refresh_linked_table, _shape_unlink_table in parity_driver.py so real Python errors pass through. This was needed because the stub-normalization was hiding real Python envelopes. After removal, Python errors reach the diff directly. ReScript errors remain as-is.
+
+**Resolution paths** (out of plan 038 scope):
+1. Investigate ReScript COM session connection in ComDataAdapter.connectAccess (or its composition chain). The session/db handle may not be persisting correctly between dispatches within the parity harness.
+2. On a machine with full Access availability, parity might naturally pass (both sides succeed; envelopes match). The 9 baseline failures and this finding together suggest Access env restrictions on the test machine.
+3. Mark the 5 COM cases as skipped with this finding note, accepting ODBC parity coverage as the achievable target until ReScript COM session can be debugged in a full Access env.
+
+**Status**: 038-F-001 RESOLVED. 038-F-005 OPEN. Plan §Step 9 only permits linked_tables.attributes as auto-volatile — these are NOT in that category, so this is STOP territory per the plan. Recording and surfacing to user.
+
+## 038-F-006: ReScript executeSqlScript ccessErrorCode/Message always None (plan-deferred)
+
+**Finding ID**: 038-F-006
+**Phase**: Plan 038 Step 6 executeSqlScript implementation
+**Discovered**: Plan 038 (2026-09-03), at commit 269b4e2
+**Severity**: Deferred per plan §Maintenance notes
+
+**Summary**: ReScript's executeSqlScript extracts ADO error info via _exnMessage which returns the JS error's .message string but does NOT surface scode (the COM 32-bit error code) or the structured error description. Python's execute_sql_script extracts -2147217900 from exc.com_error.args[0]. Plan §Maintenance notes explicitly deferred this: "winax does not expose scode through the extractor; the failing-script parity case is deferred — see Out of scope."
+
+**Status**: Expected divergence per plan. The failing-script execute_sql_script parity case is deferred until a future plan adds _exnCode to the extractor. Until then, $.access_error_code will mismatch whenever the failing path is exercised.

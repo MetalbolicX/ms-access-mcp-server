@@ -448,7 +448,10 @@ def _shape_create_linked_table(adapter: OdbcAdapter, name: str, source_table: st
 
 
 def _shape_refresh_linked_table(adapter: OdbcAdapter, table_name: str, connect_string: str | None = None) -> dict[str, Any]:
-    """Wrap adapter.refresh_linked_table — ReScript ddlResult: {success, error?}."""
+    """Wrap adapter.refresh_linked_table — ReScript ddlResult: {success, error?}.
+
+    Python now implements the method (plan 038 option 1); let real envelopes through.
+    """
     try:
         result = adapter.refresh_linked_table(table_name, connect_string)
         return _shape_ddl_result(result)
@@ -459,20 +462,21 @@ def _shape_refresh_linked_table(adapter: OdbcAdapter, table_name: str, connect_s
 def _shape_recreate_linked_table(adapter: OdbcAdapter, name: str, source_table: str, connect_string: str, attributes: int | None = None) -> dict[str, Any]:
     """Wrap adapter.recreate_linked_table — ReScript ddlResult: {success, error?}.
 
-    ODBC stub: if the adapter returns an error dict (rather than raising
-    NotImplementedError), normalize it to the COM-only message.
+    Python now implements the method (plan 038 option 1); let real envelopes through.
+    ODBC stub normalization was only for the pre-implementation NotImplementedError catch.
     """
     try:
         result = adapter.recreate_linked_table(name, source_table, connect_string, attributes)
-        if not result.get("success") and result.get("error"):
-            return {"success": False, "error": "recreate_linked_table requires COM automation (WinComAdapter)"}
         return _shape_ddl_result(result)
     except NotImplementedError as e:
         return {"success": False, "error": str(e)}
 
 
 def _shape_unlink_table(adapter: OdbcAdapter, table_name: str) -> dict[str, Any]:
-    """Wrap adapter.unlink_table — ReScript ddlResult: {success, error?}."""
+    """Wrap adapter.unlink_table — ReScript ddlResult: {success, error?}.
+
+    Python now implements the method (plan 038 option 1); let real envelopes through.
+    """
     try:
         result = adapter.unlink_table(table_name)
         return _shape_ddl_result(result)
