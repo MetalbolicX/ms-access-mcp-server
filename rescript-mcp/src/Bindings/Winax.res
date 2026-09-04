@@ -265,6 +265,13 @@ module WINAX_BINDING: WINAX_BINDING = {
   // accessErrorCode for parity with the Python oracle's _extract_com_error.
   // The %raw body is a FUNCTION LITERAL `(e) => {...}` — never an IIFE
   // (see ComDataAdapter.res:57-59 for the rationale).
+  //
+  // Note on `number` vs `code`: pywin32 surfaces the scode on the COMError
+  // as `.number`; winax surfaces it as `.code` (verified via probe — the
+  // thrown error has keys [errno, code, source, description], `.code` is
+  // the numeric scode, `.number` is undefined). The `number` slot in the
+  // preservedError record is populated by falling back to `.code` so the
+  // executeSqlScript caller can use a single field for parity with Python.
   // ------------------------------------------------------------------
 
   let invokePreservingError: (
@@ -282,7 +289,7 @@ module WINAX_BINDING: WINAX_BINDING = {
         })
         ->Promise.catch(e => {
           let captured: preservedError = %raw(
-            "(e) => { var inner = (e && typeof e === 'object' && e._1 && typeof e._1 === 'object') ? e._1 : e; var numOrNull = function(v) { return (typeof v === 'number' && v !== 0) ? v : null; }; var strOrNull = function(v) { return (typeof v === 'string' && v.length > 0) ? v : null; }; if (!inner || typeof inner !== 'object') { return { message: 'Unknown error', number: null, code: null, hresult: null, description: null, source: null }; } return { message: (inner.message !== undefined && inner.message !== null && inner.message !== '') ? String(inner.message) : 'Unknown error', number: numOrNull(inner.number), code: numOrNull(inner.code), hresult: numOrNull(inner.hresult), description: strOrNull(inner.description), source: strOrNull(inner.source) }; }"
+            "(e) => { var inner = (e && typeof e === 'object' && e._1 && typeof e._1 === 'object') ? e._1 : e; var numOrNull = function(v) { return (typeof v === 'number' && v !== 0) ? v : null; }; var strOrNull = function(v) { return (typeof v === 'string' && v.length > 0) ? v : null; }; if (!inner || typeof inner !== 'object') { return { message: 'Unknown error', number: null, code: null, hresult: null, description: null, source: null }; } var pyNum = numOrNull(inner.number); var wxCode = numOrNull(inner.code); var wxHres = numOrNull(inner.hresult); var numberOut = (pyNum !== null) ? pyNum : (wxCode !== null) ? wxCode : (wxHres !== null) ? wxHres : null; return { message: (inner.message !== undefined && inner.message !== null && inner.message !== '') ? String(inner.message) : 'Unknown error', number: numberOut, code: wxCode, hresult: wxHres, description: strOrNull(inner.description), source: strOrNull(inner.source) }; }"
           )(e)
           Promise.resolve(Error(captured))
         })

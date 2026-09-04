@@ -197,15 +197,51 @@ let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, 
                                               })
                                           })
 
-                                          // Step 8: ADODB.Connection — best-effort
-                                          Bindings.Winax.WINAX_BINDING.createObject("ADODB.Connection")
-                                            ->Promise.then(adoResult => {
-                                              switch adoResult {
-                                              | Error(_) => { session.handles.adoConn = None }
-                                              | Ok(adoConn) => { session.handles.adoConn = Some(adoConn) }
+                                          // Step 8 (plan 039): ADO connection via Access's
+                                          // CurrentProject.Connection — mirrors Python wincom.py:214.
+                                          // The session's prior orphan ADODB.Connection destabilized
+                                          // the live DB (038-F-008 lesson); CurrentProject.Connection
+                                          // is already open and bound to the same .accdb. Fall back to
+                                          // the orphan createObject if the property probe fails so the
+                                          // shared connect path can never regress relative to baseline.
+                                          Bindings.Winax.WINAX_BINDING.get(accessApp, "CurrentProject")
+                                            ->Promise.then(cpResult => {
+                                              switch cpResult {
+                                              | Error(_) =>
+                                                // Property probe failed — fall back to orphan ADODB.
+                                                Bindings.Winax.WINAX_BINDING.createObject("ADODB.Connection")
+                                                  ->Promise.then(adoResult => {
+                                                    switch adoResult {
+                                                    | Error(_) => { session.handles.adoConn = None }
+                                                    | Ok(adoConn) => { session.handles.adoConn = Some(adoConn) }
+                                                    }
+                                                    session.isConnected = true
+                                                    Promise.resolve(Ok(true))
+                                                  })
+                                              | Ok(cpJson) =>
+                                                let cpObj: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(cpJson)
+                                                Bindings.Winax.WINAX_BINDING.get(cpObj, "Connection")
+                                                  ->Promise.then(connResult => {
+                                                    switch connResult {
+                                                    | Error(_) =>
+                                                      // Second probe failed — fall back to orphan ADODB.
+                                                      Bindings.Winax.WINAX_BINDING.createObject("ADODB.Connection")
+                                                        ->Promise.then(adoResult => {
+                                                          switch adoResult {
+                                                          | Error(_) => { session.handles.adoConn = None }
+                                                          | Ok(adoConn) => { session.handles.adoConn = Some(adoConn) }
+                                                          }
+                                                          session.isConnected = true
+                                                          Promise.resolve(Ok(true))
+                                                        })
+                                                    | Ok(connJson) =>
+                                                      let connObj: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(connJson)
+                                                      session.handles.adoConn = Some(connObj)
+                                                      session.isConnected = true
+                                                      Promise.resolve(Ok(true))
+                                                    }
+                                                  })
                                               }
-                                              session.isConnected = true
-                                              Promise.resolve(Ok(true))
                                             })
                                         }
                                       }

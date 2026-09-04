@@ -283,8 +283,8 @@ type _parseResult = {statements: array<_parsedStatement>}
             }
             countNl(prefix, 0) + 1
           }
-          let clean = _stripSqlComments(stripped)
-          if String.length(Js.String.trim(clean)) == 0 {
+          let clean = Js.String.trim(_stripSqlComments(stripped))
+          if String.length(clean) == 0 {
             let advance = String.length(chunk) + (if semiIdx >= 0 { 1 } else { 0 })
             loop(pos + advance, rest)
           } else {
@@ -3073,7 +3073,12 @@ let unlinkTable = (self: DaoAdapter.t, name: string): Promise.t<result<Interface
   }
 };
 
-// executeSqlScript — guard triple, full implementation in Step 6
+// executeSqlScript — plan 039 full implementation. Mirrors Python wincom.py
+// execute_sql_script (wincom.py:1053-1158): read script → split into
+// statements with line numbers → iterate ado.Execute(text), on failure
+// surface scode + description from the COM error envelope. ADO handle comes
+// from session.handles.adoConn (set in ComSession.res via CurrentProject
+// connection in Step 2 — orphan fallback kept inside that module).
 let executeSqlScript = (self: DaoAdapter.t, scriptPath: string): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
   if !self.isConnected {
     Promise.resolve(Ok({
@@ -3097,27 +3102,102 @@ let executeSqlScript = (self: DaoAdapter.t, scriptPath: string): Promise.t<resul
       accessErrorMessage: None,
     }))
     | Some(session) => {
-        switch ComSession.getCurrentDb(session) {
+        switch ComSession.getHandles(session).adoConn {
         | None => Promise.resolve(Ok({
           success: false,
-          error: Some("No DB handle"),
+          error: Some("No ADO connection"),
           statementsExecuted: 0,
           failingStatement: None,
           failingLine: None,
           accessErrorCode: None,
           accessErrorMessage: None,
         }))
-        | Some(_db) => {
-            // Full implementation replaces this in Step 6
-            Promise.resolve(Ok({
-              success: false,
-              error: Some("Not connected"),
-              statementsExecuted: 0,
-              failingStatement: None,
-              failingLine: None,
-              accessErrorCode: None,
-              accessErrorMessage: None,
-            }))
+        | Some(ado) => {
+            // File existence check — emit exact Python "File not found: <path>" string.
+            if !NodeJs.Fs.existsSync(scriptPath) {
+              Promise.resolve(Ok({
+                success: false,
+                error: Some("File not found: " ++ scriptPath),
+                statementsExecuted: 0,
+                failingStatement: None,
+                failingLine: None,
+                accessErrorCode: None,
+                accessErrorMessage: None,
+              }))
+            } else {
+              // Read file via NodeJs.Fs (ESM-safe, proven at ComDbProps.res:236).
+              let rawSql = try {
+                let buf = NodeJs.Fs.readFileSync(scriptPath)
+                NodeJs.Buffer.toStringWithEncoding(buf, NodeJs.StringEncoding.utf8)
+              } catch {
+              | _ => ""
+              }
+              if String.length(rawSql) == 0 {
+                Promise.resolve(Ok({
+                  success: false,
+                  error: Some("Failed to read script: " ++ scriptPath),
+                  statementsExecuted: 0,
+                  failingStatement: None,
+                  failingLine: None,
+                  accessErrorCode: None,
+                  accessErrorMessage: None,
+                }))
+              } else {
+                let parsed = parseScriptLines(rawSql)
+                if Array.length(parsed.statements) == 0 {
+                  Promise.resolve(Ok({
+                    success: true,
+                    error: None,
+                    statementsExecuted: 0,
+                    failingStatement: None,
+                    failingLine: None,
+                    accessErrorCode: None,
+                    accessErrorMessage: None,
+                  }))
+                } else {
+                  // Sequential execute loop. MUST be `let rec recurse` — a plain
+                  // `let recurse` that calls itself fails with "The value
+                  // recurse can't be found" (observed in attempt 3).
+                  let statements = parsed.statements
+                  let rec recurse = (idx: int, count: int): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
+                    if idx >= Array.length(statements) {
+                      Promise.resolve(Ok({
+                        success: true,
+                        error: None,
+                        statementsExecuted: count,
+                        failingStatement: None,
+                        failingLine: None,
+                        accessErrorCode: None,
+                        accessErrorMessage: None,
+                      }))
+                    } else {
+                      let entry = statements->Array.getUnsafe(idx)
+                      Bindings.Winax.WINAX_BINDING.invokePreservingError(ado, "Execute", [ComInterfaces.VStr(entry.text)])
+                        ->Promise.then(result => switch result {
+                        | Ok(_) => recurse(idx + 1, count + 1)
+                        | Error(perr) => {
+                            let accessErrorCode = perr.number
+                            let accessErrorMessage = switch perr.description {
+                            | Some(d) => Some(d)
+                            | None => Some(perr.message)
+                            }
+                            Promise.resolve(Ok({
+                              success: false,
+                              error: accessErrorMessage,
+                              statementsExecuted: count,
+                              failingStatement: Some(entry.text),
+                              failingLine: Some(entry.line),
+                              accessErrorCode,
+                              accessErrorMessage,
+                            }))
+                          }
+                        })
+                    }
+                  }
+                  recurse(0, 0)
+                }
+              }
+            }
           }
         }
       }
