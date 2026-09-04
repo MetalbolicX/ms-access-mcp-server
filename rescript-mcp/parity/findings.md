@@ -837,10 +837,10 @@ ecreateLinkedTable's ttributes parameter also uses the signed form when computi
 
 **Status**: INFORMATIONAL ï¿½ no action required.
 
-## 038-F-001 RESOLVED — Python WinComAdapter linked-table + executeSqlScript implemented
+## 038-F-001 RESOLVED ï¿½ Python WinComAdapter linked-table + executeSqlScript implemented
 
 **Resolution** (commit 6726c04):
-The 5 linked-table methods already delegated to the composed DaoAdapter (parity by construction per plan §Current state). The blocking bug was WinComAdapter.connect() never setting self._dao._connected = True after a successful DAO connection, causing DaoAdapter._connected to stay False and every linked-table op to short-circuit with "Not connected". Fix at wincom.py:237: sync the flag on connect/disconnect.
+The 5 linked-table methods already delegated to the composed DaoAdapter (parity by construction per plan ï¿½Current state). The blocking bug was WinComAdapter.connect() never setting self._dao._connected = True after a successful DAO connection, causing DaoAdapter._connected to stay False and every linked-table op to short-circuit with "Not connected". Fix at wincom.py:237: sync the flag on connect/disconnect.
 
 **Verification:**
 - parity:northwind:com:ddl: 8 matched + 5 mismatched + 1 errored + 1 skipped ? **9 matched + 5 mismatched + 0 errored + 1 skipped** (delete_table moved from errored to matched).
@@ -852,14 +852,14 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 **Finding ID**: 038-F-005
 **Phase**: Plan 038 option 1 follow-up
 **Discovered**: Plan 038 (2026-09-03), at commit 6726c04
-**Severity**: Blocking — 5 of 6 new COM cases fail parity on this Access-env-restricted machine
+**Severity**: Blocking ï¿½ 5 of 6 new COM cases fail parity on this Access-env-restricted machine
 
 **Summary**: After Python implementation (038-F-001 RESOLVED), 5 COM cases still mismatch:
-- ecreate_linked_table — Python returns DAO error (-2147352567, 'Exception occurred.', 'Invalid argument.', ...). ReScript returns null (success). Python sees the setup-created link and tries to recreate; ReScript doesn't see it (or recreates successfully with no error).
-- efresh_linked_table — Python returns null (success). ReScript returns Item not found in this collection (DAO.TableDefs error -2146825023). Python refreshes the link successfully; ReScript can't find it.
-- unlink_table — Python returns null (success). ReScript returns Not connected. Python unlinks; ReScript's COM guard fires.
-- get_linked_tables — Python returns {"success": true, "linked_tables": [...]}. ReScript returns the Not connected envelope (no linked_tables key, since the shaper omits the array on the failure path).
-- execute_sql_script — diff at $.access_error_code. Python extracts -2147217900 from exc.com_error.args[0]. ReScript returns None (per plan §Maintenance notes: winax does not expose scode through the extractor; the failing-script parity case is deferred).
+- ecreate_linked_table ï¿½ Python returns DAO error (-2147352567, 'Exception occurred.', 'Invalid argument.', ...). ReScript returns null (success). Python sees the setup-created link and tries to recreate; ReScript doesn't see it (or recreates successfully with no error).
+- efresh_linked_table ï¿½ Python returns null (success). ReScript returns Item not found in this collection (DAO.TableDefs error -2146825023). Python refreshes the link successfully; ReScript can't find it.
+- unlink_table ï¿½ Python returns null (success). ReScript returns Not connected. Python unlinks; ReScript's COM guard fires.
+- get_linked_tables ï¿½ Python returns {"success": true, "linked_tables": [...]}. ReScript returns the Not connected envelope (no linked_tables key, since the shaper omits the array on the failure path).
+- execute_sql_script ï¿½ diff at $.access_error_code. Python extracts -2147217900 from exc.com_error.args[0]. ReScript returns None (per plan ï¿½Maintenance notes: winax does not expose scode through the extractor; the failing-script parity case is deferred).
 
 **Root cause hypothesis**: ReScript's winax COM session against db/postgres.accdb is not establishing on this machine. The 9 pre-existing test failures (ComIntegration 495-500, ComExecuteQuery 645-647) all involve MSACCESS.EXE, suggesting Access availability is limited. Python's win32com path connects (some operations succeed); ReScript's winax path doesn't (operations return Not connected).
 
@@ -870,16 +870,16 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 2. On a machine with full Access availability, parity might naturally pass (both sides succeed; envelopes match). The 9 baseline failures and this finding together suggest Access env restrictions on the test machine.
 3. Mark the 5 COM cases as skipped with this finding note, accepting ODBC parity coverage as the achievable target until ReScript COM session can be debugged in a full Access env.
 
-**Status**: 038-F-001 RESOLVED. 038-F-005 OPEN. Plan §Step 9 only permits linked_tables.attributes as auto-volatile — these are NOT in that category, so this is STOP territory per the plan. Recording and surfacing to user.
+**Status**: 038-F-001 RESOLVED. 038-F-005 OPEN. Plan ï¿½Step 9 only permits linked_tables.attributes as auto-volatile ï¿½ these are NOT in that category, so this is STOP territory per the plan. Recording and surfacing to user.
 
 ## 038-F-006: ReScript executeSqlScript ccessErrorCode/Message always None (plan-deferred)
 
 **Finding ID**: 038-F-006
 **Phase**: Plan 038 Step 6 executeSqlScript implementation
 **Discovered**: Plan 038 (2026-09-03), at commit 269b4e2
-**Severity**: Deferred per plan §Maintenance notes
+**Severity**: Deferred per plan ï¿½Maintenance notes
 
-**Summary**: ReScript's executeSqlScript extracts ADO error info via _exnMessage which returns the JS error's .message string but does NOT surface scode (the COM 32-bit error code) or the structured error description. Python's execute_sql_script extracts -2147217900 from exc.com_error.args[0]. Plan §Maintenance notes explicitly deferred this: "winax does not expose scode through the extractor; the failing-script parity case is deferred — see Out of scope."
+**Summary**: ReScript's executeSqlScript extracts ADO error info via _exnMessage which returns the JS error's .message string but does NOT surface scode (the COM 32-bit error code) or the structured error description. Python's execute_sql_script extracts -2147217900 from exc.com_error.args[0]. Plan ï¿½Maintenance notes explicitly deferred this: "winax does not expose scode through the extractor; the failing-script parity case is deferred ï¿½ see Out of scope."
 
 **Status**: Expected divergence per plan. The failing-script execute_sql_script parity case is deferred until a future plan adds _exnCode to the extractor. Until then, $.access_error_code will mismatch whenever the failing path is exercised.
 
@@ -888,14 +888,14 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 **Finding ID**: 038-F-007
 **Phase**: Plan 038 step 5 follow-up
 **Discovered**: Plan 038 (2026-09-03), at commit (pending)
-**Severity**: Blocking — getLinkedTables cannot iterate TableDefs via winax in this env
+**Severity**: Blocking ï¿½ getLinkedTables cannot iterate TableDefs via winax in this env
 
 **Summary**: ReScript's winax binding crashes (native exit 134, no stdout) when calling TableDefs.Item(index) against db/postgres.accdb. The Python win32com binding handles the same operation fine. The crash reproduces with both parallel (Array.map + Promise.all) and sequential (recursive loop) iteration patterns; both crash on the first getItem call.
 
 **Reproduction**:
-1. WINAX_BINDING.get(db, "TableDefs") returns the TableDefs collection handle — works.
-2. WINAX_BINDING.getCount(tableDefs) returns the count — works.
-3. WINAX_BINDING.getItem(tableDefs, VInt(0)) (which dispatches to invokeAsObject(tableDefs, "Item", [VInt(0)])) — crashes.
+1. WINAX_BINDING.get(db, "TableDefs") returns the TableDefs collection handle ï¿½ works.
+2. WINAX_BINDING.getCount(tableDefs) returns the count ï¿½ works.
+3. WINAX_BINDING.getItem(tableDefs, VInt(0)) (which dispatches to invokeAsObject(tableDefs, "Item", [VInt(0)])) ï¿½ crashes.
 
 **Workaround applied**: getLinkedTables returns success with empty linkedTables: [] array. The COM case get_linked_tables.json now fails parity at $.linked_tables (Python returns the setup-created links, ReScript returns empty) but does not crash the winax binding, allowing other cases to run.
 
@@ -905,8 +905,43 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 - Has a native crash specific to this machine's Access version + Node.js version combination.
 
 **Resolution paths** (out of plan 038 scope):
-1. Use a different DAO API to enumerate linked tables without iterating TableDefs.Item — e.g., open a second OpenDatabase and read MSysObjects where Type = 6 (linked table). Bypasses the TableDefs collection entirely.
+1. Use a different DAO API to enumerate linked tables without iterating TableDefs.Item ï¿½ e.g., open a second OpenDatabase and read MSysObjects where Type = 6 (linked table). Bypasses the TableDefs collection entirely.
 2. Investigate winax dispose-ordering for collection iteration (broader than plan 038; related to 033-F-001).
 3. Mark get_linked_tables.json as skipped with this finding note, accepting ODBC parity as the achievable coverage for this op until winax enumeration is fixed.
 
 **Status**: OPEN. Documented in ComDataAdapter.res getLinkedTables impl comment.
+
+---
+
+## 038-F-008: MSysObjects SQL approach is destabilizing (reverted)
+
+**Finding ID**: 038-F-008
+**Phase**: Plan 038 attempt to resolve 038-F-007
+**Discovered**: Plan 038 (2026-09-03)
+**Severity**: Process improvement
+
+**Summary**: Replaced the empty-array stub in `getLinkedTables` with a MSysObjects SQL query (`SELECT Name, Connect FROM MSysObjects WHERE Type = 6`) using the `_executeQueryImpl` recordset-iteration pattern. The fix improved `get_linked_tables.json` from "exit 134 crash" to "diff at $.linked_tables" (no crash), but introduced 1-2 new MSACCESS session-state errored cases (`delete_table`, `drop_index`) on subsequent runs.
+
+**Test results (3 runs of parity:northwind:com:ddl):**
+- Run 1: 10 matched + 3 mismatched + 1 errored + 1 skipped (clean)
+- Run 2: 8 matched + 4 mismatched + 2 errored + 1 skipped (regressed)
+- Run 3: timed out (MSACCESS session poisoning)
+
+**Decision**: REVERTED to the empty-array stub (commit `acce654` state) at the stable 10+4+0+1 baseline. The MSysObjects approach is correct in principle but introduced unacceptable session-state variance in this environment.
+
+**Status**: RESOLVED by reverting. 038-F-007 remains OPEN.
+
+---
+
+## 038-F-009: TableDefs.Refresh does not fix 038-F-005 (reverted)
+
+**Finding ID**: 038-F-009
+**Phase**: Plan 038 attempt to resolve 038-F-005
+**Discovered**: Plan 038 (2026-09-03)
+**Severity**: Process improvement
+
+**Summary**: Added `TableDefs.Refresh` calls before the named-access lookups in both `refreshLinkedTable` and `recreateLinkedTable.resolveAttrs` in `ComDataAdapter.res`. The hypothesis was that winax cached a stale TableDefs collection. The fix did not resolve either mismatch and introduced a new `get_indexes.json` exit-134 error.
+
+**Result**: REVERTED to the stable baseline. The collection is fetched fresh per call, so missing collection refresh is not the root cause.
+
+**Status**: RESOLVED by reverting. 038-F-005 remains OPEN.
