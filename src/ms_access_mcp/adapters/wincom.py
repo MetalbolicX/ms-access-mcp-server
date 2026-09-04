@@ -229,7 +229,13 @@ class WinComAdapter(
                 _logger.exception(f"[WinComAdapter] _do_connect FAILED: {_ex}")
                 return False
 
-        return self._dispatcher.call(_do_connect)
+        result = self._dispatcher.call(_do_connect)
+        if result:
+            # The composed DaoAdapter's _connected flag must track the actual
+            # DAO handle state. Setting it here ensures linked-table ops
+            # (which delegate to DaoAdapter) see the correct connection state.
+            self._dao._connected = True
+        return result
 
     def disconnect(self) -> None:
         """Disconnect from the Access database."""
@@ -242,6 +248,7 @@ class WinComAdapter(
         except Exception as e:
             _logger.warning(f"Cleanup warning: disconnect failed: {e}")
         self._dispatcher.shutdown()
+        self._dao._connected = False
         self._db_path = None
 
     def is_connected(self) -> bool:
