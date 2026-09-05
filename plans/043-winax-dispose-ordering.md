@@ -11,13 +11,23 @@
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
 
-> **Versioning note (read this first)**: This is **v2**, replacing v1
-> which proposed a `_closeAndRelease` helper that tried `Close()` via
-> `%raw` then released unconditionally. Executor attempted v1 and
-> STOPPED: the helper applied at all 95 release sites made parity
-> unstable — first run looked good, second run regressed on
-> `delete_table` and `recreate_linked_table`. v1's diagnosis was
-> wrong. **Do not attempt v1.**
+> **Versioning note (read this first)**: This is **v3**, replacing v2
+> which proposed adding `_winaxModule` cache + `releaseSyncAwait` but
+> had two design flaws exposed by execution:
+>
+> 1. The plan said "DO NOT touch `Winax.resi`" but `releaseSyncAwait`
+>    must be in the module type to be externally callable. v3
+>    explicitly allows ONE line addition to `Winax.resi`.
+> 2. The plan said to add `setImmediate(() => process.exit(0))` in
+>    `main.mjs` AND `Server.res`. The executor added it to BOTH,
+>    which broke `delete_table.json` (regressed to exit-134 because
+>    the `setImmediate` in `Server.res`'s `shutdown` fired BEFORE
+>    the disconnect microtasks drained). v3 restricts the
+>    `setImmediate` to `main.mjs` ONLY.
+>
+> v1 (which proposed a `_closeAndRelease` helper applied via
+> `replaceAll` to 95 sites) also STOPPED at Step 8 with non-
+> deterministic parity regressions. **Do not attempt v1 or v2.**
 
 ## Status
 
@@ -332,29 +342,43 @@ $env:ACCESS_MCP_ALLOWED_DIRS="$PWD\db;$env:TEMP"; $env:ACCESS_MCP_READONLY='fals
 
 **In scope** (exactly these files):
 - `rescript-mcp/src/Bindings/Winax.res` — add `_winaxModule` cache,
-  `_getWinax` lazy accessor, `releaseSync` (best-effort) and
-  `releaseSyncAwait` (awaitable) primitives
+  `_getWinax` lazy accessor, and `releaseSyncAwait` (awaitable)
+  primitive INSIDE the `WINAX_BINDING` module
+- `rescript-mcp/src/Bindings/Winax.resi` — add the `releaseSyncAwait`
+  declaration to the `WINAX_BINDING` module TYPE (v3 correction: the
+  function must be in the module type to be externally callable from
+  `ComSession.res` and `ComDataAdapter.res` via
+  `Bindings.Winax.WINAX_BINDING.releaseSyncAwait(...)`)
 - `rescript-mcp/src/Adapters/ComSession.res` — rewrite `_disconnect`
   to use the awaitable LIFO chain
-- `rescript-mcp/src/Adapters/ComDataAdapter.res` — replace
-  `release` with `releaseSyncAwait` at the 4 plan-042-v2 Append
-  sites (lines 2570, 2608, 2809, 2988) and any other per-op
-  release of a real COM handle
-- `rescript-mcp/src/Mcp/main.mjs` (and/or `runRescript.ts`) —
-  ensure the harness awaits the disconnect Promise before
-  `process.exit(0)`
-- `rescript-mcp/parity/findings.md` — resolution notes appended
-  to 033-F-001, 038-F-007, 042-F-001, 040-F-001
+- `rescript-mcp/src/Adapters/ComDataAdapter.res` — replace `release`
+  with `releaseSyncAwait` at the 4 plan-042-v2 Append sites (lines
+  2570, 2608, 2809, 2988)
+- `rescript-mcp/src/Mcp/main.mjs` — add `.then(() => setImmediate(() =>
+  process.exit(0)))` after `run()` so the harness exits AFTER the
+  outermost Promise chain resolves and the I/O callback phase runs
+- `rescript-mcp/scripts/runRescript.ts` — same fix if it has its own
+  disconnect path
+- `rescript-mcp/parity/findings.md` — resolution notes appended to
+  033-F-001, 038-F-007, 042-F-001, 040-F-001
 - `plans/README.md` — rows 042, 040, 041, 043 updated
 
 **Out of scope** (do NOT touch):
-- `Bindings/Winax.resi` — the new primitives are module-internal;
-  the existing `release` signature is unchanged
+- `rescript-mcp/src/Mcp/Server.res` — DO NOT add `setImmediate` in
+  the `shutdown` function's Promise chain. The previous executor
+  added `setImmediate` between `mcpClose(server)` and
+  `Promise.resolve()`, which fires BEFORE the disconnect microtasks
+  drain → `delete_table.json` regressed to exit-134. v3 fix:
+  `shutdown` returns `Promise.resolve()` after `mcpClose(server)`,
+  letting the natural microtask drain handle ordering. The
+  `setImmediate` goes in `main.mjs` ONLY, AFTER `run()` resolves.
 - `TsBridge.res` — `winaxRelease` is already correct
 - `winaxBinding.mts` — `mod.release` is already correct (sync)
 - `Odbc.res` / `OdbcAdapter.res` — ODBC path doesn't use winax
 - The existing `_closeRecordset` helper — keep as-is; it can
   coexist with the new sync primitives
+- The existing `release` and `releaseAsync` in `Winax.res` — keep
+  as-is; they are still used for best-effort cleanup
 
 ## Git workflow
 
@@ -398,9 +422,47 @@ At `_disconnect` (lines 270-298): replace the `let _ = _releaseHandle(...)` call
 
 ### Step 3: Await disconnect in the harness
 
-In `rescript-mcp/src/Mcp/main.mjs` (or wherever `disconnect` is called from): find the call site, ensure the returned Promise is awaited before `process.exit(0)`. If the call is `disconnect().then(() => process.exit(0))`, change to `disconnect().then(() => { /* drain microtasks */ setImmediate(() => process.exit(0)) })` to ensure the v8 microtask queue is drained.
+In `rescript-mcp/src/Mcp/main.mjs` ONLY (NOT in `Server.res`):
 
-Also check `runRescript.ts` if it has a separate disconnect path.
+```javascript
+// BEFORE:
+run().catch((err) => {
+  console.error("[ms-access-mcp] fatal:", err?.message ?? err);
+  if (err?.stack) console.error(err.stack);
+  process.exit(1);
+});
+
+// AFTER:
+run()
+  .then(() => {
+    setImmediate(() => process.exit(0));
+  })
+  .catch((err) => {
+    console.error("[ms-access-mcp] fatal:", err?.message ?? err);
+    if (err?.stack) console.error(err.stack);
+    process.exit(1);
+  });
+```
+
+**Why NOT in `Server.res`**: the previous executor added `setImmediate`
+inside the `shutdown` function's Promise chain (between
+`mcpClose(server)` and `Promise.resolve()`). This fires `setImmediate`
+during the I/O callback phase, BEFORE the disconnect microtasks drain.
+Result: `delete_table.json` regressed to exit-134 (release fires
+during v8 teardown, not before). The `setImmediate` must be at the
+OUTERMOST level — `main.mjs`'s `run().then(...)` — so it fires AFTER
+all disconnect chains have settled.
+
+**DO NOT modify `Server.res`'s `shutdown` function**. It must remain:
+
+```rescript
+disconnectAll(connNames)
+  ->Promise.then(_ => mcpClose(server))
+  ->Promise.then(_ => Promise.resolve())
+```
+
+Also check `rescript-mcp/scripts/runRescript.ts` if it has its own
+disconnect path; apply the same outer-level fix.
 
 ### Step 4: Replace per-op release at the 4 plan-042-v2 Append sites
 
@@ -492,7 +554,9 @@ mismatches are fully resolved.
 
 The chain is: 043 v2 → 042 v2 → 040 → done with 038.
 
-## v1 history (do not repeat)
+## v1 + v2 history (do not repeat)
+
+### v1 (rejected — wrong diagnosis)
 
 Plan 043 v1 added a `_closeAndRelease` helper that tried `Close()`
 via `%raw` then released unconditionally, applied at all 95 release
@@ -505,6 +569,42 @@ sites via `replaceAll`. Executor STOPPED at Step 8 with:
 
 Root cause of v1's failure: the helper added latency to every
 release (`%raw` JS call) without changing the asynchrony. The
+async `release` still deferred the actual `IUnknown::Release` to a
+microtask, and v8 teardown's ordering is independent of microtask
+scheduling. v2 fixes the actual asynchrony with a module cache and
+awaitable release.
+
+### v2 (rejected — two design flaws)
+
+Plan 043 v2 attempted the sync release design with two flaws that
+caused execution STOP at Step 7:
+
+1. **Forbidden `Winax.resi` modification**: The plan said "DO NOT
+   touch `Winax.resi` — the new primitives are module-internal." But
+   `releaseSyncAwait` must be in the module TYPE for external
+   callers (`ComSession.res`, `ComDataAdapter.res`) to use it via
+   `Bindings.Winax.WINAX_BINDING.releaseSyncAwait(...)`. The executor
+   correctly added the declaration, which the plan forbids. v3
+   explicitly allows this one-line addition.
+
+2. **Wrong harness layer for `setImmediate`**: The plan said to add
+   `setImmediate(() => process.exit(0))` in both `main.mjs` and
+   `Server.res`. The executor did. The `Server.res` `shutdown`
+   function has:
+   ```rescript
+   disconnectAll(connNames)
+     ->Promise.then(_ => mcpClose(server))
+     ->Promise.then(_ => %raw("() => setImmediate(() => process.exit(0))")())
+   ```
+   The `setImmediate` fires during the I/O callback phase, BEFORE
+   the disconnect microtasks drain. Result: `delete_table.json`
+   regressed to exit-134 (releases fired during v8 teardown, not
+   before). v3 restricts the `setImmediate` to `main.mjs` ONLY —
+   the outermost level — so it fires AFTER all disconnect chains
+   have settled.
+
+v3 fixes both: explicit allowance for `Winax.resi` line + restriction
+of `setImmediate` to `main.mjs` only.
 async `release` still deferred the actual `IUnknown::Release` to a
 microtask, and v8 teardown's ordering is independent of microtask
 scheduling. v2 fixes the actual asynchrony with a module cache and
