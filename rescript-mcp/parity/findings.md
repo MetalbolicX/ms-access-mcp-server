@@ -1022,6 +1022,18 @@ Reverted per plan §STOP conditions (Branch 4b variant 1 did not flip to PASS).
 
 038-F-005 remains OPEN. 040-F-001 is the documented blocker. Plan 040 reverted; working tree at 6a51380; build clean; no commit made. Next session should consider option 1 (smallest viable binding change) and re-run plan 040 with a re-scoped plan that explicitly permits the `variantToJson` modification.
 
+### Resolution (plan 042 v2 landed at d4a604b)
+
+Plan 042 v2 implemented option 4 from the resolution paths above:
+- Added `VComObject(ComInterfaces.comObject)` constructor to the `variant` ADT in `ComInterfaces.res`+`.resi`
+- Added `VComObject` arm to `variantToJson` in `Winax.res` that strips `{__p__: ...}` envelopes via `%raw` and returns the raw proxy as `JSON.t`
+- Changed 4 Append call sites (`ComDataAdapter.res:2570, :2608, :2809, :2988`) from `%raw` smuggling to `ComInterfaces.VComObject(X)` — typed construction
+- Disposal handled by the `releaseSyncAwait` chain added in plan 043 v3 — Append now actually lands, then the proxy is released synchronously before process exit
+
+**Result**: The `refresh_linked_table` and `recreate_linked_table` cases now FAIL with **content diffs at `$.error`** instead of exit-134 — the Append now actually attempts DAO calls. Plan 040 (named lookup fix) must now land to make these PASS.
+
+**Verified**: COM DDL parity runs at `11 matched + 2 mismatched + 0 errored + 2 skipped` (clean runs); the 2 mismatches are `refresh_linked_table` (DAO error "Item not found in this collection." -2146825023) and `recreate_linked_table` (ReScript returns `{success: true, error: null}` while Python returns the correct error).
+
 ---
 
 ## 042-F-001: VComObject constructor blocked by winax dispose-ordering (RESOLVED)

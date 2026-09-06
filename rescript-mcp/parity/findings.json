@@ -1,5 +1,15 @@
 [
   {
+    "operation": "delete_table",
+    "case": "delete_table.json",
+    "diff": {
+      "path": "DRIVER",
+      "expected": "ok",
+      "actual": "driver error"
+    },
+    "stderr": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n"
+  },
+  {
     "operation": "recreate_linked_table",
     "case": "recreate_linked_table.json",
     "diff": {
