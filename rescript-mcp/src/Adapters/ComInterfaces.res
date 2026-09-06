@@ -2,6 +2,12 @@
 // Mirrors src/ms_access_mcp/adapters/interfaces.py (ISP protocols)
 
 // ---------------------------------------------------------------------------
+// COM object — opaque handle (set internally by Bindings.Winax)
+// ---------------------------------------------------------------------------
+
+type comObject = unit  // concrete — winax returns JS objects, wrapped as unit here
+
+// ---------------------------------------------------------------------------
 // Variant ADT — typed marshaling boundary for COM automation
 // ---------------------------------------------------------------------------
 
@@ -17,12 +23,7 @@ type rec variant =
   | VStr(string)
   | VArray(array<variant>)
   | VByRef(ref<variant>)
-
-// ---------------------------------------------------------------------------
-// COM object — opaque handle (set internally by Bindings.Winax)
-// ---------------------------------------------------------------------------
-
-type comObject = unit  // concrete — winax returns JS objects, wrapped as unit here
+  | VComObject(comObject)  // Plan 042 v2: COM handle passthrough
 
 // ---------------------------------------------------------------------------
 // Dispatch error record

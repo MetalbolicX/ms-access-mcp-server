@@ -2567,7 +2567,7 @@ module DaoAdapter = {
                             }
                           | Ok(relsJson) => {
                               let relsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(relsJson)
-                              let relAsVariant: ComInterfaces.variant = %raw("(r) => r")(Obj.magic(rel))
+                              let relAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(rel)
                               Bindings.Winax.WINAX_BINDING.invoke(relsHandle, "Append", [relAsVariant])
                               ->Promise.then(_ => {
                                 Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rel)->Promise.then(_ => Promise.resolve())->ignore
@@ -2605,7 +2605,7 @@ module DaoAdapter = {
                                     }
                                   | Ok(fieldsJson) => {
                                       let fieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(fieldsJson)
-                                      let fieldAsVariant: ComInterfaces.variant = %raw("(f) => f")(Obj.magic(field))
+                                      let fieldAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(field)
                                       Bindings.Winax.WINAX_BINDING.invoke(fieldsHandle, "Append", [fieldAsVariant])
                                       ->Promise.then(_ => {
                                         Bindings.Winax.WINAX_BINDING.releaseSyncAwait(field)->Promise.then(_ => Promise.resolve())->ignore
@@ -2806,7 +2806,7 @@ let createLinkedTable = (
                             }
                           | Ok(tableDefsJson) => {
                               let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
-                              let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t")(Obj.magic(tdef))
+                              let tdefAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(tdef)
                               Bindings.Winax.WINAX_BINDING.invoke(tableDefs, "Append", [tdefAsVariant])
                               ->Promise.then(_r4 => {
                                 Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
@@ -2985,7 +2985,7 @@ let recreateLinkedTable = (
                                       }
                                     | Ok(tdefsJson) => {
                                         let tdefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefsJson)
-                                        let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t")(Obj.magic(tdef))
+let tdefAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(tdef)
                                         Bindings.Winax.WINAX_BINDING.invoke(tdefs, "Append", [tdefAsVariant])
                                         ->Promise.then(_ => {
                                           Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdefs)->Promise.then(_ => Promise.resolve())->ignore

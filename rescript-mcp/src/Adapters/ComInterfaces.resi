@@ -3,6 +3,12 @@
 // Module types (SESSION, WINAX_BINDING, TRUSTED_LOCATIONS_PROVIDER) live in their own files
 
 // ---------------------------------------------------------------------------
+// COM object — opaque handle from winax.Object constructor
+// ---------------------------------------------------------------------------
+
+type comObject = unit  // concrete — actual handle from winax wrapped here
+
+// ---------------------------------------------------------------------------
 // Variant ADT — typed marshaling boundary for COM automation
 // Mirrors python-win32 Variant semantics; excludes raw exn escape
 // ---------------------------------------------------------------------------
@@ -19,12 +25,7 @@ type rec variant =
   | VStr(string)
   | VArray(array<variant>)
   | VByRef(ref<variant>)
-
-// ---------------------------------------------------------------------------
-// COM object — opaque handle from winax.Object constructor
-// ---------------------------------------------------------------------------
-
-type comObject = unit  // concrete — actual handle from winax wrapped here
+  | VComObject(comObject)  // Plan 042 v2: COM handle passthrough
 
 // ---------------------------------------------------------------------------
 // Dispatch error record — folded into Errors.DatabaseError

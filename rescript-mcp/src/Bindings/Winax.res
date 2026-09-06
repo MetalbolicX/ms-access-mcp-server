@@ -122,6 +122,21 @@ module WINAX_BINDING: WINAX_BINDING = {
     | ComInterfaces.VStr(s) => JSON.String(s)
     | ComInterfaces.VArray(_) => JSON.Null
     | ComInterfaces.VByRef(_) => JSON.Null
+    | ComInterfaces.VComObject(proxy) => {
+      // Plan 042 v2: pass COM handle through to winax. The call sites wrap
+      // the proxy as {__p__: rawProxy}; strip the envelope so winax gets
+      // the dispatch pointer (matches winaxBinding.mts:_unwrap contract).
+      // The %raw needs a JSON.t (comObject = unit is the type-system lie
+      // the codebase already uses; Obj.magic bridges it like the call
+      // sites do). FUNCTION LITERAL — never an IIFE (ComDataAdapter.res:57-59).
+      let unwrapped: option<JSON.t> = %raw(
+        "(p) => (p != null && typeof p === 'object' && p.__p__ !== undefined) ? p.__p__ : null"
+      )(Obj.magic(proxy))
+      switch unwrapped {
+      | Some(raw) => raw
+      | None => JSON.Null  // safe fallback — null TableDef = DAO no-op (today's behavior)
+      }
+    }
     }
   }
 
