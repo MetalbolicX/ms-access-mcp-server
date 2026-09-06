@@ -23,6 +23,7 @@ module type WINAX_BINDING = {
   let createObject: string => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   let release: ComInterfaces.comObject => unit
   let releaseAsync: ComInterfaces.comObject => Promise.t<unit>
+  let releaseSyncAwait: ComInterfaces.comObject => Promise.t<unit>
 
   // Property access
   let get: (ComInterfaces.comObject, string) => Promise.t<result<JSON.t, Errors.t>>
@@ -71,6 +72,23 @@ module WINAX_BINDING: WINAX_BINDING = {
   // `import("winax")`. Mirrors Bindings/Odbc.res (D11/REQ-D11).
   let _importWinax: unit => Promise.t<dict<JSON.t>> = () => {
     %raw("(p) => import(p)")("winax")->Promise.resolve
+  }
+
+  // _winaxModule — cached winax module handle. Resolves once on first
+  // access, then synchronously available. Module load is a single dynamic
+  // import; binding operations are sync from then on.
+  // Pattern: lazy ref to a Promise that resolves once.
+  let _winaxModule: ref<option<Promise.t<dict<JSON.t>>>> = ref(None)
+
+  let _getWinax: unit => Promise.t<dict<JSON.t>> = () => {
+    switch _winaxModule.contents {
+    | Some(p) => p
+    | None => {
+        let p = %raw("(p) => import(p)")("winax")->Promise.resolve
+        _winaxModule := Some(p)
+        p
+      }
+    }
   }
 
   // ------------------------------------------------------------------
@@ -172,6 +190,22 @@ module WINAX_BINDING: WINAX_BINDING = {
         TsBridge.winaxRelease(rawMod, obj)
         Promise.resolve()
       })->Promise.catch(_ => Promise.resolve())
+    }: ComInterfaces.comObject => Promise.t<unit>
+  )
+
+  // releaseSyncAwait — SYNCHRONOUS release (awaitable). Awaits the winax
+  // module (one time, then cached) and immediately calls mod.release.
+  // Use at session teardown and at the end of any op that creates a real
+  // COM handle (TableDefs, Fields, Relations, Recordsets). The previous
+  // async release fired during v8 teardown → crash. This fires
+  // deterministically once the module is loaded.
+  let releaseSyncAwait: ComInterfaces.comObject => Promise.t<unit> = (
+    (obj: ComInterfaces.comObject) => {
+      _getWinax(())->Promise.then(m => {
+        let rawMod = TsBridge.unwrapWinaxModule(m)
+        TsBridge.winaxRelease(rawMod, obj)
+        Promise.resolve()
+      })
     }: ComInterfaces.comObject => Promise.t<unit>
   )
 

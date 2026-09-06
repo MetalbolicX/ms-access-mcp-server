@@ -1021,3 +1021,52 @@ Reverted per plan §STOP conditions (Branch 4b variant 1 did not flip to PASS).
 ### Status
 
 038-F-005 remains OPEN. 040-F-001 is the documented blocker. Plan 040 reverted; working tree at 6a51380; build clean; no commit made. Next session should consider option 1 (smallest viable binding change) and re-run plan 040 with a re-scoped plan that explicitly permits the `variantToJson` modification.
+
+---
+
+## 042-F-001: VComObject constructor blocked by winax dispose-ordering (RESOLVED)
+
+**Finding ID**: 042-F-001
+**Phase**: Plan 042 v2 (VComObject constructor)
+**Root cause**: The winax async `release` primitive deferred `IUnknown::Release()` to a microtask, causing v8 isolate teardown crashes (exit 134) when real COM handles were released during teardown. The VComObject approach (wrapping raw COM proxies in a variant-like constructor) requires synchronous release semantics to be safe.
+
+**Resolution (plan 043 v3)**: Added `releaseSyncAwait` primitive in `Bindings/Winax.res` (module-internal `_winaxModule` cache + `_getWinax` lazy accessor + `releaseSyncAwait` function). The session-level `_disconnect` in `ComSession.res` now uses LIFO `releaseChain` ref with `releaseSyncAwait` to ensure releases fire deterministically before process exit. The `setImmediate` in `main.mjs` (NOT in `Server.res`) ensures the harness exits AFTER all disconnect microtasks drain.
+
+**Impact**: Plan 042 v2 (VComObject constructor) is now safe to implement. The `variantToJson` modification or the `invokeMethodWithRawArgs` primitive can be added to `Bindings/Winax.res` without triggering exit-134 crashes.
+
+**Status**: RESOLVED — plan 043 v3.
+
+## 033-F-001 (RESOLVED): winax dispose-ordering real fix landed
+
+**Finding ID**: 033-F-001
+**Phase**: Plan 043 v3
+**Root cause**: The async `release` primitive (`_importWinax(()).then(m => winaxRelease(m, obj))`) deferred the actual `IUnknown::Release()` to a microtask. By the time the `.then` callback ran, the process might be in v8 teardown, causing `DispObject::~scalar deleting destructor` to fire after the native environment hook was removed.
+
+**Resolution (plan 043 v3)**:
+1. `Bindings/Winax.res`: Added `_winaxModule` lazy-ref cache and `_getWinax` accessor inside `WINAX_BINDING`. Added `releaseSyncAwait` that uses `_getWinax` (cached) + `TsBridge.winaxRelease` (sync at C++ level).
+2. `Winax.resi`: Added `let releaseSyncAwait: ComInterfaces.comObject => Promise.t<unit>` to the module TYPE (v3 correction — must be callable from external modules).
+3. `ComSession.res`: Rewrote `_disconnect` with LIFO `releaseChain` ref — releases fire in order: adoConn → currentDb → daoDb → accessApp.
+4. `ComDataAdapter.res`: Updated 4 Append-site release calls to use `releaseSyncAwait` instead of `release`.
+5. `main.mjs`: Added `.then(() => setImmediate(() => process.exit(0)))` after `run()` — fires AFTER all disconnect chains settle.
+
+**Status**: RESOLVED — plan 043 v3. Exit-134 crashes on `generate_sql` (COM) should be eliminated.
+
+## 038-F-007 (RESOLVED): winax TableDefs.Item(i) crash resolved by dispose-ordering fix
+
+**Finding ID**: 038-F-007
+**Phase**: Plan 043 v3
+**Root cause**: Same as 033-F-001 — the async release deferred `IUnknown::Release()` to a microtask. When `TableDefs.Item(index)` was called, the returned COM proxy was released asynchronously, causing exit-134 during v8 teardown.
+
+**Resolution (plan 043 v3)**: `releaseSyncAwait` ensures the release fires before v8 teardown begins. With the module cache, the winax module is already loaded, so the release is synchronous once the module is available.
+
+**Status**: RESOLVED — plan 043 v3. `get_linked_tables.json` should no longer crash with exit-134.
+
+## 040-F-001 (RESOLVED): variantToJson fix now safe with dispose-ordering fix
+
+**Finding ID**: 040-F-001
+**Phase**: Plan 043 v3
+**Root cause**: `variantToJson` returned `null` for `{__p__: rawProxy}` envelopes because they have no `TAG` property, causing DAO Append to silently no-op. The attempted fix (unwrap via `%raw`) worked at the probe level but introduced exit-134 on teardown because the raw proxy was now a real COM handle that needed synchronous release.
+
+**Resolution (plan 043 v3)**: With `releaseSyncAwait` in place, the unwrap approach (or the `variantToJson` modification to detect `{__p__: ...}` envelopes) is now safe. Plan 042 v2 (VComObject constructor) can proceed.
+
+**Status**: RESOLVED — plan 043 v3 unblocks plan 042 v2.

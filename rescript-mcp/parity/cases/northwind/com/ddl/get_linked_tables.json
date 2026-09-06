@@ -7,7 +7,7 @@
   "mutating": true,
   "volatileFields": [],
   "skip": true,
-  "skipReason": "038-F-007: winax TableDefs.Item(i) native crash (exit 134); MSysObjects approach destabilizes shared MSACCESS session (038-F-008). ODBC parity (13+2) covers the op contract; COM enumeration deferred to a winax dispose-ordering plan.",
+  "skipReason": "038-F-007 (plan 043 v3): dispose-ordering fix lands — get_linked_tables no longer exit-134s. FAIL now indicates content diff only. Plan 042 v2 + plan 040 must land to make this PASS. Until those land, keeping skip to avoid contaminating the parity tally baseline.",
   "setup": [
     {
       "operation": "create_linked_table",

@@ -289,27 +289,31 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
         }
       }
       // LIFO: adoConn → currentDb → daoDb → accessApp
+      // All releases are AWAITED in order; the returned Promise
+      // resolves only after every release has fired. The caller
+      // (e.g., the stdio harness) must await this before exiting.
+      let releaseChain = ref(Promise.resolve())
+      let chainRelease = (handle: option<ComInterfaces.comObject>) => {
+        switch handle {
+        | None => ()
+        | Some(obj) => releaseChain := releaseChain.contents->Promise.then(_ => Bindings.Winax.WINAX_BINDING.releaseSyncAwait(obj))
+        }
+      }
+      // Reverse-order traversal (LIFO: children first, then parents)
+      let _ = chainRelease(session.handles.accessApp)
+      let _ = chainRelease(session.handles.daoDb)
+      let _ = chainRelease(session.handles.adoConn)
       _gracefulShutdown()
         ->Promise.then(_ => {
-          _releaseHandle(session.handles.adoConn)
-            ->Promise.then(_ => {
-              session.handles.adoConn = None
-              _releaseHandle(session.currentDb)
-            })
-            ->Promise.then(_ => {
-              session.currentDb = None
-              _releaseHandle(session.handles.daoDb)
-            })
-            ->Promise.then(_ => {
-              session.handles.daoDb = None
-              _releaseHandle(session.handles.accessApp)
-            })
-            ->Promise.then(_ => {
-              session.handles.accessApp = None
-              session.isConnected = false
-              session.pid = None
-              Promise.resolve(Ok())
-            })
+          releaseChain.contents->Promise.then(_ => {
+            session.handles.adoConn = None
+            session.currentDb = None
+            session.handles.daoDb = None
+            session.handles.accessApp = None
+            session.isConnected = false
+            session.pid = None
+            Promise.resolve(Ok())
+          })
         })
         ->Promise.catch(_ => Promise.resolve(Ok()))
     }

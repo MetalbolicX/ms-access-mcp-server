@@ -2570,8 +2570,8 @@ module DaoAdapter = {
                               let relAsVariant: ComInterfaces.variant = %raw("(r) => r")(Obj.magic(rel))
                               Bindings.Winax.WINAX_BINDING.invoke(relsHandle, "Append", [relAsVariant])
                               ->Promise.then(_ => {
-                                Bindings.Winax.WINAX_BINDING.release(rel)->ignore
-                                Bindings.Winax.WINAX_BINDING.release(relsHandle)->ignore
+                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rel)->Promise.then(_ => Promise.resolve())->ignore
+                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relsHandle)->Promise.then(_ => Promise.resolve())->ignore
                                 Promise.resolve(Ok({success: true, error: None}))
                               })
                               ->Promise.catch(e => {
@@ -2608,8 +2608,8 @@ module DaoAdapter = {
                                       let fieldAsVariant: ComInterfaces.variant = %raw("(f) => f")(Obj.magic(field))
                                       Bindings.Winax.WINAX_BINDING.invoke(fieldsHandle, "Append", [fieldAsVariant])
                                       ->Promise.then(_ => {
-                                        Bindings.Winax.WINAX_BINDING.release(field)->ignore
-                                        Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
+                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(field)->Promise.then(_ => Promise.resolve())->ignore
+                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
                                         loopFields(idx + 1)
                                       })
                                       ->Promise.catch(e => {
@@ -2809,11 +2809,11 @@ let createLinkedTable = (
                               let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t")(Obj.magic(tdef))
                               Bindings.Winax.WINAX_BINDING.invoke(tableDefs, "Append", [tdefAsVariant])
                               ->Promise.then(_r4 => {
-                                Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
                                 // Step 6: set Connect to password-stripped
                                 Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(_stripPassword(connectString)))
                                 ->Promise.then(_r5 => {
-                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
                                   Promise.resolve(Ok({success: true, error: None}))
                                 })
                                 ->Promise.catch(e6 => {
@@ -2988,10 +2988,10 @@ let recreateLinkedTable = (
                                         let tdefAsVariant: ComInterfaces.variant = %raw("(t) => t")(Obj.magic(tdef))
                                         Bindings.Winax.WINAX_BINDING.invoke(tdefs, "Append", [tdefAsVariant])
                                         ->Promise.then(_ => {
-                                          Bindings.Winax.WINAX_BINDING.release(tdefs)->ignore
+                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdefs)->Promise.then(_ => Promise.resolve())->ignore
                                           Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(_stripPassword(connectString)))
                                           ->Promise.then(_ => {
-                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
                                             Promise.resolve(Ok({success: true, error: None}))
                                           })
                                           ->Promise.catch(e6 => {

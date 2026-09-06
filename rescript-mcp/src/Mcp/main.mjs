@@ -6,8 +6,12 @@
 // stdout is reserved for the MCP JSON-RPC protocol channel.
 import { run } from "./Server.res.mjs";
 
-run().catch((err) => {
-  console.error("[ms-access-mcp] fatal:", err?.message ?? err);
-  if (err?.stack) console.error(err.stack);
-  process.exit(1);
-});
+run()
+  .then(() => {
+    setImmediate(() => process.exit(0));
+  })
+  .catch((err) => {
+    console.error("[ms-access-mcp] fatal:", err?.message ?? err);
+    if (err?.stack) console.error(err.stack);
+    process.exit(1);
+  });

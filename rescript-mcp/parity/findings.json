@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "operation": "recreate_linked_table",
+    "case": "recreate_linked_table.json",
+    "diff": {
+      "path": "$.error",
+      "expected": "(-2147352567, 'Exception occurred.', (0, 'DAO.TableDef', 'Invalid argument.', 'jeterr40.chm', 5003001, -2146825287), None)",
+      "actual": null
+    }
+  },
+  {
+    "operation": "refresh_linked_table",
+    "case": "refresh_linked_table.json",
+    "diff": {
+      "path": "$.error",
+      "expected": null,
+      "actual": "message=Item not found in this collection. | description=Item not found in this collection. | code=-2146825023 | source=DAO.TableDefs"
+    }
+  }
+]

@@ -18,6 +18,7 @@ module type WINAX_BINDING = {
   let createObject: string => Promise.t<result<ComInterfaces.comObject, Errors.t>>
   let release: ComInterfaces.comObject => unit
   let releaseAsync: ComInterfaces.comObject => Promise.t<unit>
+  let releaseSyncAwait: ComInterfaces.comObject => Promise.t<unit>
 
   // Property access
   let get: (ComInterfaces.comObject, string) => Promise.t<result<JSON.t, Errors.t>>
