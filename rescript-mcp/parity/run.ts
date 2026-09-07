@@ -9,12 +9,20 @@
 //   ACCESS_TEST_DB              — absolute path to fixture .accdb
 //   ACCESS_MCP_ALLOWED_DIRS     — semicolon-separated (fixture + temp export)
 //   ACCESS_MCP_READONLY=false   — disable read-only mode on the ReScript side
-//   ACCESS_TEST_ASSUME_ACE=1    — assert ACE ODBC driver available
+//   ACCESS_TEST_ASSUME_ACE=1   — assert ACE ODBC driver available
+//   PARITY_SOURCE_DB            — absolute path to linked-table source .accdb
 //
 // All four MUST be set; the runner refuses to start otherwise.
 //
 // On Windows + ACCESS_TEST_ASSUME_ACE=1: full suite, exits 1 on mismatch.
 // Off-Windows or without ACE driver: skip cleanly with exit 0.
+//
+// Exact-case selection:
+//   --case <relative-path>  executes ONLY that case (relative to casesDir)
+//
+// Artifact persistence:
+//   Every runner invocation persists an artifact under parity/runs/<run-id>/
+//   containing paired envelopes, setup status, phase markers, and exit metadata.
 
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,6 +30,7 @@ import { tmpdir } from "node:os";
 import { spawnSync, execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { SpawnSyncReturns } from "node:child_process";
+import { createHash } from "node:crypto";
 
 import { normalize, diff } from "./normalize.js";
 
@@ -40,22 +49,25 @@ const DEFAULT_CASES_DIR = join(__dirname, "..", "cases");
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: string[]): { casesDir: string; requireReadOnly: boolean } {
+function parseArgs(argv: string[]): { casesDir: string; requireReadOnly: boolean; exactCase: string | null } {
   let casesDir = DEFAULT_CASES_DIR;
   let requireReadOnly = false;
+  let exactCase: string | null = null;
 
   for (const arg of argv.slice(2)) {
     if (arg.startsWith("--cases-dir=")) {
       casesDir = resolve(REPO_ROOT, arg.slice("--cases-dir=".length));
     } else if (arg === "--require-read-only") {
       requireReadOnly = true;
+    } else if (arg.startsWith("--case=")) {
+      exactCase = arg.slice("--case=".length);
     }
   }
 
-  return { casesDir, requireReadOnly };
+  return { casesDir, requireReadOnly, exactCase };
 }
 
-const { casesDir, requireReadOnly } = parseArgs(process.argv);
+const { casesDir, requireReadOnly, exactCase } = parseArgs(process.argv);
 
 /** Case file shape (matches cases.schema.json) */
 interface CaseFile {
@@ -140,6 +152,81 @@ const pinnedEnv: Record<string, string> = {
 pinnedEnv.ACCESS_TEST_DB = fixture;
 
 // ---------------------------------------------------------------------------
+// Run-ID and artifact persistence
+// ---------------------------------------------------------------------------
+
+const RUN_ID = `run-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+const RUN_ARTIFACT_DIR = join(__dirname, "..", "runs", RUN_ID);
+
+function persistArtifact(basename: string, content: string): void {
+  try {
+    mkdirSync(RUN_ARTIFACT_DIR, { recursive: true });
+    writeFileSync(join(RUN_ARTIFACT_DIR, basename), content, "utf8");
+  } catch {
+    // Non-fatal: artifact persistence failure does not gate the run
+  }
+}
+
+function redactedEnv(env: Record<string, string>): Record<string, string> {
+  // Strip connection strings, passwords, and DB secrets from env before persisting
+  const redaction = /password|connection|secret|key|token/i;
+  const redacted: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    redacted[k] = redaction.test(k) ? "[REDACTED]" : v;
+  }
+  return redacted;
+}
+
+/** Phase markers flow through the envelope WITHOUT polluting the case-result body. */
+interface PhaseMarkers {
+  setup?: string;
+  nativeOp?: string;
+  postcondition?: string;
+  disconnect?: string;
+  serialization?: string;
+  processExit?: string;
+}
+
+interface RunArtifact {
+  runId: string;
+  timestamp: string;
+  casesDir: string;
+  exactCase: string | null;
+  gitSha?: string;
+  compiledArtifactPath?: string;
+  phase: PhaseMarkers;
+  pythonChild?: ChildStatus;
+  rescriptChild?: ChildStatus;
+  setupStatus?: string;
+}
+
+interface ChildStatus {
+  statusCode: number | null;
+  signal: string | null;
+  timeout: boolean;
+  spawnError: string | null;
+  stdoutValidJson: boolean;
+  stdoutShapeValid: boolean;
+  envelopeBackend?: string;
+  logicalEquality: boolean;
+  skipReason: string | null;
+  stderrRedacted: string;
+  phase: PhaseMarkers;
+}
+
+function buildGitInfo(): { sha: string; artifactPath: string } | null {
+  try {
+    const sha = execSync("git rev-parse HEAD", { encoding: "utf8", shell: "cmd.exe" }).trim();
+    const artifactPath = join(REPO_ROOT, "rescript-mcp", "src", "Services", "Facade.res.mjs");
+    return { sha, artifactPath };
+  } catch {
+    return null;
+  }
+}
+
+const gitInfo = buildGitInfo();
+
+// ---------------------------------------------------------------------------
 // Per-case driver invocation
 // ---------------------------------------------------------------------------
 
@@ -149,13 +236,29 @@ interface DriverEnvelope {
   count?: number;
   columns?: unknown[];
   error?: string | null;
+  backend?: string; // "com" | "odbc" | "unavailable"
   [key: string]: unknown;
+}
+
+interface ChildStatusDetail {
+  statusCode: number | null;
+  signal: string | null;
+  timeout: boolean;
+  spawnError: string | null;
+  stdoutValidJson: boolean;
+  stdoutShapeValid: boolean;
+  envelopeBackend: string | null;
+  logicalEquality: boolean;
+  skipReason: string | null;
+  stderrRedacted: string;
+  phase: PhaseMarkers;
 }
 
 interface DriverResult {
   ok: true;
   result: DriverEnvelope;
   stderr?: string;
+  childStatus: ChildStatusDetail;
 }
 
 interface DriverError {
@@ -163,19 +266,59 @@ interface DriverError {
   driverError: string;
   stderr?: string;
   stdout?: string;
+  childStatus: ChildStatusDetail;
 }
+
+/** Shared empty phase marker object to avoid allocation on hot path */
+const NO_PHASE: PhaseMarkers = {};
 
 /**
  * Run a child process against a specific fixture copy. Returns a discriminated
- * result: {ok: true, result: <envelope>} on success, {ok: false, driverError: "..."} on crash.
+ * result with full child-status recording.
+ *
+ * Records per child:
+ *   - status code, signal, timeout/spawn error
+ *   - stdout validity (parses as JSON / matches expected envelope shape)
+ *   - logical result (equality with paired side — DIAGNOSTIC ONLY, never acceptance)
+ *   - skip reason
+ *
+ * Nonzero exit or timeout remains an error even when JSON is valid.
  */
-function runChild(childPath: string, args: string[], env: Record<string, string>, label: string): DriverResult | DriverError {
+function runChild(
+  childPath: string,
+  args: string[],
+  env: Record<string, string>,
+  label: string,
+): DriverResult | DriverError {
+  const basePhase: PhaseMarkers = { nativeOp: `${label}-start` };
+
   const result: SpawnSyncReturns<string> = spawnSync(childPath, args, {
     env,
     encoding: "utf8",
     timeout: 60_000,
   });
+
   const text = (result.stdout ?? "").trim();
+  const stderrRaw = (result.stderr ?? "").slice(0, 2000);
+  const phase: PhaseMarkers = {
+    ...basePhase,
+    processExit: `exit-${result.status ?? "null"}`,
+  };
+
+  // Build childStatus shared between ok and error paths
+  const childStatusBase: ChildStatusDetail = {
+    statusCode: result.status,
+    signal: result.signal ?? null,
+    timeout: result.status === null && result.error !== undefined,
+    spawnError: result.error?.message ?? null,
+    stdoutValidJson: false,
+    stdoutShapeValid: false,
+    envelopeBackend: null,
+    logicalEquality: false,
+    skipReason: null,
+    stderrRedacted: stderrRaw,
+    phase,
+  };
 
   // Plan 036 T4: tolerate non-zero exit IF the child wrote a valid envelope
   // to stdout before crashing. This accommodates the COM winax teardown
@@ -184,33 +327,76 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
   // result. The envelope is the contract; the exit code is secondary.
   // A genuine crash that prevents serialization (no stdout) still produces
   // driverError via the empty-output check below.
+  //
+  // IMPORTANT: even with valid JSON, nonzero exit is still recorded as an
+  // error condition in childStatus — logical equality is DIAGNOSTIC ONLY.
   if (result.status !== 0) {
+    phase.serialization = `${label}-nonzero-exit`;
     if (text) {
       try {
         const envelope = JSON.parse(text) as DriverEnvelope;
-        return { ok: true, result: envelope, stderr: (result.stderr ?? "").slice(0, 2000) };
+        childStatusBase.stdoutValidJson = true;
+        childStatusBase.stdoutShapeValid = envelope !== null && typeof envelope === "object" && "success" in envelope;
+        childStatusBase.envelopeBackend = envelope.backend ?? null;
+        phase.serialization = `${label}-nonzero-with-valid-json`;
+        return {
+          ok: true,
+          result: envelope,
+          stderr: stderrRaw,
+          childStatus: { ...childStatusBase, phase },
+        };
       } catch {
         // stdout present but not valid JSON — fall through to driver error
+        phase.serialization = `${label}-nonzero-invalid-json`;
       }
     }
     if (!text) {
-      return { ok: false, driverError: `${label} exit ${result.status} (no output)`, stderr: (result.stderr ?? "").slice(0, 2000) };
+      return {
+        ok: false,
+        driverError: `${label} exit ${result.status} (no output)`,
+        stderr: stderrRaw,
+        childStatus: { ...childStatusBase, phase },
+      };
     }
     return {
       ok: false,
       driverError: `${label} exit ${result.status}`,
-      stderr: (result.stderr ?? "").slice(0, 2000),
+      stderr: stderrRaw,
       stdout: result.stdout ?? "",
+      childStatus: { ...childStatusBase, phase },
     };
   }
+
+  // Zero exit
+  phase.serialization = `${label}-zero-exit`;
   if (!text) {
-    return { ok: false, driverError: `${label} produced no output`, stderr: (result.stderr ?? "").slice(0, 1000) };
+    return {
+      ok: false,
+      driverError: `${label} produced no output`,
+      stderr: stderrRaw,
+      childStatus: { ...childStatusBase, phase },
+    };
   }
+
   try {
     const envelope = JSON.parse(text) as DriverEnvelope;
-    return { ok: true, result: envelope, stderr: (result.stderr ?? "").slice(0, 2000) };
+    childStatusBase.stdoutValidJson = true;
+    childStatusBase.stdoutShapeValid = envelope !== null && typeof envelope === "object" && "success" in envelope;
+    childStatusBase.envelopeBackend = envelope.backend ?? null;
+    phase.serialization = `${label}-valid-json`;
+    return {
+      ok: true,
+      result: envelope,
+      stderr: stderrRaw,
+      childStatus: { ...childStatusBase, phase },
+    };
   } catch (e) {
-    return { ok: false, driverError: `${label} produced invalid JSON: ${(e as Error).message}`, stdout: text.slice(0, 2000) };
+    return {
+      ok: false,
+      driverError: `${label} produced invalid JSON: ${(e as Error).message}`,
+      stdout: text.slice(0, 2000),
+      childStatus: { ...childStatusBase, phase },
+    };
   }
 }
 
@@ -219,7 +405,14 @@ function runChild(childPath: string, args: string[], env: Record<string, string>
  * reads ACCESS_TEST_DB internally.
  */
 function runPython(childFixturePath: string, casePath: string, variant: string): DriverResult | DriverError {
-  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant, PARITY_SOURCE_DB };
+  const env = {
+    ...pinnedEnv,
+    ACCESS_TEST_DB: childFixturePath,
+    PARITY_EXPORT_DIR: tmpdir(),
+    PARITY_VARIANT: variant,
+    PARITY_SOURCE_DB,
+    PARITY_FIXTURE: childFixturePath,
+  };
   return runChild(PYTHON, [PYTHON_DRIVER, casePath], env, "python");
 }
 
@@ -228,7 +421,13 @@ function runPython(childFixturePath: string, casePath: string, variant: string):
  * reads ACCESS_TEST_DB internally.
  */
 function runRescript(childFixturePath: string, casePath: string, variant: string): DriverResult | DriverError {
-  const env = { ...pinnedEnv, ACCESS_TEST_DB: childFixturePath, PARITY_EXPORT_DIR: tmpdir(), PARITY_VARIANT: variant, PARITY_SOURCE_DB };
+  const env = {
+    ...pinnedEnv,
+    ACCESS_TEST_DB: childFixturePath,
+    PARITY_EXPORT_DIR: tmpdir(),
+    PARITY_VARIANT: variant,
+    PARITY_SOURCE_DB,
+  };
   return runChild(NODE, [RS_RUNNER_JS, casePath], env, "rescript");
 }
 
@@ -263,11 +462,30 @@ let errored = 0;
 let skipped = 0;
 const findings: Finding[] = [];
 
+// Exact-case filter: if --case was provided, only run that one
+const caseFiles = (() => {
+  const all = readdirSync(casesDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+  if (exactCase !== null) {
+    const target = all.find((f) => f === exactCase || f === exactCase || join(casesDir, f) === resolve(casesDir, exactCase));
+    if (!target) {
+      console.error(`parity: --case "${exactCase}" not found in ${casesDir}`);
+      process.exit(1);
+    }
+    return [target];
+  }
+  return all;
+})();
+
 interface Finding {
   operation: string;
   case: string;
   diff: DiffEntry;
   stderr?: string;
+  pythonChild?: ChildStatusDetail;
+  rescriptChild?: ChildStatusDetail;
+  backendMismatch?: string;
 }
 
 interface DiffEntry {
@@ -344,6 +562,29 @@ for (const caseFile of caseFiles) {
   const pyResult = runPython(pyFixture, casePath, variant);
   const rsResult = runRescript(rsFixture, casePath, variant);
 
+  // Persist case-level artifact with paired envelopes
+  const pyChildStatus = (pyResult as DriverResult).childStatus ?? (pyResult as DriverError).childStatus;
+  const rsChildStatus = (rsResult as DriverResult).childStatus ?? (rsResult as DriverError).childStatus;
+
+  persistArtifact(
+    `${caseFile.replace(/\.json$/, "")}-python.json`,
+    JSON.stringify({
+      case: caseFile,
+      envelope: pyResult.ok ? pyResult.result : null,
+      driverError: pyResult.ok ? null : (pyResult as DriverError).driverError,
+      childStatus: pyChildStatus,
+    }, null, 2),
+  );
+  persistArtifact(
+    `${caseFile.replace(/\.json$/, "")}-rescript.json`,
+    JSON.stringify({
+      case: caseFile,
+      envelope: rsResult.ok ? rsResult.result : null,
+      driverError: rsResult.ok ? null : (rsResult as DriverError).driverError,
+      childStatus: rsChildStatus,
+    }, null, 2),
+  );
+
   // Driver-level errors (non-zero exit, bad JSON) are reported as
   // mismatches with a "DRIVER" prefix; they're actionable.
   if (!pyResult.ok || !rsResult.ok) {
@@ -360,14 +601,29 @@ for (const caseFile of caseFiles) {
         actual: rsResult.ok ? "ok" : "driver error",
       },
       stderr: pyResult.stderr ?? rsResult.stderr,
+      pythonChild: pyChildStatus,
+      rescriptChild: rsChildStatus,
     });
     console.log(`  ERROR  ${caseFile} — ${driverErr}`);
     continue;
   }
 
+  // Backend identity check: COM must not silently fall back to ODBC
+  const pyBackend = pyChildStatus?.envelopeBackend;
+  const rsBackend = rsChildStatus?.envelopeBackend;
+  let backendMismatch: string | undefined;
+  if (pyBackend && rsBackend && pyBackend !== rsBackend) {
+    backendMismatch = `python=${pyBackend}, rescript=${rsBackend}`;
+  }
+
   const volatile = caseObj.volatileFields ?? [];
   const pyN = normalize(pyResult.result, volatile);
   const rsN = normalize(rsResult.result, volatile);
+
+  // Record logical equality for diagnosis (NEVER as acceptance)
+  const logicalEquality = d === null;
+  if (pyChildStatus) pyChildStatus.logicalEquality = logicalEquality;
+  if (rsChildStatus) rsChildStatus.logicalEquality = logicalEquality;
 
   const d = diff(pyN, rsN);
   if (d === null) {
@@ -379,6 +635,9 @@ for (const caseFile of caseFiles) {
       operation: caseObj.operation,
       case: caseFile,
       diff: d,
+      pythonChild: pyChildStatus,
+      rescriptChild: rsChildStatus,
+      backendMismatch,
     });
     console.log(`  FAIL  ${caseFile} — diff at ${d.path}`);
   }
@@ -397,6 +656,21 @@ console.log(`parity: ${caseFiles.length} cases, ${passed} matched, ${mismatched}
 // Persist findings for step 6 review.
 const findingsPath = join(__dirname, "..", "findings.json");
 writeFileSync(findingsPath, JSON.stringify(findings, null, 2));
+
+// Persist final run artifact with full provenance
+const runArtifact: RunArtifact = {
+  runId: RUN_ID,
+  timestamp: new Date().toISOString(),
+  casesDir,
+  exactCase,
+  gitSha: gitInfo?.sha,
+  compiledArtifactPath: gitInfo?.artifactPath,
+  phase: {},
+  pythonChild: undefined,
+  rescriptChild: undefined,
+  setupStatus: "complete",
+};
+persistArtifact("run.json", JSON.stringify(runArtifact, null, 2));
 
 if (mismatched > 0 || errored > 0) {
   process.exit(1);

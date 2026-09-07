@@ -83,3 +83,6 @@ htmlcov/
 
 # SDD / Agent tooling
 .atl/
+
+# Parity run artifacts
+parity/runs/

@@ -1,0 +1,811 @@
+﻿diff --git a/rescript-mcp/src/Adapters/ComDataAdapter.res b/rescript-mcp/src/Adapters/ComDataAdapter.res
+index 8b4d88b..8352217 100644
+--- a/rescript-mcp/src/Adapters/ComDataAdapter.res
++++ b/rescript-mcp/src/Adapters/ComDataAdapter.res
+@@ -129,11 +129,11 @@ let _closeRecordset: ComInterfaces.comObject => Promise.t<unit> = (
+ ) => {
+   Bindings.Winax.WINAX_BINDING.invoke(rs, "Close", [])
+     ->Promise.then(_ => {
+-      Bindings.Winax.WINAX_BINDING.release(rs)->ignore
++      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rs)->Promise.then(_ => Promise.resolve())->ignore
+       Promise.resolve()
+     })
+     ->Promise.catch(_ => {
+-      Bindings.Winax.WINAX_BINDING.release(rs)->ignore
++      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rs)->Promise.then(_ => Promise.resolve())->ignore
+       Promise.resolve()
+     })
+ }
+@@ -467,7 +467,7 @@ module DaoAdapter = {
+                                         switch countResult {
+                                         | Error(e) => {
+                                             _closeRecordset(rs)->ignore
+-                                            Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                             Promise.resolve(Error(e))
+                                           }
+                                         | Ok(fieldCount) => {
+@@ -488,7 +488,7 @@ module DaoAdapter = {
+                                                     | Ok(fieldHandle) => {
+                                                         Bindings.Winax.WINAX_BINDING.get(fieldHandle, "Name")
+                                                           ->Promise.then(nameResult => {
+-                                                            Bindings.Winax.WINAX_BINDING.release(fieldHandle)->ignore
++                                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                             switch nameResult {
+                                                             | Ok(JSON.String(colName)) => {
+                                                                 columnNames->Array.push(colName)->ignore
+@@ -509,7 +509,7 @@ module DaoAdapter = {
+                                             }
+                                             colCollect()
+                                               ->Promise.then(colsResult => {
+-                                                Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                 switch colsResult {
+                                                 | Error(e) => {
+                                                     _closeRecordset(rs)->ignore
+@@ -540,7 +540,7 @@ module DaoAdapter = {
+                                                                                 // when getCount fails, so there's no cCollect() error path
+                                                                                 // that could double-free. Do NOT release rs here ΓÇö the
+                                                                                 // outer .catch() at line 413 handles rs release.
+-                                                                                Bindings.Winax.WINAX_BINDING.release(rowFieldsHandle)->ignore
++                                                                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rowFieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                                 Promise.resolve(Error(_e))
+                                                                               }
+                                                                           | Ok(rfc) => {
+@@ -560,7 +560,7 @@ module DaoAdapter = {
+                                                                                       | Ok(cItem) => {
+                                                                                           Bindings.Winax.WINAX_BINDING.get(cItem, "Value")
+                                                                                             ->Promise.then(valResult => {
+-                                                                                              Bindings.Winax.WINAX_BINDING.release(cItem)->ignore
++                                                                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(cItem)->Promise.then(_ => Promise.resolve())->ignore
+                                                                                               switch valResult {
+                                                                                               | Ok(val) => {
+                                                                                                   let cName = switch Array.get(columns, cIdx.contents) {
+@@ -585,13 +585,13 @@ module DaoAdapter = {
+                                                                                   ->Promise.then(rowResult => {
+                                                                                     switch rowResult {
+                                                                                    | Error(e) => {
+-                                                                                         Bindings.Winax.WINAX_BINDING.release(rowFieldsHandle)->ignore
++                                                                                         Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rowFieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                                          _closeRecordset(rs)->ignore
+                                                                                          Promise.resolve(Error(e))
+                                                                                        }
+                                                                                    | Ok(_) => {
+                                                                                        allRows->Array.push(rowDict)->ignore
+-                                                                                       Bindings.Winax.WINAX_BINDING.release(rowFieldsHandle)->ignore
++                                                                                       Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rowFieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                                        Bindings.Winax.WINAX_BINDING.invoke(rs, "MoveNext", [])
+                                                                                          ->Promise.then(_ => {
+                                                                                            rowCollect()
+@@ -880,7 +880,7 @@ module DaoAdapter = {
+                     ->Promise.then(countResult => {
+                       switch countResult {
+                       | Error(e) => {
+-                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                           Promise.resolve(Error(e))
+                         }
+                       | Ok(count) => {
+@@ -888,7 +888,7 @@ module DaoAdapter = {
+                           let tableIdx = ref(0)
+                           let rec collectLoop: unit => Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> = () => {
+                             if tableIdx.contents >= count {
+-                              Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Ok(results))
+                             } else {
+                               let idxVar = ComInterfaces.VInt(tableIdx.contents)
+@@ -896,7 +896,7 @@ module DaoAdapter = {
+                               ->Promise.then(itemResult => {
+                                 switch itemResult {
+                                 | Error(e) => {
+-                                    Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                     Promise.resolve(Error(e))
+                                   }
+                                 | Ok(td) => {
+@@ -904,17 +904,17 @@ module DaoAdapter = {
+                                     ->Promise.then(nameResult => {
+                                       switch nameResult {
+                                       | Error(e) => {
+-                                          Bindings.Winax.WINAX_BINDING.release(td)->ignore
+-                                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                           Promise.resolve(Error(e))
+                                         }
+                                       | Ok(JSON.String(name)) => {
+                                           Bindings.Winax.WINAX_BINDING.get(td, "Type")
+                                           ->Promise.then(typeResult => {
+-                                            Bindings.Winax.WINAX_BINDING.release(td)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
+                                             switch typeResult {
+                                             | Error(e) => {
+-                                                Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                 Promise.resolve(Error(e))
+                                               }
+                                             | Ok(typeVal) => {
+@@ -1029,7 +1029,7 @@ module DaoAdapter = {
+                     ->Promise.then(countResult => {
+                       switch countResult {
+                       | Error(_) => {
+-                          Bindings.Winax.WINAX_BINDING.release(relsHandle)->ignore
++                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                           Promise.resolve(Ok([]))
+                         }
+                       | Ok(count) => {
+@@ -1066,7 +1066,7 @@ module DaoAdapter = {
+                                     let _ = (colNames, foreignColNames)
+                                     // Skip MSys and temporary relations
+                                     if name->String.startsWith("MSys") || name->String.startsWith("~") || name == "" {
+-                                      Bindings.Winax.WINAX_BINDING.release(relHandle)->ignore
++                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                       relIdx.contents = relIdx.contents + 1
+                                       iterate()
+                                     } else {
+@@ -1079,7 +1079,7 @@ module DaoAdapter = {
+                                         foreignColumns: foreignColNames,
+                                       }
+                                       results->Array.push(relInfo)->ignore
+-                                      Bindings.Winax.WINAX_BINDING.release(relHandle)->ignore
++                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                       relIdx.contents = relIdx.contents + 1
+                                       iterate()
+                                     }
+@@ -1090,7 +1090,7 @@ module DaoAdapter = {
+                           }
+                           iterate()
+                           ->Promise.then(final => {
+-                            Bindings.Winax.WINAX_BINDING.release(relsHandle)->ignore
++                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                             Promise.resolve(final)
+                           })
+                         }
+@@ -1132,7 +1132,7 @@ module DaoAdapter = {
+                     ->Promise.then(countResult => {
+                       switch countResult {
+                       | Error(e) => {
+-                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                           Promise.resolve(Error(e))
+                         }
+                       | Ok(count) => {
+@@ -1140,7 +1140,7 @@ module DaoAdapter = {
+                           let tableIdx = ref(0)
+                           let rec collectLoop: unit => Promise.t<result<array<Interfaces.tableSchema>, Errors.t>> = () => {
+                             if tableIdx.contents >= count {
+-                              Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Ok(results))
+                             } else {
+                               let idxVar = ComInterfaces.VInt(tableIdx.contents)
+@@ -1148,7 +1148,7 @@ module DaoAdapter = {
+                               ->Promise.then(itemResult => {
+                                 switch itemResult {
+                                 | Error(e) => {
+-                                    Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                     Promise.resolve(Error(e))
+                                   }
+                                 | Ok(td) => {
+@@ -1156,17 +1156,17 @@ module DaoAdapter = {
+                                     ->Promise.then(nameResult => {
+                                       switch nameResult {
+                                       | Error(e) => {
+-                                          Bindings.Winax.WINAX_BINDING.release(td)->ignore
+-                                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                           Promise.resolve(Error(e))
+                                         }
+                                       | Ok(JSON.String(name)) => {
+                                           Bindings.Winax.WINAX_BINDING.get(td, "Type")
+                                           ->Promise.then(typeResult => {
+-                                            Bindings.Winax.WINAX_BINDING.release(td)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
+                                             switch typeResult {
+                                             | Error(e) => {
+-                                                Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                 Promise.resolve(Error(e))
+                                               }
+                                             | Ok(typeVal) => {
+@@ -1185,7 +1185,7 @@ module DaoAdapter = {
+                                                   ->Promise.then(fieldsResult => {
+                                                     switch fieldsResult {
+                                                     | Error(e) => {
+-                                                        Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                         Promise.resolve(Error(e))
+                                                       }
+                                                     | Ok(fields) => {
+@@ -1194,8 +1194,8 @@ module DaoAdapter = {
+                                                         ->Promise.then(fieldCountResult => {
+                                                           switch fieldCountResult {
+                                                           | Error(e) => {
+-                                                              Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
+-                                                              Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
++                                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                               Promise.resolve(Error(e))
+                                                             }
+                                                           | Ok(fieldCount) => {
+@@ -1203,7 +1203,7 @@ module DaoAdapter = {
+                                                               let fieldIdx = ref(0)
+                                                               let rec fieldCollect: unit => Promise.t<result<array<Interfaces.columnSchema>, Errors.t>> = () => {
+                                                                 if fieldIdx.contents >= fieldCount {
+-                                                                  Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                   Promise.resolve(Ok(columns))
+                                                                 } else {
+                                                                   let fVar = ComInterfaces.VInt(fieldIdx.contents)
+@@ -1211,7 +1211,7 @@ module DaoAdapter = {
+                                                                   ->Promise.then(fieldResult => {
+                                                                     switch fieldResult {
+                                                                     | Error(e) => {
+-                                                                        Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                         Promise.resolve(Error(e))
+                                                                       }
+                                                                     | Ok(field) => {
+@@ -1221,7 +1221,7 @@ module DaoAdapter = {
+                                                                         let colAllowNull: bool = %raw("f => f && f.__p__ ? Boolean(f.__p__.AllowZeroLength) : true")(field)
+                                                                         let colDefault: option<string> = %raw("f => f && f.__p__ && f.__p__.DefaultValue != null ? String(f.__p__.DefaultValue) : null")(field)
+                                                                         let colAutoincrement: bool = %raw("f => f && f.__p__ ? Boolean(f.__p__.Attributes && (f.__p__.Attributes & 16)) : false")(field)
+-                                                                        Bindings.Winax.WINAX_BINDING.release(field)->ignore
++                                                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(field)->Promise.then(_ => Promise.resolve())->ignore
+                                                                         let colSchema: Interfaces.columnSchema = {
+                                                                           name: colName,
+                                                                           sourceType: colType,
+@@ -1242,7 +1242,7 @@ module DaoAdapter = {
+                                                               ->Promise.then(colsResult => {
+                                                                 switch colsResult {
+                                                                 | Error(e) => {
+-                                                                    Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                     Promise.resolve(Error(e))
+                                                                   }
+                                                                 | Ok(cols) => {
+@@ -1264,7 +1264,7 @@ module DaoAdapter = {
+                                                         })
+                                                       }
+                                                     | Error(e) => {
+-                                                        Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                         Promise.resolve(Error(e))
+                                                       }
+                                                     }
+@@ -1446,7 +1446,7 @@ module DaoAdapter = {
+                   }
+                 | Ok(qdef) => {
+                     // Release the new QueryDef COM handle ΓÇö persistence is on the DB.
+-                    Bindings.Winax.WINAX_BINDING.release(qdef)->ignore
++                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(qdef)->Promise.then(_ => Promise.resolve())->ignore
+                     Promise.resolve(Ok({success: true, error: None}))
+                   }
+                 }
+@@ -1480,7 +1480,7 @@ module DaoAdapter = {
+                     // qdef.SQL = sql ΓÇö set the SQL property using WINAX_BINDING.set
+                     Bindings.Winax.WINAX_BINDING.set(qdef, "SQL", ComInterfaces.VStr(sql))
+                     ->Promise.then(setResult => {
+-                      Bindings.Winax.WINAX_BINDING.release(qdef)->ignore
++                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(qdef)->Promise.then(_ => Promise.resolve())->ignore
+                       switch setResult {
+                       | Error(e) => {
+                           Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+@@ -1523,7 +1523,7 @@ module DaoAdapter = {
+                     let qdefsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(qdefs)
+                     Bindings.Winax.WINAX_BINDING.invoke(qdefsHandle, "Delete", [ComInterfaces.VStr(name)])
+                     ->Promise.then(deleteResult => {
+-                      Bindings.Winax.WINAX_BINDING.release(qdefsHandle)->ignore
++                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(qdefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                       switch deleteResult {
+                       | Error(e) => {
+                           Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+@@ -1671,7 +1671,7 @@ module DaoAdapter = {
+           ->Promise.then(countResult => {
+             switch countResult {
+             | Error(_) => {
+-                Bindings.Winax.WINAX_BINDING.release(relationsHandle)->ignore
++                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relationsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                 Promise.resolve()
+               }
+             | Ok(count) => {
+@@ -1679,7 +1679,7 @@ module DaoAdapter = {
+                 let idx = ref(count - 1)
+                 let rec loop: unit => Promise.t<unit> = () => {
+                   if idx.contents < 0 {
+-                    Bindings.Winax.WINAX_BINDING.release(relationsHandle)->ignore
++                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relationsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                     Promise.resolve()
+                   } else {
+                     let idxVar = ComInterfaces.VInt(idx.contents)
+@@ -1687,7 +1687,7 @@ module DaoAdapter = {
+                     ->Promise.then(itemResult => {
+                       switch itemResult {
+                       | Error(_) => {
+-                          Bindings.Winax.WINAX_BINDING.release(relationsHandle)->ignore
++                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relationsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                           Promise.resolve()
+                         }
+                       | Ok(rel) => {
+@@ -1702,7 +1702,7 @@ module DaoAdapter = {
+                                   t === tableName || ft === tableName
+                                 | _ => false
+                                 }
+-                                Bindings.Winax.WINAX_BINDING.release(rel)->ignore
++                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rel)->Promise.then(_ => Promise.resolve())->ignore
+                                 if shouldDelete {
+                                   switch nameResult {
+                                   | Ok(JSON.String(relName)) => {
+@@ -2301,7 +2301,7 @@ module DaoAdapter = {
+                     ->Promise.then(countResult => {
+                       switch countResult {
+                       | Error(e) => {
+-                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                           Promise.resolve(Error(e))
+                         }
+                       | Ok(count) => {
+@@ -2310,7 +2310,7 @@ module DaoAdapter = {
+                           let i = ref(0)
+                           let rec lookupLoop: unit => Promise.t<result<ComInterfaces.comObject, Errors.t>> = () => {
+                             if i.contents >= count {
+-                              Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Error(Errors.databaseError("Table not found: " ++ tableName)))
+                             } else {
+                               let idxVar = ComInterfaces.VInt(i.contents)
+@@ -2318,7 +2318,7 @@ module DaoAdapter = {
+                               ->Promise.then(itemResult => {
+                                 switch itemResult {
+                                 | Error(e) => {
+-                                    Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                     Promise.resolve(Error(e))
+                                   }
+                                 | Ok(td) => {
+@@ -2328,21 +2328,21 @@ module DaoAdapter = {
+                                       | Ok(JSON.String(name)) => {
+                                           if name === tableName {
+                                             foundTd.contents = Some(td)
+-                                            Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                             Promise.resolve(Ok(td))
+                                           } else {
+-                                            Bindings.Winax.WINAX_BINDING.release(td)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
+                                             i.contents = i.contents + 1
+                                             lookupLoop()
+                                           }
+                                         }
+                                       | Error(e) => {
+-                                          Bindings.Winax.WINAX_BINDING.release(td)->ignore
+-                                          Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                           Promise.resolve(Error(e))
+                                         }
+                                       | _ => {
+-                                          Bindings.Winax.WINAX_BINDING.release(td)->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
+                                           i.contents = i.contents + 1
+                                           lookupLoop()
+                                         }
+@@ -2361,7 +2361,7 @@ module DaoAdapter = {
+                                 // Get Indexes collection from the TableDef
+                                 Bindings.Winax.WINAX_BINDING.get(td, "Indexes")
+                                 ->Promise.then(indexesResult => {
+-                                  Bindings.Winax.WINAX_BINDING.release(td)->ignore
++                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->Promise.then(_ => Promise.resolve())->ignore
+                                   switch indexesResult {
+                                   | Error(e) => Promise.resolve(Error(e))
+                                   | Ok(indexes) => {
+@@ -2370,7 +2370,7 @@ module DaoAdapter = {
+                                       ->Promise.then(countResult => {
+                                         switch countResult {
+                                         | Error(e) => {
+-                                            Bindings.Winax.WINAX_BINDING.release(indexesHandle)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(indexesHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                             Promise.resolve(Error(e))
+                                           }
+                                         | Ok(count) => {
+@@ -2379,7 +2379,7 @@ module DaoAdapter = {
+                                             // Collect indexes sequentially
+                                             let rec collectLoop: unit => Promise.t<result<array<Interfaces.indexInfo>, Errors.t>> = () => {
+                                               if idx2.contents >= count {
+-                                                Bindings.Winax.WINAX_BINDING.release(indexesHandle)->ignore
++                                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(indexesHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                 Promise.resolve(Ok(results))
+                                               } else {
+                                                 let idxVar = ComInterfaces.VInt(idx2.contents)
+@@ -2387,7 +2387,7 @@ module DaoAdapter = {
+                                                 ->Promise.then(itemResult => {
+                                                   switch itemResult {
+                                                   | Error(e) => {
+-                                                      Bindings.Winax.WINAX_BINDING.release(indexesHandle)->ignore
++                                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(indexesHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                       Promise.resolve(Error(e))
+                                                     }
+                                                   | Ok(idxObj) => {
+@@ -2402,7 +2402,7 @@ module DaoAdapter = {
+                                                             ->Promise.then(ignoreNullsResult => {
+                                                               Bindings.Winax.WINAX_BINDING.get(idxObj, "Fields")
+                                                               ->Promise.then(fieldsResult => {
+-                                                                Bindings.Winax.WINAX_BINDING.release(idxObj)->ignore
++                                                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(idxObj)->Promise.then(_ => Promise.resolve())->ignore
+                                                                 switch (nameResult, uniqueResult, primaryResult, ignoreNullsResult, fieldsResult) {
+                                                                 | (Ok(JSON.String(idxName)), Ok(JSON.Boolean(isUnique)), Ok(JSON.Boolean(isPrimary)), Ok(JSON.Boolean(ignoresNulls)), Ok(JSON.Object(fieldsObj))) => {
+                                                                     // Extract column names from the Fields collection
+@@ -2411,7 +2411,7 @@ module DaoAdapter = {
+                                                                     ->Promise.then(fieldCountResult => {
+                                                                       switch fieldCountResult {
+                                                                       | Error(_) => {
+-                                                                          Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                           let info: Interfaces.indexInfo = {
+                                                                             name: idxName,
+                                                                             columns: [],
+@@ -2429,7 +2429,7 @@ module DaoAdapter = {
+                                                                           let fieldIdx = ref(0)
+                                                                           let rec fieldLoop: unit => Promise.t<unit> = () => {
+                                                                             if fieldIdx.contents >= fieldCount {
+-                                                                              Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                               Promise.resolve()
+                                                                             } else {
+                                                                               let fieldIdxVar = ComInterfaces.VInt(fieldIdx.contents)
+@@ -2437,13 +2437,13 @@ module DaoAdapter = {
+                                                                               ->Promise.then(fieldItemResult => {
+                                                                                 switch fieldItemResult {
+                                                                                 | Error(_) => {
+-                                                                                    Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                                                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                                                                     Promise.resolve()
+                                                                                   }
+                                                                                 | Ok(fieldObj) => {
+                                                                                     Bindings.Winax.WINAX_BINDING.get(fieldObj, "Name")
+                                                                                     ->Promise.then(fieldNameResult => {
+-                                                                                      Bindings.Winax.WINAX_BINDING.release(fieldObj)->ignore
++                                                                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldObj)->Promise.then(_ => Promise.resolve())->ignore
+                                                                                       switch fieldNameResult {
+                                                                                       | Ok(JSON.String(fieldName)) => {
+                                                                                           let _ = Array.push(colNames, fieldName)
+@@ -2562,7 +2562,7 @@ module DaoAdapter = {
+                         ->Promise.then(relsResult => {
+                           switch relsResult {
+                           | Error(e) => {
+-                              Bindings.Winax.WINAX_BINDING.release(rel)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rel)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                             }
+                           | Ok(relsJson) => {
+@@ -2575,7 +2575,7 @@ module DaoAdapter = {
+                                 Promise.resolve(Ok({success: true, error: None}))
+                               })
+                               ->Promise.catch(e => {
+-                                Bindings.Winax.WINAX_BINDING.release(relsHandle)->ignore
++                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                 Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                               })
+                             }
+@@ -2588,7 +2588,7 @@ module DaoAdapter = {
+                         ->Promise.then(fieldResult => {
+                           switch fieldResult {
+                           | Error(e) => {
+-                              Bindings.Winax.WINAX_BINDING.release(rel)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rel)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                             }
+                           | Ok(fieldJson) => {
+@@ -2599,8 +2599,8 @@ module DaoAdapter = {
+                                 ->Promise.then(fieldsResult => {
+                                   switch fieldsResult {
+                                   | Error(e) => {
+-                                      Bindings.Winax.WINAX_BINDING.release(field)->ignore
+-                                      Bindings.Winax.WINAX_BINDING.release(rel)->ignore
++                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(field)->Promise.then(_ => Promise.resolve())->ignore
++                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rel)->Promise.then(_ => Promise.resolve())->ignore
+                                       Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                                     }
+                                   | Ok(fieldsJson) => {
+@@ -2613,7 +2613,7 @@ module DaoAdapter = {
+                                         loopFields(idx + 1)
+                                       })
+                                       ->Promise.catch(e => {
+-                                        Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                         Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                                       })
+                                     }
+@@ -2663,11 +2663,11 @@ module DaoAdapter = {
+                     let relsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(relsJson)
+                     Bindings.Winax.WINAX_BINDING.invoke(relsHandle, "Delete", [ComInterfaces.VStr(name)])
+                     ->Promise.then(_ => {
+-                      Bindings.Winax.WINAX_BINDING.release(relsHandle)->ignore
++                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                       Promise.resolve(Ok({success: true, error: None}))
+                     })
+                     ->Promise.catch(e => {
+-Bindings.Winax.WINAX_BINDING.release(relsHandle)->ignore
++Bindings.Winax.WINAX_BINDING.releaseSyncAwait(relsHandle)->Promise.then(_ => Promise.resolve())->ignore
+                                 Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                     })
+                   }
+@@ -2801,7 +2801,7 @@ let createLinkedTable = (
+                         ->Promise.then(tableDefsResult => {
+                           switch tableDefsResult {
+                           | Error(e) => {
+-                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                             }
+                           | Ok(tableDefsJson) => {
+@@ -2817,13 +2817,13 @@ let createLinkedTable = (
+                                   Promise.resolve(Ok({success: true, error: None}))
+                                 })
+                                 ->Promise.catch(e6 => {
+-                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                   Promise.resolve(Ok({success: false, error: Some(_exnMessage(e6))}))
+                                 })
+                               })
+                               ->Promise.catch(e5 => {
+-                                Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+-                                Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
++                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                 Promise.resolve(Ok({success: false, error: Some(_exnMessage(e5))}))
+                               })
+                             }
+@@ -2831,17 +2831,17 @@ let createLinkedTable = (
+                         })
+                       })
+                       ->Promise.catch(e3 => {
+-                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                         Promise.resolve(Ok({success: false, error: Some(_exnMessage(e3))}))
+                       })
+                     })
+                     ->Promise.catch(e2 => {
+-                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                       Promise.resolve(Ok({success: false, error: Some(_exnMessage(e2))}))
+                     })
+                   })
+                   ->Promise.catch(e1 => {
+-                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                     Promise.resolve(Ok({success: false, error: Some(_exnMessage(e1))}))
+                   })
+                 }
+@@ -2883,13 +2883,13 @@ let refreshLinkedTable = (
+                   ->Promise.then(countResult =>
+                     switch countResult {
+                     | Error(e) => {
+-                        Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                         Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                       }
+                     | Ok(count) => {
+                         let rec findLoop: (int, option<ComInterfaces.comObject>) => Promise.t<result<Interfaces.ddlResult, Errors.t>> = (idx, foundTdef) => {
+                           if idx >= count {
+-                            Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                             switch foundTdef {
+                             | Some(tdef) => {
+                                 let setConnectOpt = switch connectString {
+@@ -2904,21 +2904,21 @@ let refreshLinkedTable = (
+                                     let readRaw = %raw("(h) => h && h.__p__ && h.__p__.Connect != null ? h.__p__.Connect : ''")(tdef)
+                                     Bindings.Winax.WINAX_BINDING.set(tdef, "Connect", ComInterfaces.VStr(_stripPassword(readRaw)))
+                                     ->Promise.then(_ => {
+-                                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                       Promise.resolve(Ok({success: true, error: None}))
+                                     })
+                                     ->Promise.catch(e => {
+-                                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                       Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                                     })
+                                   })
+                                   ->Promise.catch(e => {
+-                                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                     Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                                   })
+                                 })
+                                 ->Promise.catch(e => {
+-                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                   Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                                 })
+                               }
+@@ -2930,7 +2930,7 @@ let refreshLinkedTable = (
+                             ->Promise.then(itemResult =>
+                               switch itemResult {
+                               | Error(e) => {
+-                                  Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                   Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                                 }
+                               | Ok(item) => {
+@@ -2939,26 +2939,26 @@ let refreshLinkedTable = (
+                                   ->Promise.then(nameResult =>
+                                     switch nameResult {
+                                     | Error(e) => {
+-                                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+-                                        Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                         Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                                       }
+                                     | Ok(JSON.String(nameValue)) =>
+                                       if nameValue == name {
+                                         findLoop(idx + 1, Some(tdef))
+                                       } else {
+-                                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                         findLoop(idx + 1, foundTdef)
+                                       }
+                                     | Ok(_) => {
+-                                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                         findLoop(idx + 1, foundTdef)
+                                       }
+                                     }
+                                   )
+                                   ->Promise.catch(e => {
+-                                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+-                                    Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
++                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                     Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                                   })
+                                 }
+@@ -2971,7 +2971,7 @@ let refreshLinkedTable = (
+                     }
+                   )
+                   ->Promise.catch(e => {
+-                    Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                     Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                   })
+                 }
+@@ -3017,20 +3017,20 @@ let recreateLinkedTable = (
+                         ->Promise.then(countResult =>
+                           switch countResult {
+                           | Error(_) => {
+-                              Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(-2147483648)
+                             }
+                           | Ok(count) => {
+                               let rec findLoop: (int) => Promise.t<int> = (idx) => {
+                                 if idx >= count {
+-                                  Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                   Promise.resolve(-2147483648)
+                                 } else {
+                                   Bindings.Winax.WINAX_BINDING.getItem(tableDefs, ComInterfaces.VInt(idx))
+                                   ->Promise.then(itemResult =>
+                                     switch itemResult {
+                                     | Error(_) => {
+-                                        Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                         Promise.resolve(-2147483648)
+                                       }
+                                     | Ok(item) => {
+@@ -3039,29 +3039,29 @@ let recreateLinkedTable = (
+                                         ->Promise.then(nameResult =>
+                                           switch nameResult {
+                                           | Error(_) => {
+-                                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+-                                              Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
++                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                               Promise.resolve(-2147483648)
+                                             }
+                                           | Ok(JSON.String(nameValue)) =>
+                                             if nameValue == name {
+                                               let rawAttrs: float = %raw("(h) => h && h.__p__ ? (Number(h.__p__.Attributes) || 0) : 2147483648")(tdef)
+-                                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+-                                              Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
++                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                               Promise.resolve(Float.toInt(rawAttrs))
+                                             } else {
+-                                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                               findLoop(idx + 1)
+                                             }
+                                           | Ok(_) => {
+-                                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                               findLoop(idx + 1)
+                                             }
+                                           }
+                                         )
+                                         ->Promise.catch(e => {
+-                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+-                                          Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                                           Promise.resolve(-2147483648)
+                                         })
+                                       }
+@@ -3074,7 +3074,7 @@ let recreateLinkedTable = (
+                           }
+                         )
+                         ->Promise.catch(e => {
+-                          Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                           Promise.resolve(-2147483648)
+                         })
+                       }
+@@ -3090,7 +3090,7 @@ let recreateLinkedTable = (
+                     let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
+                     Bindings.Winax.WINAX_BINDING.invoke(tableDefs, "Delete", [ComInterfaces.VStr(name)])
+                     ->Promise.then(_ => {
+-                      Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                       Bindings.Winax.WINAX_BINDING.invokeAsObject(db, "CreateTableDef", [ComInterfaces.VStr(name)])
+                       ->Promise.then(tdefResult =>
+                         switch tdefResult {
+@@ -3107,7 +3107,7 @@ let recreateLinkedTable = (
+                                   ->Promise.then(tdefsResult =>
+                                     switch tdefsResult {
+                                     | Error(e) => {
+-                                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                         Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
+                                       }
+                                     | Ok(tdefsJson) => {
+@@ -3122,13 +3122,13 @@ let tdefAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(tdef)
+                                             Promise.resolve(Ok({success: true, error: None}))
+                                           })
+                                           ->Promise.catch(e6 => {
+-                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                             Promise.resolve(Ok({success: false, error: Some(_exnMessage(e6))}))
+                                           })
+                                         })
+                                         ->Promise.catch(e5 => {
+-                                          Bindings.Winax.WINAX_BINDING.release(tdefs)->ignore
+-                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdefs)->Promise.then(_ => Promise.resolve())->ignore
++                                          Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                           Promise.resolve(Ok({success: false, error: Some(_exnMessage(e5))}))
+                                         })
+                                       }
+@@ -3136,17 +3136,17 @@ let tdefAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(tdef)
+                                   )
+                                 })
+                                 ->Promise.catch(e4 => {
+-                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                  Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                   Promise.resolve(Ok({success: false, error: Some(_exnMessage(e4))}))
+                                 })
+                               })
+                               ->Promise.catch(e3 => {
+-                                Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                                 Promise.resolve(Ok({success: false, error: Some(_exnMessage(e3))}))
+                               })
+                             })
+                             ->Promise.catch(e2 => {
+-                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
++                              Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tdef)->Promise.then(_ => Promise.resolve())->ignore
+                               Promise.resolve(Ok({success: false, error: Some(_exnMessage(e2))}))
+                             })
+                           }
+@@ -3155,7 +3155,7 @@ let tdefAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(tdef)
+                       ->Promise.catch(e1 => Promise.resolve(Ok({success: false, error: Some(_exnMessage(e1))})))
+                     })
+                     ->Promise.catch(e => {
+-                      Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
++                      Bindings.Winax.WINAX_BINDING.releaseSyncAwait(tableDefs)->Promise.then(_ => Promise.resolve())->ignore
+                       Promise.resolve(Ok({success: false, error: Some(_exnMessage(e))}))
+                     })
+                   }
