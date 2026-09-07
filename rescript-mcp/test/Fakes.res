@@ -483,27 +483,33 @@ module FakeSchemaAdapter = {
   }
 
   // Plan 038: linked-table operations + SQL script execution
-  let getLinkedTables = (_self: t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
+  let getLinkedTables = (self: t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "getLinkedTables"))
     Promise.resolve(Ok({success: true, error: None, linkedTables: []}))
   }
 
-  let createLinkedTable = (_self: t, _name: string, _sourceTable: string, _connectString: string): Promise.t<result<ddlResult, Errors.t>> => {
+  let createLinkedTable = (self: t, _name: string, _sourceTable: string, _connectString: string): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "createLinkedTable"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 
-  let refreshLinkedTable = (_self: t, _name: string, ~connectString: option<string>=?): Promise.t<result<ddlResult, Errors.t>> => {
+  let refreshLinkedTable = (self: t, _name: string, ~connectString: option<string>=?): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "refreshLinkedTable"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 
-  let recreateLinkedTable = (_self: t, _name: string, _sourceTable: string, _connectString: string, ~attributes: option<int>=?): Promise.t<result<ddlResult, Errors.t>> => {
+  let recreateLinkedTable = (self: t, _name: string, _sourceTable: string, _connectString: string, ~attributes: option<int>=?): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "recreateLinkedTable"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 
-  let unlinkTable = (_self: t, _name: string): Promise.t<result<ddlResult, Errors.t>> => {
+  let unlinkTable = (self: t, _name: string): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "unlinkTable"))
     Promise.resolve(Ok({success: true, error: None}))
   }
 
-  let executeSqlScript = (_self: t, _scriptPath: string): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
+  let executeSqlScript = (self: t, _scriptPath: string): Promise.t<result<Interfaces.sqlScriptResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "executeSqlScript"))
     Promise.resolve(Ok({
       success: true,
       error: None,
