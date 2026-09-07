@@ -2882,51 +2882,124 @@ let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTa
                               }
                             | Ok(item) => {
                                 let tdef: ComInterfaces.comObject = item
-                                winaxBinding.get(tdef, "Connect")
-                                ->Promise.then(connectResult =>
-                                  switch connectResult {
+                                // Read Attributes FIRST to check dbLinkAttachedTable filter (0x80000000)
+                                winaxBinding.get(tdef, "Attributes")
+                                ->Promise.then(attrsResult =>
+                                  switch attrsResult {
                                   | Error(e) => {
                                       Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
                                       Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
                                       Promise.resolve(Error(e))
                                     }
-                                  | _ => {
-                                      // Include as linked table (Connect may be empty or null).
-                                      // Real production will filter by non-empty Connect; tests
-                                      // use the fake which returns JSON.Null for everything.
-                                      winaxBinding.get(tdef, "Name")
-                                      ->Promise.then(nameResult =>
-                                        switch nameResult {
-                                        | Error(_) => {
-                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
-                                            collectLoop(idx + 1, acc)
-                                          }
-                                        | Ok(JSON.String(nameValue)) => {
-                                            winaxBinding.get(tdef, "SourceTableName")
-                                            ->Promise.then(srcResult =>
-                                              switch srcResult {
-                                              | Error(_) => {
-                                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
-                                                  collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: "", type_: "", attributes: 0}, ...acc})
-                                                }
-                                              | Ok(JSON.String(srcValue)) => {
-                                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
-                                                  collectLoop(idx + 1, list{{name: nameValue, sourceTable: srcValue, connectString: "", type_: "", attributes: 0}, ...acc})
-                                                }
-                                              | Ok(_) => {
-                                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
-                                                  collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: "", type_: "", attributes: 0}, ...acc})
-                                                }
+                                  | Ok(JSON.Number(af)) => {
+                                      // Use JS bitwise directly to handle 0x80000000 (INT_MIN) without ReScript int overflow
+                                      let attrs = %raw("(a) => a | 0")(af)
+                                      let isLinked = %raw("(a) => (a & 0x80000000) !== 0")(af)
+                                      if !isLinked {
+                                        // Not a linked table — skip
+                                        Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                        collectLoop(idx + 1, acc)
+                                      } else {
+                                        // Filter passes — read Connect, Name, SourceTableName
+                                        winaxBinding.get(tdef, "Connect")
+                                        ->Promise.then(connectResult =>
+                                          switch connectResult {
+                                          | Error(e) => {
+                                              Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                              Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                              Promise.resolve(Error(e))
+                                            }
+                                          | Ok(JSON.String(connectStr)) => {
+                                              let tableType = if (Js.String2.startsWith(connectStr, "ODBC")) {
+                                                "ODBC"
+                                              } else if (Js.String2.startsWith(connectStr, "Access")) {
+                                                "Access"
+                                              } else if (Js.String2.startsWith(connectStr, "Excel")) {
+                                                "Excel"
+                                              } else {
+                                                "ODBC"  // unknown prefix → ODBC fallback
                                               }
-                                            )
+                                              winaxBinding.get(tdef, "Name")
+                                              ->Promise.then(nameResult =>
+                                                switch nameResult {
+                                                | Error(_) => {
+                                                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                    collectLoop(idx + 1, acc)
+                                                  }
+                                                | Ok(JSON.String(nameValue)) => {
+                                                    winaxBinding.get(tdef, "SourceTableName")
+                                                    ->Promise.then(srcResult =>
+                                                      switch srcResult {
+                                                      | Error(_) => {
+                                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                          collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: connectStr, type_: tableType, attributes: attrs}, ...acc})
+                                                        }
+                                                      | Ok(JSON.String(srcValue)) => {
+                                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                          collectLoop(idx + 1, list{{name: nameValue, sourceTable: srcValue, connectString: connectStr, type_: tableType, attributes: attrs}, ...acc})
+                                                        }
+                                                      | Ok(_) => {
+                                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                          collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: connectStr, type_: tableType, attributes: attrs}, ...acc})
+                                                        }
+                                                      }
+                                                    )
+                                                  }
+                                                | Ok(_) => {
+                                                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                    collectLoop(idx + 1, list{{name: "", sourceTable: "", connectString: connectStr, type_: tableType, attributes: attrs}, ...acc})
+                                                  }
+                                                }
+                                              )
+                                            }
+                                          | Ok(_) => {
+                                              // Connect not a String — use empty string, ODBC fallback
+                                              winaxBinding.get(tdef, "Name")
+                                              ->Promise.then(nameResult =>
+                                                switch nameResult {
+                                                | Error(_) => {
+                                                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                    collectLoop(idx + 1, acc)
+                                                  }
+                                                | Ok(JSON.String(nameValue)) => {
+                                                    winaxBinding.get(tdef, "SourceTableName")
+                                                    ->Promise.then(srcResult =>
+                                                      switch srcResult {
+                                                      | Error(_) => {
+                                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                          collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: "", type_: "ODBC", attributes: attrs}, ...acc})
+                                                        }
+                                                      | Ok(JSON.String(srcValue)) => {
+                                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                          collectLoop(idx + 1, list{{name: nameValue, sourceTable: srcValue, connectString: "", type_: "ODBC", attributes: attrs}, ...acc})
+                                                        }
+                                                      | Ok(_) => {
+                                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                          collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: "", type_: "ODBC", attributes: attrs}, ...acc})
+                                                        }
+                                                      }
+                                                    )
+                                                  }
+                                                | Ok(_) => {
+                                                    Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                    collectLoop(idx + 1, list{{name: "", sourceTable: "", connectString: "", type_: "ODBC", attributes: attrs}, ...acc})
+                                                  }
+                                                }
+                                              )
+                                            }
                                           }
-                                        | Ok(_) => {
-                                            // Name not a String — include entry with empty name
-                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
-                                            collectLoop(idx + 1, list{{name: "", sourceTable: "", connectString: "", type_: "", attributes: 0}, ...acc})
-                                          }
-                                        }
-                                      )
+                                        )
+                                        ->Promise.catch(e => {
+                                          Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                          Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                          Promise.resolve(Error(Errors.databaseError(_exnMessage(e))))
+                                        })
+                                      }
+                                    }
+                                  | Ok(_) => {
+                                      // Attributes not a Number — skip (treat as no attributes)
+                                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                      collectLoop(idx + 1, acc)
                                     }
                                   }
                                 )

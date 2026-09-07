@@ -59,6 +59,8 @@ let makeFakeProxy: unit => ComInterfaces.comObject = () => {
   %raw("(_n) => ({ __counter: _n })")(n)->Obj.magic
 }
 
+let getValueOverridesRef: ref<Js.Dict.t<JSON.t>> = ref(Js.Dict.empty())
+
 let makeFakeBinding: unit => ComDataAdapter.winaxBindingOps = () => {
   releaseSyncAwait: _ => Promise.resolve(),
   createObject: progid => Promise.resolve(Ok(makeFakeProxy())),
@@ -69,7 +71,11 @@ let makeFakeBinding: unit => ComDataAdapter.winaxBindingOps = () => {
     | _ =>
       switch nextErrorRef.contents {
       | Some(e) => Promise.resolve(Error(e))
-      | None => Promise.resolve(Ok(JSON.Null))
+      | None =>
+        switch Js.Dict.get(getValueOverridesRef.contents, prop) {
+        | Some(v) => Promise.resolve(Ok(v))
+        | None => Promise.resolve(Ok(JSON.Null))
+        }
       }
     }
   },
@@ -166,6 +172,7 @@ let resetAll = () => {
   proxyListRef := list{}
   getCountValueRef := 0
   proxyCounter := 0
+  getValueOverridesRef := Js.Dict.empty()
 }
 
 let installFake = () => {
@@ -225,14 +232,60 @@ testAsync("F6: getLinkedTables enumerates TableDefs — not empty stub", cb => {
   let db = nextProxyRef.contents->Option.getUnsafe
   let adapter = buildConnectedAdapter(db)
   getCountValueRef := 2
-  proxyListRef := list{makeFakeProxy(), makeFakeProxy()}
+  proxyListRef := list{makeFakeProxy(), makeFakeProxy(), makeFakeProxy()}
+  getValueOverridesRef := Js.Dict.fromArray([
+    ("TableDefs", JSON.String("td")),
+    ("Attributes", JSON.Number(Int.toFloat(0x80000000))),
+    ("Connect", JSON.String("ODBC;DSN=Test")),
+    ("Name", JSON.String("RemoteT")),
+    ("SourceTableName", JSON.String("SourceTbl")),
+  ])
 
   ComDataAdapter.getLinkedTables(adapter)
     ->Promise.then(r => {
       uninstallFake()
       switch r {
       | Ok({success: true, linkedTables}) =>
-        assertion(~operator="equal", (a, b) => a == b, Array.length(linkedTables) >= 2, true)
+        assertion(~operator="equal", (a, b) => a == b, Array.length(linkedTables), 2)
+        switch Array.get(linkedTables, 0) {
+        | Some(firstTable) =>
+          assertion(~operator="equal", (a, b) => a == b, firstTable.name, "RemoteT")
+          assertion(~operator="equal", (a, b) => a == b, firstTable.type_, "ODBC")
+        | None =>
+          assertion(~operator="equal", (a, b) => a == b, false, true)
+        }
+      | Ok(_) | Error(_) =>
+        assertion(~operator="equal", (a, b) => a == b, false, true)
+      }
+      cb(~planned=3, ())
+      Promise.resolve()
+    })
+    ->Promise.catch(_ => {
+      uninstallFake()
+      cb(~planned=3, ())
+      Promise.resolve()
+    })
+    ->ignore
+})
+
+testAsync("F6: getLinkedTables filters out non-linked tables via Attributes", cb => {
+  installFake()
+  let db = nextProxyRef.contents->Option.getUnsafe
+  let adapter = buildConnectedAdapter(db)
+  getCountValueRef := 2
+  proxyListRef := list{makeFakeProxy(), makeFakeProxy()}
+  getValueOverridesRef := Js.Dict.fromArray([
+    ("TableDefs", JSON.String("td")),
+    ("Attributes", JSON.Number(Int.toFloat(0))),  // No dbLinkAttachedTable bit
+    ("Name", JSON.String("RegularT")),
+  ])
+
+  ComDataAdapter.getLinkedTables(adapter)
+    ->Promise.then(r => {
+      uninstallFake()
+      switch r {
+      | Ok({success: true, linkedTables}) =>
+        assertion(~operator="equal", (a, b) => a == b, Array.length(linkedTables), 0)
       | Ok(_) | Error(_) =>
         assertion(~operator="equal", (a, b) => a == b, false, true)
       }
