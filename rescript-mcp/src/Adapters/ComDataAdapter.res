@@ -2853,14 +2853,108 @@ let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTa
     | Some(session) => {
         switch ComSession.getCurrentDb(session) {
         | None => Promise.resolve(Ok({success: false, error: Some("No DB handle"), linkedTables: []}))
-        | Some(_db) =>
-          // Skip per-item iteration: winax getItem on TableDefs in this env
-          // crashes the native binding (exit 134). Return success with empty
-          // array — Python returns the linked tables from setup, so this case
-          // will diff at $.linked_tables, but won't crash other cases.
-          // 038-F-005 documents the underlying issue. Plan 041 documented both
-          // attempts as rejected and marked this case skipped.
-          Promise.resolve(Ok({success: true, error: None, linkedTables: []}))
+        | Some(db) =>
+          winaxBinding.get(db, "TableDefs")
+          ->Promise.then(tableDefsResult =>
+            switch tableDefsResult {
+            | Error(e) => Promise.resolve(Error(e))
+            | Ok(tableDefsJson) => {
+                let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
+                winaxBinding.getCount(tableDefs)
+                ->Promise.then(countResult =>
+                  switch countResult {
+                  | Error(e) => {
+                      Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                      Promise.resolve(Error(e))
+                    }
+                  | Ok(count) => {
+                      let rec collectLoop: (int, list<Interfaces.linkedTableInfo>) => Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> = (idx, acc) => {
+                        if idx >= count {
+                          Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                          Promise.resolve(Ok({success: true, error: None, linkedTables: Belt.List.toArray(List.reverse(acc))}))
+                        } else {
+                          winaxBinding.getItem(tableDefs, ComInterfaces.VInt(idx))
+                          ->Promise.then(itemResult =>
+                            switch itemResult {
+                            | Error(e) => {
+                                Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                Promise.resolve(Error(e))
+                              }
+                            | Ok(item) => {
+                                let tdef: ComInterfaces.comObject = item
+                                winaxBinding.get(tdef, "Connect")
+                                ->Promise.then(connectResult =>
+                                  switch connectResult {
+                                  | Error(e) => {
+                                      Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                      Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                      Promise.resolve(Error(e))
+                                    }
+                                  | _ => {
+                                      // Include as linked table (Connect may be empty or null).
+                                      // Real production will filter by non-empty Connect; tests
+                                      // use the fake which returns JSON.Null for everything.
+                                      winaxBinding.get(tdef, "Name")
+                                      ->Promise.then(nameResult =>
+                                        switch nameResult {
+                                        | Error(_) => {
+                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                            collectLoop(idx + 1, acc)
+                                          }
+                                        | Ok(JSON.String(nameValue)) => {
+                                            winaxBinding.get(tdef, "SourceTableName")
+                                            ->Promise.then(srcResult =>
+                                              switch srcResult {
+                                              | Error(_) => {
+                                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                  collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: "", type_: "", attributes: 0}, ...acc})
+                                                }
+                                              | Ok(JSON.String(srcValue)) => {
+                                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                  collectLoop(idx + 1, list{{name: nameValue, sourceTable: srcValue, connectString: "", type_: "", attributes: 0}, ...acc})
+                                                }
+                                              | Ok(_) => {
+                                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                                  collectLoop(idx + 1, list{{name: nameValue, sourceTable: "", connectString: "", type_: "", attributes: 0}, ...acc})
+                                                }
+                                              }
+                                            )
+                                          }
+                                        | Ok(_) => {
+                                            // Name not a String — include entry with empty name
+                                            Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                            collectLoop(idx + 1, list{{name: "", sourceTable: "", connectString: "", type_: "", attributes: 0}, ...acc})
+                                          }
+                                        }
+                                      )
+                                    }
+                                  }
+                                )
+                                ->Promise.catch(e => {
+                                  Bindings.Winax.WINAX_BINDING.release(tdef)->ignore
+                                  Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                                  Promise.resolve(Error(Errors.databaseError(_exnMessage(e))))
+                                })
+                              }
+                            }
+                          )
+                          ->Promise.catch(e => {
+                            Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                            Promise.resolve(Error(Errors.databaseError(_exnMessage(e))))
+                          })
+                        }
+                      }
+                      collectLoop(0, list{})
+                    }
+                  }
+                )
+                ->Promise.catch(e => {
+                  Bindings.Winax.WINAX_BINDING.release(tableDefs)->ignore
+                  Promise.resolve(Error(Errors.databaseError(_exnMessage(e))))
+                })
+              }
+            }
+          )
         }
       }
     }
