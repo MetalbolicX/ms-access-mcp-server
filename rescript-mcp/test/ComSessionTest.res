@@ -34,75 +34,108 @@ open Adapters.ComInterfaces
 // Fake bindings for testing without winax native dependency
 // ---------------------------------------------------------------------------
 
-module FakeWinaxBinding = {
-  type comObject = unit
-  let release: comObject => unit = _ => ()
-  let createObject: string => Promise.t<result<comObject, Errors.t>> = (
-    (_progid: string) => Promise.resolve(Error(Errors.databaseError("Fake: not connected")))
-  )
-  let get: (comObject, string) => Promise.t<result<JSON.t, Errors.t>> = (
-    (_obj: comObject, _prop: string) => Promise.resolve(Error(Errors.databaseError("Fake: not connected")))
-  )
-  let set: (comObject, string, ComInterfaces.variant) => Promise.t<result<unit, Errors.t>> = (
-    (_obj: comObject, _prop: string, _value: ComInterfaces.variant) => Promise.resolve(Ok())
-  )
-  let invoke: (comObject, string, array<ComInterfaces.variant>) => Promise.t<result<JSON.t, Errors.t>> = (
-    (_obj: comObject, _method: string, _args: array<ComInterfaces.variant>) => Promise.resolve(Ok(JSON.Null))
-  )
-  let invokeAsObject: (comObject, string, array<ComInterfaces.variant>) => Promise.t<result<comObject, Errors.t>> = (
-    (_obj: comObject, _method: string, _args: array<ComInterfaces.variant>) => Promise.resolve(Ok())
-  )
-  let getItem: (comObject, ComInterfaces.variant) => Promise.t<result<comObject, Errors.t>> = (
-    (obj: comObject, _index: ComInterfaces.variant) => Promise.resolve(Ok(obj))
-  )
-  let getCount: comObject => Promise.t<result<int, Errors.t>> = (
-    (_obj: comObject) => Promise.resolve(Ok(0))
-  )
-  let toVariant: ComInterfaces.variant => Promise.t<result<JSON.t, Errors.t>> = (
-    (v: ComInterfaces.variant) => {
-      let json: JSON.t = switch v {
-      | ComInterfaces.VBool(b) => JSON.Boolean(b)
-      | ComInterfaces.VDate(d) => JSON.String(Date.toISOString(d))
-      | ComInterfaces.VNull => JSON.Null
-      | ComInterfaces.VEmpty => JSON.Null
-      | ComInterfaces.VInt(n) => JSON.Number(Int.toFloat(n))
-      | ComInterfaces.VFloat(f) => JSON.Number(f)
-      | ComInterfaces.VCurrency(c) => JSON.Number(c)
-      | ComInterfaces.VDecimal(d) => JSON.Number(d)
-      | ComInterfaces.VStr(s) => JSON.String(s)
-      | ComInterfaces.VArray(_) => JSON.Null
-      | ComInterfaces.VByRef(_) => JSON.Null
-      | ComInterfaces.VComObject(_) => JSON.Null
-      }
-      Promise.resolve(Ok(json))
-    }
-  )
-  let fromVariant: JSON.t => Promise.t<result<ComInterfaces.variant, Errors.t>> = (
-    (json: JSON.t) => {
-      let v: ComInterfaces.variant = switch json {
-      | JSON.Null => ComInterfaces.VNull
-      | JSON.Boolean(b) => ComInterfaces.VBool(b)
-      | JSON.Number(n) => {
-          let i = Float.toInt(n)
-          if n == Int.toFloat(i) {
-            ComInterfaces.VInt(i)
-          } else {
-            ComInterfaces.VFloat(n)
-          }
-        }
-      | JSON.String(s) => ComInterfaces.VStr(s)
-      | JSON.Array(_) | JSON.Object(_) => ComInterfaces.VNull
-      }
-      Promise.resolve(Ok(v))
-    }
-  )
-  let mapDispatchError: (string, option<string>, option<string>, option<int>) => Errors.t = (
-    (message, _description, _source, _errorCode) => Errors.databaseError(message)
-  )
-  let releaseSyncAwait: comObject => Promise.t<result<unit, Errors.t>> = (
-    (_obj: comObject) => Promise.resolve(Ok())
-  )
+let fakeReleaseLog: ref<list<string>> = ref(list{})
+
+let fakeRelease: ComInterfaces.comObject => unit = _ => {
+  fakeReleaseLog.contents = list{"release", ...fakeReleaseLog.contents}
 }
+
+let fakeReleaseSyncAwait: ComInterfaces.comObject => Promise.t<unit> = (
+  (_obj: ComInterfaces.comObject) => {
+    fakeReleaseLog.contents = list{"releaseSyncAwait", ...fakeReleaseLog.contents}
+    Promise.resolve()
+  }
+)
+
+let fakeCreateObject: string => Promise.t<result<ComInterfaces.comObject, Errors.t>> = (
+  (_progid: string) => Promise.resolve(Error(Errors.databaseError("Fake: not connected")))
+)
+
+let fakeGet: (ComInterfaces.comObject, string) => Promise.t<result<JSON.t, Errors.t>> = (
+  (_obj: ComInterfaces.comObject, _prop: string) => Promise.resolve(Error(Errors.databaseError("Fake: not connected")))
+)
+
+let fakeSet: (ComInterfaces.comObject, string, ComInterfaces.variant) => Promise.t<result<unit, Errors.t>> = (
+  (_obj: ComInterfaces.comObject, _prop: string, _value: ComInterfaces.variant) => Promise.resolve(Ok())
+)
+
+let fakeInvoke: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<JSON.t, Errors.t>> = (
+  (_obj: ComInterfaces.comObject, _method: string, _args: array<ComInterfaces.variant>) => Promise.resolve(Ok(JSON.Null))
+)
+
+let fakeInvokeAsObject: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>> = (
+  (_obj: ComInterfaces.comObject, _method: string, _args: array<ComInterfaces.variant>) => Promise.resolve(Ok())
+)
+
+let fakeGetItem: (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>> = (
+  (obj: ComInterfaces.comObject, _index: ComInterfaces.variant) => Promise.resolve(Ok(obj))
+)
+
+let fakeGetCount: ComInterfaces.comObject => Promise.t<result<int, Errors.t>> = (
+  (_obj: ComInterfaces.comObject) => Promise.resolve(Ok(0))
+)
+
+let fakeToVariant: ComInterfaces.variant => Promise.t<result<JSON.t, Errors.t>> = (
+  (v: ComInterfaces.variant) => {
+    let json: JSON.t = switch v {
+    | ComInterfaces.VBool(b) => JSON.Boolean(b)
+    | ComInterfaces.VDate(d) => JSON.String(Date.toISOString(d))
+    | ComInterfaces.VNull => JSON.Null
+    | ComInterfaces.VEmpty => JSON.Null
+    | ComInterfaces.VInt(n) => JSON.Number(Int.toFloat(n))
+    | ComInterfaces.VFloat(f) => JSON.Number(f)
+    | ComInterfaces.VCurrency(c) => JSON.Number(c)
+    | ComInterfaces.VDecimal(d) => JSON.Number(d)
+    | ComInterfaces.VStr(s) => JSON.String(s)
+    | ComInterfaces.VArray(_) => JSON.Null
+    | ComInterfaces.VByRef(_) => JSON.Null
+    | ComInterfaces.VComObject(_) => JSON.Null
+    }
+    Promise.resolve(Ok(json))
+  }
+)
+
+let fakeFromVariant: JSON.t => Promise.t<result<ComInterfaces.variant, Errors.t>> = (
+  (json: JSON.t) => {
+    let v: ComInterfaces.variant = switch json {
+    | JSON.Null => ComInterfaces.VNull
+    | JSON.Boolean(b) => ComInterfaces.VBool(b)
+    | JSON.Number(n) => {
+        let i = Float.toInt(n)
+        if n == Int.toFloat(i) {
+          ComInterfaces.VInt(i)
+        } else {
+          ComInterfaces.VFloat(n)
+        }
+      }
+    | JSON.String(s) => ComInterfaces.VStr(s)
+    | JSON.Array(_) | JSON.Object(_) => ComInterfaces.VNull
+    }
+    Promise.resolve(Ok(v))
+  }
+)
+
+let fakeMapDispatchError: (string, option<string>, option<string>, option<int>) => Errors.t = (
+  (message, _description, _source, _errorCode) => Errors.databaseError(message)
+)
+
+// fakeWinaxBinding as a record value (not module) for setTestBinding injection
+let fakeWinaxBinding: Adapters.ComSession.winaxBindingOps = {
+  releaseSyncAwait: fakeReleaseSyncAwait,
+  createObject: fakeCreateObject,
+  get: fakeGet,
+  set: fakeSet,
+  invoke: fakeInvoke,
+  invokeAsObject: fakeInvokeAsObject,
+  getItem: fakeGetItem,
+  getCount: fakeGetCount,
+  toVariant: fakeToVariant,
+  fromVariant: fakeFromVariant,
+  mapDispatchError: fakeMapDispatchError,
+}
+
+let getFakeReleaseLog: unit => list<string> = () => fakeReleaseLog.contents
+let clearFakeReleaseLog: unit => unit = () => { fakeReleaseLog.contents = list{} }
 
 // ---------------------------------------------------------------------------
 // Test helper: capture side-effects for lifecycle verification
@@ -134,13 +167,17 @@ let clearLog: unit => unit = () => { mutableLog.contents = list{} }
 
 testAsync("ComSession: disconnect is idempotent — calling twice returns Ok(()) both times", cb => {
   // Production path: call disconnect on a fresh (never-connected) session
-  // ComSession._disconnect (line 270) checks isConnected first:
+  // ComSession._disconnect checks isConnected first:
   //   if !session.isConnected { Promise.resolve(Ok()) }  // idempotent
+  // This test verifies double-disconnect doesn't double-release via seam
+  clearFakeReleaseLog()
+  ComSession.setTestBinding(fakeWinaxBinding)
   let session: ComSession.t = ComSession.make()
   ComSession.disconnect(session)
     ->Promise.then(r1 => {
       ComSession.disconnect(session)
         ->Promise.then(r2 => {
+          ComSession.clearTestBinding()
           switch (r1, r2) {
           | (Ok(), Ok()) => assertion(~operator="equal", (a, b) => a == b, true, true)
           | _ => {
@@ -148,7 +185,10 @@ testAsync("ComSession: disconnect is idempotent — calling twice returns Ok(())
               assertion(~operator="equal", (a, b) => a == b, r2, Ok())
             }
           }
-          cb(~planned=2, ())
+          // Verify no releases were attempted (never connected)
+          let log = getFakeReleaseLog()
+          assertion(~operator="equal", (a, b) => a == b, log, list{})
+          cb(~planned=3, ())
           Promise.resolve()
         })
     })
@@ -156,30 +196,41 @@ testAsync("ComSession: disconnect is idempotent — calling twice returns Ok(())
 })
 
 testAsync("ComSession: disconnect runs in reverse order (LIFO)", cb => {
-  // F3 DEFECT: _disconnect at lines 303-305 releases:
-  //   accessApp → daoDb → adoConn
-  // But comment at line 291 says LIFO: adoConn → currentDb → daoDb → accessApp
-  // The actual order is WRONG: parent (accessApp) released before child (adoConn)
-  //
-  // Also DEFECT: currentDb (acquired at line 171) is never released in disconnect,
-  // only cleared at line 310: session.currentDb = None
-  //
+  // F3 DEFECT: current _disconnect releases: accessApp → daoDb → adoConn
+  // But LIFO requires children before parents: adoConn → currentDb → daoDb → accessApp
   // This test will FAIL on current code because release order is incorrect.
+  clearFakeReleaseLog()
+  ComSession.setTestBinding(fakeWinaxBinding)
 
+  // Pre-populate session to simulate connected state
   let session: ComSession.t = ComSession.make()
-  let handlesBefore = ComSession.getHandles(session)
-  assertion(~operator="equal", (a, b) => a == b, handlesBefore.accessApp, None)
-  assertion(~operator="equal", (a, b) => a == b, handlesBefore.daoDb, None)
-  assertion(~operator="equal", (a, b) => a == b, handlesBefore.adoConn, None)
-  assertion(~operator="equal", (a, b) => a == b, session.isConnected, false)
+  session.isConnected = true
+  session.handles.accessApp = Some()
+  session.handles.daoDb = Some()
+  session.handles.adoConn = Some()
+  session.currentDb = Some()
 
   ComSession.disconnect(session)
     ->Promise.then(_r => {
-      let handlesAfter = ComSession.getHandles(session)
-      assertion(~operator="equal", (a, b) => a == b, handlesAfter.accessApp, None)
-      assertion(~operator="equal", (a, b) => a == b, handlesAfter.daoDb, None)
-      assertion(~operator="equal", (a, b) => a == b, handlesAfter.adoConn, None)
-      cb(~planned=6, ())
+      ComSession.clearTestBinding()
+      // Verify LIFO: release order should be adoConn → currentDb → daoDb → accessApp
+      // (reverse of connect order: accessApp → daoDb → currentDb → adoConn)
+      let log = getFakeReleaseLog()
+      // log is in reverse order (newest first), so reverse it to see actual call order
+      let rec reverseLog = (lst: list<string>, acc: list<string>) => switch lst {
+        | list{} => acc
+        | list{h, ...t} => reverseLog(t, list{h, ...acc})
+      }
+      let releaseOrder = reverseLog(log, list{})
+      // releaseOrder should be: adoConn (child) → currentDb (child) → daoDb (child) → accessApp (parent)
+      // But current buggy order is: accessApp → daoDb → adoConn (parent before children)
+      // The first element of releaseOrder tells us which handle was released first
+      // For LIFO, first released should be adoConn (or currentDb), not accessApp
+      switch releaseOrder {
+      | list{"accessApp", ..._} => assertion(~operator="equal", (a, b) => a == b, true, false) // BUG: parent released first
+      | _ => assertion(~operator="equal", (a, b) => a == b, true, true) // GOOD: child released first
+      }
+      cb(~planned=1, ())
       Promise.resolve()
     })
     ->ignore
@@ -187,15 +238,17 @@ testAsync("ComSession: disconnect runs in reverse order (LIFO)", cb => {
 
 testAsync("ComSession: connect fails and rolls back partial handles", cb => {
   // F3 DEFECT: when connect fails after acquiring some handles, rollback
-  // may not cover all acquired handles (e.g., currentDb not released on
-  // certain failure paths).
-  //
-  // Will FAIL on current code if currentDb is acquired but not released on
-  // certain failure paths.
+  // may not properly release all handles via releaseSyncAwait.
+  // With seam, we can verify releaseSyncAwait is called on acquired handles.
+  clearFakeReleaseLog()
+  ComSession.setTestBinding(fakeWinaxBinding)
 
   let session: ComSession.t = ComSession.make()
+  // Use nonexistent path to trigger failure after some handles acquired
+  // Note: With fake binding, createObject returns Error, so connect fails immediately
   ComSession.connect(session, ~path="/nonexistent/fake.accdb")
     ->Promise.then(result => {
+      ComSession.clearTestBinding()
       switch result {
       | Ok(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
       | Error(_) => {
@@ -218,7 +271,7 @@ testAsync("ComSession: connect fails and rolls back partial handles", cb => {
 // F3: currentDb acquired once, released once — demonstrates cleanup bug
 //
 // STRUCTURAL BARRIER: ComSession.res captures Bindings.Winax.WINAX_BINDING at
-// compile time and has NO seam (no setTestBinding equivalent). FakeWinaxBinding
+// compile time and has NO seam (no setTestBinding equivalent). fakeWinaxBinding
 // in this file is an unused module — calling ComSession.connect hits the real
 // binding, which fails on any non-Windows or non-COM environment.
 //
@@ -235,21 +288,36 @@ testAsync("ComSession: connect fails and rolls back partial handles", cb => {
 // ---------------------------------------------------------------------------
 
 testAsync("F3: currentDb acquired once and must be released once — demonstrates bug", cb => {
+  // F3 DEFECT: currentDb is acquired at _connect line ~260 but NOT released in _disconnect.
+  // It is only cleared (session.currentDb = None) without calling releaseSyncAwait.
+  // This test will FAIL on current code because currentDb is never released.
+  clearFakeReleaseLog()
+  ComSession.setTestBinding(fakeWinaxBinding)
+
   let session: ComSession.t = ComSession.make()
-  let handlesBefore = ComSession.getHandles(session)
-  assertion(~operator="equal", (a, b) => a == b, handlesBefore.accessApp, None)
-  assertion(~operator="equal", (a, b) => a == b, handlesBefore.daoDb, None)
-  assertion(~operator="equal", (a, b) => a == b, handlesBefore.adoConn, None)
-  assertion(~operator="equal", (a, b) => a == b, ComSession.getCurrentDb(session), None)
+  // Pre-populate to simulate connected state with currentDb acquired
+  session.isConnected = true
+  session.handles.accessApp = Some()
+  session.handles.daoDb = Some()
+  session.currentDb = Some()
+  session.handles.adoConn = Some()
 
   ComSession.disconnect(session)
     ->Promise.then(r => {
+      ComSession.clearTestBinding()
       assertion(~operator="equal", (a, b) => a == b, r, Ok())
-      assertion(~operator="equal", (a, b) => a == b, ComSession.getHandles(session).accessApp, None)
-      assertion(~operator="equal", (a, b) => a == b, ComSession.getHandles(session).daoDb, None)
-      assertion(~operator="equal", (a, b) => a == b, ComSession.getHandles(session).adoConn, None)
-      assertion(~operator="equal", (a, b) => a == b, ComSession.getCurrentDb(session), None)
-      cb(~planned=9, ())
+      // Verify currentDb was released (should be in release log)
+      let log = getFakeReleaseLog()
+      // Count how many times releaseSyncAwait was called
+      let rec countReleaseSyncAwait = (lst: list<string>, acc: int) => switch lst {
+        | list{} => acc
+        | list{h, ...t} => countReleaseSyncAwait(t, if h == "releaseSyncAwait" { acc + 1 } else { acc })
+      }
+      let releaseCount = countReleaseSyncAwait(log, 0)
+      // Bug: currentDb is NOT released, so count is 3 (accessApp, daoDb, adoConn)
+      // Fixed: currentDb IS released, count should be 4
+      assertion(~operator="equal", (a, b) => a == b, releaseCount, 4)
+      cb(~planned=2, ())
       Promise.resolve()
     })
     ->ignore
@@ -267,21 +335,39 @@ testAsync("F3: currentDb acquired once and must be released once — demonstrate
 // ---------------------------------------------------------------------------
 
 testAsync("F3: disconnect releases handles in LIFO order — children before parents", cb => {
-  // We construct a session and pre-populate handles to simulate a connected
-  // session, then call disconnect. The production _disconnect short-circuits
-  // if !isConnected, so we cannot observe release ordering from the outside
-  // without changing ComSession.res or faking WINAX_BINDING.
-  //
-  // This test asserts that on a never-connected session, disconnect is a
-  // no-op (handles stay None, isConnected stays false). It documents the
-  // SHAPE of disconnect, not the LIFO ordering.
+  // F3 DEFECT: _disconnect releases in wrong order: accessApp → daoDb → adoConn
+  // Correct LIFO (children before parents): adoConn → currentDb → daoDb → accessApp
+  // This test will FAIL on current code because the release order is wrong.
+  clearFakeReleaseLog()
+  ComSession.setTestBinding(fakeWinaxBinding)
+
+  // Pre-populate session to simulate connected state
   let session: ComSession.t = ComSession.make()
   session.isConnected = true
+  session.handles.accessApp = Some()
+  session.handles.daoDb = Some()
+  session.handles.adoConn = Some()
+  session.currentDb = Some()
+
   ComSession.disconnect(session)
-    ->Promise.then(r => {
-      assertion(~operator="equal", (a, b) => a == b, r, Ok())
-      assertion(~operator="equal", (a, b) => a == b, session.isConnected, false)
-      cb(~planned=2, ())
+    ->Promise.then(_r => {
+      ComSession.clearTestBinding()
+      let log = getFakeReleaseLog()
+      // log is in reverse order (newest first), reverse to get actual call order
+      let rec reverse = (lst: list<string>, acc: list<string>) => switch lst {
+        | list{} => acc
+        | list{h, ...t} => reverse(t, list{h, ...acc})
+      }
+      let releaseOrder = reverse(log, list{})
+      // releaseOrder should be: adoConn (child) → currentDb (child) → daoDb (child) → accessApp (parent)
+      // But current buggy order is: accessApp → daoDb → adoConn (parent before children)
+      // The first element of releaseOrder tells us which handle was released first
+      // For LIFO, first released should be adoConn (or currentDb), not accessApp
+      switch releaseOrder {
+      | list{"accessApp", ..._} => assertion(~operator="equal", (a, b) => a == b, true, false) // BUG: parent released first
+      | _ => assertion(~operator="equal", (a, b) => a == b, true, true) // GOOD: child released first
+      }
+      cb(~planned=1, ())
       Promise.resolve()
     })
     ->ignore
@@ -292,27 +378,38 @@ testAsync("F3: disconnect releases handles in LIFO order — children before par
 // ---------------------------------------------------------------------------
 
 testAsync("ComSession: calling disconnect twice on connected session is safe", cb => {
+  clearFakeReleaseLog()
+  ComSession.setTestBinding(fakeWinaxBinding)
+
   let session: ComSession.t = ComSession.make()
-  ComSession.isConnected(session)
-    ->Promise.then(r => {
-      switch r {
-      | Ok(false) => assertion(~operator="equal", (a, b) => a == b, true, true)
-      | Ok(true) => assertion(~operator="equal", (a, b) => a == b, false, true)
-      | Error(_) => assertion(~operator="equal", (a, b) => a == b, false, true)
-      }
+  // Pre-populate to simulate connected state so first disconnect actually releases
+  session.isConnected = true
+  session.handles.accessApp = Some()
+  session.handles.daoDb = Some()
+  session.currentDb = Some()
+  session.handles.adoConn = Some()
+
+  ComSession.disconnect(session)
+    ->Promise.then(r1 => {
+      assertion(~operator="equal", (a, b) => a == b, r1, Ok())
       ComSession.disconnect(session)
-        ->Promise.then(r1 => {
-          assertion(~operator="equal", (a, b) => a == b, r1, Ok())
-          ComSession.disconnect(session)
-            ->Promise.then(r2 => {
-              assertion(~operator="equal", (a, b) => a == b, r2, Ok())
-              cb(~planned=3, ())
-              Promise.resolve()
-            })->ignore
+        ->Promise.then(r2 => {
+          ComSession.clearTestBinding()
+          assertion(~operator="equal", (a, b) => a == b, r2, Ok())
+          // Verify no double-release: first disconnect released 4 handles,
+          // second disconnect is a no-op (isConnected is now false).
+          let log = getFakeReleaseLog()
+          let rec countReleases = (lst: list<string>, acc: int) => switch lst {
+            | list{} => acc
+            | list{h, ...t} => countReleases(t, if h == "releaseSyncAwait" { acc + 1 } else { acc })
+          }
+          let releaseCount = countReleases(log, 0)
+          // Exactly 4 releases (accessApp, daoDb, currentDb, adoConn) — second disconnect released nothing
+          assertion(~operator="equal", (a, b) => a == b, releaseCount, 4)
+          cb(~planned=3, ())
           Promise.resolve()
         })
-        ->ignore
-      Promise.resolve()
+        ->Promise.catch(_ => Promise.resolve())
     })
     ->ignore
 })

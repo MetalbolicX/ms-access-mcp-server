@@ -14,6 +14,110 @@ type t = {
 }
 
 // ---------------------------------------------------------------------------
+// Bindings.Winax.WINAX_BINDING seam — mirrors ComDataAdapter.res:38-118 pattern
+// Allows test injection to intercept WINAX_BINDING calls
+// ---------------------------------------------------------------------------
+
+// winaxBindingOps type — mirrored from ComDataAdapter to avoid circular import
+type winaxBindingOps = {
+  releaseSyncAwait: ComInterfaces.comObject => Promise.t<unit>,
+  createObject: string => Promise.t<result<ComInterfaces.comObject, Errors.t>>,
+  get: (ComInterfaces.comObject, string) => Promise.t<result<JSON.t, Errors.t>>,
+  set: (ComInterfaces.comObject, string, ComInterfaces.variant) => Promise.t<result<unit, Errors.t>>,
+  invoke: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<JSON.t, Errors.t>>,
+  invokeAsObject: (ComInterfaces.comObject, string, array<ComInterfaces.variant>) => Promise.t<result<ComInterfaces.comObject, Errors.t>>,
+  getItem: (ComInterfaces.comObject, ComInterfaces.variant) => Promise.t<result<ComInterfaces.comObject, Errors.t>>,
+  getCount: ComInterfaces.comObject => Promise.t<result<int, Errors.t>>,
+  toVariant: ComInterfaces.variant => Promise.t<result<JSON.t, Errors.t>>,
+  fromVariant: JSON.t => Promise.t<result<ComInterfaces.variant, Errors.t>>,
+  mapDispatchError: (string, option<string>, option<string>, option<int>) => Errors.t,
+}
+
+// _testBinding — mutable override ref for test injection. None = use real binding.
+let _testBinding: ref<option<winaxBindingOps>> = ref(None)
+
+// setTestBinding / clearTestBinding — swap in/out a fake binding for tests
+let setTestBinding: winaxBindingOps => unit = (
+  (b: winaxBindingOps) => {
+    _testBinding := Some(b)
+  }
+)
+
+let clearTestBinding: unit => unit = () => {
+  _testBinding := None
+}
+
+// winaxBinding — object that routes to test override or real binding.
+let winaxBinding: winaxBindingOps = {
+  releaseSyncAwait: (obj: ComInterfaces.comObject) => (
+    switch _testBinding.contents {
+    | Some(b) => b.releaseSyncAwait(obj)
+    | None => Bindings.Winax.WINAX_BINDING.releaseSyncAwait(obj)
+    }: Promise.t<unit>
+  ),
+  createObject: (progid: string) => (
+    switch _testBinding.contents {
+    | Some(b) => b.createObject(progid)
+    | None => Bindings.Winax.WINAX_BINDING.createObject(progid)
+    }: Promise.t<result<ComInterfaces.comObject, Errors.t>>
+  ),
+  get: (obj: ComInterfaces.comObject, prop: string) => (
+    switch _testBinding.contents {
+    | Some(b) => b.get(obj, prop)
+    | None => Bindings.Winax.WINAX_BINDING.get(obj, prop)
+    }: Promise.t<result<JSON.t, Errors.t>>
+  ),
+  set: (obj: ComInterfaces.comObject, prop: string, value: ComInterfaces.variant) => (
+    switch _testBinding.contents {
+    | Some(b) => b.set(obj, prop, value)
+    | None => Bindings.Winax.WINAX_BINDING.set(obj, prop, value)
+    }: Promise.t<result<unit, Errors.t>>
+  ),
+  invoke: (obj: ComInterfaces.comObject, method: string, args: array<ComInterfaces.variant>) => (
+    switch _testBinding.contents {
+    | Some(b) => b.invoke(obj, method, args)
+    | None => Bindings.Winax.WINAX_BINDING.invoke(obj, method, args)
+    }: Promise.t<result<JSON.t, Errors.t>>
+  ),
+  invokeAsObject: (obj: ComInterfaces.comObject, method: string, args: array<ComInterfaces.variant>) => (
+    switch _testBinding.contents {
+    | Some(b) => b.invokeAsObject(obj, method, args)
+    | None => Bindings.Winax.WINAX_BINDING.invokeAsObject(obj, method, args)
+    }: Promise.t<result<ComInterfaces.comObject, Errors.t>>
+  ),
+  getItem: (obj: ComInterfaces.comObject, index: ComInterfaces.variant) => (
+    switch _testBinding.contents {
+    | Some(b) => b.getItem(obj, index)
+    | None => Bindings.Winax.WINAX_BINDING.getItem(obj, index)
+    }: Promise.t<result<ComInterfaces.comObject, Errors.t>>
+  ),
+  getCount: (obj: ComInterfaces.comObject) => (
+    switch _testBinding.contents {
+    | Some(b) => b.getCount(obj)
+    | None => Bindings.Winax.WINAX_BINDING.getCount(obj)
+    }: Promise.t<result<int, Errors.t>>
+  ),
+  toVariant: (v: ComInterfaces.variant) => (
+    switch _testBinding.contents {
+    | Some(b) => b.toVariant(v)
+    | None => Bindings.Winax.WINAX_BINDING.toVariant(v)
+    }: Promise.t<result<JSON.t, Errors.t>>
+  ),
+  fromVariant: (json: JSON.t) => (
+    switch _testBinding.contents {
+    | Some(b) => b.fromVariant(json)
+    | None => Bindings.Winax.WINAX_BINDING.fromVariant(json)
+    }: Promise.t<result<ComInterfaces.variant, Errors.t>>
+  ),
+  mapDispatchError: (message, description, source, errorCode) => (
+    switch _testBinding.contents {
+    | Some(b) => b.mapDispatchError(message, description, source, errorCode)
+    | None => Bindings.Winax.WINAX_BINDING.mapDispatchError(message, description, source, errorCode)
+    }: Errors.t
+  ),
+}
+
+// ---------------------------------------------------------------------------
 // SESSION module type (must match ComSession.resi)
 // ---------------------------------------------------------------------------
 
@@ -99,14 +203,14 @@ let _bestEffort = (thunk: unit => Promise.t<result<'a, Errors.t>>) => {
 
 let _releaseAccessApp: ComInterfaces.comObject => unit = (
   app => {
-    Bindings.Winax.WINAX_BINDING.release(app)
+    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(app)->ignore
   }
 )
 
 let _releaseHandle: option<ComInterfaces.comObject> => Promise.t<unit> = (
   handle => {
     switch handle {
-    | Some(obj) => Bindings.Winax.WINAX_BINDING.releaseAsync(obj)
+    | Some(obj) => Bindings.Winax.WINAX_BINDING.releaseSyncAwait(obj)
     | None => Promise.resolve()
     }
   }
@@ -273,49 +377,27 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
       // Idempotent: already disconnected
       Promise.resolve(Ok())
     } else {
-      // Best-effort: close the Access application and its DAO DB before
-      // releasing the underlying COM proxies — winax's release() only calls
-      // IUnknown.Release() and leaves MSACCESS.EXE running otherwise.
-      // Mirrors com_dispatcher.py _release_com_safe (CloseCurrentDatabase + Quit).
-      let _gracefulShutdown = () => {
-        switch session.handles.accessApp {
-        | Some(a) =>
-            // Close the current database, then quit the application.
-            // Both calls are best-effort — winax proxy errors don't propagate.
-            let _ = Bindings.Winax.WINAX_BINDING.invoke(a, "CloseCurrentDatabase", [])
-            let _ = Bindings.Winax.WINAX_BINDING.invoke(a, "Quit", [])
-            Promise.resolve()
-        | None => Promise.resolve()
+      // LIFO: release children before parents (adoConn → daoDb → accessApp)
+      // currentDb is also released (F3 defect fix: previously only cleared, never released).
+      let releaseHandle: (option<ComInterfaces.comObject>, string) => unit = (
+        (handle, _name) => {
+          switch handle {
+          | Some(obj) => winaxBinding.releaseSyncAwait(obj)->ignore
+          | None => ()
+          }
         }
-      }
-      // LIFO: adoConn → currentDb → daoDb → accessApp
-      // All releases are AWAITED in order; the returned Promise
-      // resolves only after every release has fired. The caller
-      // (e.g., the stdio harness) must await this before exiting.
-      let releaseChain = ref(Promise.resolve())
-      let chainRelease = (handle: option<ComInterfaces.comObject>) => {
-        switch handle {
-        | None => ()
-        | Some(obj) => releaseChain := releaseChain.contents->Promise.then(_ => Bindings.Winax.WINAX_BINDING.releaseSyncAwait(obj))
-        }
-      }
-      // Reverse-order traversal (LIFO: children first, then parents)
-      let _ = chainRelease(session.handles.accessApp)
-      let _ = chainRelease(session.handles.daoDb)
-      let _ = chainRelease(session.handles.adoConn)
-      _gracefulShutdown()
-        ->Promise.then(_ => {
-          releaseChain.contents->Promise.then(_ => {
-            session.handles.adoConn = None
-            session.currentDb = None
-            session.handles.daoDb = None
-            session.handles.accessApp = None
-            session.isConnected = false
-            session.pid = None
-            Promise.resolve(Ok())
-          })
-        })
-        ->Promise.catch(_ => Promise.resolve(Ok()))
+      )
+      releaseHandle(session.handles.adoConn, "adoConn")
+      session.handles.adoConn = None
+      releaseHandle(session.currentDb, "currentDb")
+      session.currentDb = None
+      releaseHandle(session.handles.daoDb, "daoDb")
+      session.handles.daoDb = None
+      releaseHandle(session.handles.accessApp, "accessApp")
+      session.handles.accessApp = None
+      session.isConnected = false
+      session.pid = None
+      Promise.resolve(Ok())
     }
   }
 : t => Promise.t<result<unit, Errors.t>>
