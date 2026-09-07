@@ -341,9 +341,20 @@ testAsync("F2: recreateLinkedTable Delete error propagates and CreateTableDef is
 
 testAsync("F2: refreshLinkedTable set Connect error propagates and RefreshLink is not called", cb => {
   // DEFECT: in refreshLinkedTable, set Connect result is discarded.
+  // Setup: findLoop must find a tdef named "T" so we can exercise the
+  // set-Connect branch. With the fake's default behavior (get returns Null),
+  // findLoop never matches and returns Ok({success: false, error: "Table not found"}),
+  // which masks the actual F2 defect path.
   installFake()
   let db = nextProxyRef.contents->Option.getUnsafe
   let adapter = buildConnectedAdapter(db)
+  getCountValueRef := 1
+  proxyListRef := list{makeFakeProxy()}
+  getValueOverridesRef := Js.Dict.fromArray([
+    ("TableDefs", JSON.String("td")),
+    ("Name", JSON.String("T")),
+    ("Connect", JSON.String("ODBC;DSN=Old")),
+  ])
   methodErrorRef := Some(("Connect", "set", Errors.databaseError("Set Connect failed")))
 
   ComDataAdapter.refreshLinkedTable(adapter, "T", ~connectString=?Some("DSN=x"))
