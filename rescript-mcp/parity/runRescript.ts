@@ -443,7 +443,18 @@ async function main() {
   // Access.Application releases the .accdb lock (otherwise the next Python
   // WinCom child hits "You already have the database open").
   if (useCom) {
-    await new Promise<void>((r) => setTimeout(r, 5000));
+    // Phase 5 Fix B: let Node's natural-exit path run finalizers with cleanup
+    // hooks still mounted, instead of forcing process.exit(0) which skips them.
+    process.exitCode = 0
+    // Drain macrotasks (let pending I/O settle, including any final awaits from
+    // _flushTempHandles if we're inside the same process — note: child exits
+    // independently here; this just gives it time).
+    for (let i = 0; i < 5; i++) {
+      await new Promise<void>((r) => setImmediate(r))
+    }
+    // Watchdog: if the loop somehow doesn't drain (shouldn't), force exit.
+    const watchdog = setTimeout(() => process.exit(0), 10000)
+    watchdog.unref()
   }
   process.exit(0);
 }
