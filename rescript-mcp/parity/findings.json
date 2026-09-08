@@ -1,1 +1,46 @@
-[]
+[
+  {
+    "operation": "delete_table",
+    "case": "delete_table.json",
+    "diff": {
+      "path": "DRIVER",
+      "expected": "ok",
+      "actual": "driver error"
+    },
+    "stderr": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+    "pythonChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+      "phase": {
+        "nativeOp": "python-start",
+        "processExit": "exit-0",
+        "serialization": "python-valid-json"
+      }
+    },
+    "rescriptChild": {
+      "statusCode": 134,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": false,
+      "stdoutShapeValid": false,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "\r\n  #  C:\\nvm4w\\nodejs\\node.exe[46728]: void __cdecl node::RemoveEnvironmentCleanupHook(Isolate *, CleanupHook, void *) at src\\api\\hooks.cc:142\r\n  #  Assertion failed: (env) != nullptr\r\n\r\n----- Native stack trace -----\r\n\r\n 1: 00007FF7F61E14AA node::MultiIsolatePlatform::DisposeIsolate+765370\r\n 2: 00007FF7F62F343A node::RemoveEnvironmentCleanupHook+234\r\n 3: 00007FFAD7AE7B0B DispObject::`scalar deleting destructor'+203\r\n 4: 00007FF7F4C6229A v8::ResourceConstraints::ResourceConstraints+6346\r\n 5: 00007FF7F4BF5A34 X509_STORE_get_lookup_certs+61556\r\n 6: 00007FF7F4C067E2 v8::internal::StrongRootAllocatorBase::deallocate_impl+15858\r\n 7: 00007FF7F4C0630B v8::internal::StrongRootAllocatorBase::deallocate_impl+14619\r\n 8: 00007FF7F650492D node::AsyncResource::CallbackScope::CallbackScope+2124541\r\n 9: 00007FF7F4BF1920 X509_STORE_get_lookup_certs+44896\r\n10: 00007FF7F4C0C17A X509_STORE_set_cleanup+5098\r\n11: 00007FF7F4C18616 uv_timer_set_repeat+20694\r\n12: 00007FF7F47E9277 v8::CodeEvent::GetFunctionName+131959\r\n13: 000002DA27E775FA \r\n",
+      "phase": {
+        "nativeOp": "rescript-start",
+        "processExit": "exit-134",
+        "serialization": "rescript-nonzero-exit"
+      }
+    }
+  }
+]

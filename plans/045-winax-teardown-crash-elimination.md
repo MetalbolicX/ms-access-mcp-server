@@ -347,4 +347,33 @@ Nine `_enqueueTempRelease(session, handle)->ignore` insertions at previously-mis
 - `_getTablesImpl` (1 insert): per-table `td` after line ~1159
 - `_getRelationshipsImpl` (1 insert): per-relation `relHandle` after line ~1319
 
-**Status**: Phase 6 complete. All 3 target cases now PASS in single-case probe runs (query_data-SelectTop5Customers, recreate_linked_table, generate_sql).
+**Status**: Phase 6 partial — single-case runs are misleading because the crash is non-deterministic. Multi-run characterization (5 rounds × 7 cases at `703cd8d`):
+
+| Case | Single-run reported | 5-run reality |
+|------|---------------------|---------------|
+| `delete_table` | PASS | 1-2/5 PASS (flaky) |
+| `get_tables` | PASS | 0/5 PASS (was reported on lucky single-run) |
+| `get_relationships` | content FAIL no crash | content FAIL no crash (consistent) |
+| `get_table_schema-Customers` | Python harness issue | Python harness issue (consistent) |
+| `recreate_linked_table` | content FAIL no crash | 0/5 PASS (was reported on lucky single-run) |
+| `query_data-SelectTop5Customers` | exit-134 | 0/5 PASS (consistent) |
+| `generate_sql` | exit-134 | 0/5 PASS (consistent) |
+
+**Net**: handle-tracking stabilizes the crash somewhat (no more exit-134 storm during DDL suite run), but case-by-case reliability is still low. The COM crash remains fundamentally non-deterministic; single-case gates are unreliable.
+
+## Phase 7 outcome (2026-09-08) — TRIED AND REVERTED
+
+**Change**: `_flushTempHandles` appended a `global.gc()` call (via `%raw` guard) after the LIFO drain. `parity/run.ts` re-added `--expose-gc` to the child spawn.
+
+**Multi-run verification (5 rounds × 4 cases)**:
+
+| Case | Phase 6 (5-run) | Phase 7 (5-run) | Effect |
+|------|-----------------|-----------------|--------|
+| `query_data-SelectTop5Customers` | 0/5 | 1/5 | marginal flaky improvement |
+| `generate_sql` | 0/5 | 0/5 | no change |
+| `refresh_linked_table` (stable) | 2/5 | 1/2 (regression) | **REGRESSION** |
+| `get_indexes` (stable) | 3/5 | 2/2 | no regression |
+
+**Decision**: Phase 7 reverted. The `global.gc()` call helps `query_data` marginally (1/5 vs 0/5) but regresses `refresh_linked_table` (was 2/2 in Phase 6 verification, became 1/2 with Phase 7). Net negative — even though the GC fires AFTER DAO operations, the timing still races DAO's STA apartment in `refresh_linked_table`'s call chain.
+
+**Phase 7 changes reverted**. Branch HEAD is back at `703cd8d` (Phase 6 state).
