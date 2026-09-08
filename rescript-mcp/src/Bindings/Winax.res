@@ -220,7 +220,7 @@ module WINAX_BINDING: WINAX_BINDING = {
         let rawMod = TsBridge.unwrapWinaxModule(m)
         TsBridge.winaxRelease(rawMod, obj)
         Promise.resolve()
-      })
+      })->Promise.catch(_ => Promise.resolve())
     }: ComInterfaces.comObject => Promise.t<unit>
   )
 
