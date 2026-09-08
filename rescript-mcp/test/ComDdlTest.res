@@ -1715,7 +1715,7 @@ testAsync("ComDdl: linked-table chain — create/get/refresh/recreate/unlink", c
           })
       }
     })
-                    ->ignore
+    ->ignore
 })
 
 // ---------------------------------------------------------------------------
@@ -1856,3 +1856,62 @@ testAsync("ComDdl: executeSqlScript — parity script executes 3 statements", cb
     })
     ->ignore
 })
+
+// ---------------------------------------------------------------------------
+// Real-COM test: getTables returns recordCount via SELECT COUNT(*) for user tables
+// Plan 047 regression: ensure Customers has recordCount=5 and 11 fields.
+// ---------------------------------------------------------------------------
+testAsync("ComDdl: getTables recordCount populated for user tables (Customers=5, 11 fields)", cb => {
+  probe()
+    ->Promise.then(available => {
+      if !available {
+        Console.log("ComDdl: skipped (Access unavailable)")
+        cb(~planned=0, ())
+        Promise.resolve()
+      } else {
+        let adapter = ComDataAdapter.DaoAdapter.make()
+        ComDataAdapter.DaoAdapter.connect(adapter, testDbPath)
+          ->Promise.then(connectResult => {
+            switch connectResult {
+            | Error(e) => {
+                Console.log("ComDdl getTables recordCount: connect failed: " ++ Errors._message(e))
+                cb(~planned=1, ())
+                Promise.resolve()
+              }
+            | Ok(_) => {
+                ComDataAdapter.DaoAdapter.getTables(adapter)
+                  ->Promise.then(tablesResult => {
+                    switch tablesResult {
+                    | Error(e) => {
+                        Console.log("ComDdl getTables recordCount: getTables failed: " ++ Errors._message(e))
+                        ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                        Promise.resolve()
+                      }
+                    | Ok(tables) => {
+                        let customers = tables->Array.find(ti => ti.name === "Customers")
+                        switch customers {
+                        | None => {
+                            Console.log("ComDdl getTables recordCount: Customers not found in tables")
+                            ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=1, ()); Promise.resolve() })->ignore
+                            Promise.resolve()
+                          }
+                        | Some(c) => {
+                            let rcOk = c.recordCount == 5
+                            let fieldsOk = Array.length(c.fields) == 11
+                            assertion(~operator="equal", (a, b) => a == b, rcOk, true)
+                            assertion(~operator="equal", (a, b) => a == b, fieldsOk, true)
+                            ComDataAdapter.DaoAdapter.disconnect(adapter)->Promise.then(_ => { cb(~planned=2, ()); Promise.resolve() })->ignore
+                            Promise.resolve()
+                          }
+                        }
+                      }
+                    }
+                  })
+              }
+            }
+          })
+      }
+    })
+    ->ignore
+})
+
