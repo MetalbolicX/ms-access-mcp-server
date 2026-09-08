@@ -377,27 +377,47 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
       // Idempotent: already disconnected
       Promise.resolve(Ok())
     } else {
-      // LIFO: release children before parents (adoConn → daoDb → accessApp)
+      // LIFO: release children before parents (adoConn → currentDb → daoDb → accessApp)
       // currentDb is also released (F3 defect fix: previously only cleared, never released).
-      let releaseHandle: (option<ComInterfaces.comObject>, string) => unit = (
+      // Each release must COMPLETE (awaited) before the next starts — fire-and-forget
+      // caused exit-134 crashes as V8 GC finalizers ran after env teardown.
+      let releaseHandle: (option<ComInterfaces.comObject>, string) => Promise.t<unit> = (
         (handle, _name) => {
           switch handle {
-          | Some(obj) => winaxBinding.releaseSyncAwait(obj)->ignore
-          | None => ()
+          | Some(obj) => winaxBinding.releaseSyncAwait(obj)
+          | None => Promise.resolve()
           }
         }
       )
       releaseHandle(session.handles.adoConn, "adoConn")
-      session.handles.adoConn = None
-      releaseHandle(session.currentDb, "currentDb")
-      session.currentDb = None
-      releaseHandle(session.handles.daoDb, "daoDb")
-      session.handles.daoDb = None
-      releaseHandle(session.handles.accessApp, "accessApp")
-      session.handles.accessApp = None
-      session.isConnected = false
-      session.pid = None
-      Promise.resolve(Ok())
+      ->Promise.then(_ => {
+        session.handles.adoConn = None
+        releaseHandle(session.currentDb, "currentDb")
+      })
+      ->Promise.then(_ => {
+        session.currentDb = None
+        releaseHandle(session.handles.daoDb, "daoDb")
+      })
+      ->Promise.then(_ => {
+        session.handles.daoDb = None
+        releaseHandle(session.handles.accessApp, "accessApp")
+      })
+      ->Promise.then(_ => {
+        session.handles.accessApp = None
+        session.isConnected = false
+        session.pid = None
+        Promise.resolve(Ok(()))
+      })
+      ->Promise.catch(_ => {
+        // Non-fatal: tolerate individual release failures; still resolve Ok(())
+        session.handles.adoConn = None
+        session.currentDb = None
+        session.handles.daoDb = None
+        session.handles.accessApp = None
+        session.isConnected = false
+        session.pid = None
+        Promise.resolve(Ok(()))
+      })
     }
   }
 : t => Promise.t<result<unit, Errors.t>>
