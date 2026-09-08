@@ -24,7 +24,15 @@ module CallLog = {
 
   let entries: ref<list<entry>> = ref(list{})
 
-  let reset = () => { entries.contents = list{} }
+  // Tracks the last outputPath passed to generateSql — exposed so parity
+  // tests can assert the facade forwards the user-requested path instead of
+  // discarding it (Python oracle writes to exact path; plan 044 item 5).
+  let lastGenerateSqlPathRef: ref<option<string>> = ref(None)
+
+  let reset = () => {
+    entries.contents = list{}
+    lastGenerateSqlPathRef := None
+  }
 
   let log = (e: entry) => {
     entries.contents = list{e, ...entries.contents}
@@ -379,8 +387,10 @@ module FakeSchemaAdapter = {
     Promise.resolve(Ok(([], {primaryKeys: false, foreignKeys: false, defaults: false, indexes: false, autoincrement: false})))
   }
 
-  let generateSql = (_self: t, _sqlType: string): Promise.t<result<ddlResult, Errors.t>> => {
-    Promise.resolve(Ok({success: true, error: None}))
+  let generateSql = (self: t, _outputPath: string): Promise.t<result<ddlResult, Errors.t>> => {
+    CallLog.log(SchemaCall(self.name, "generateSql"))
+    CallLog.lastGenerateSqlPathRef := Some(_outputPath)
+    Promise.resolve(Ok({success: true, error: None, path: _outputPath, statements: 0, tables: [], ddl: ""}))
   }
 
   let getDatabaseStatistics = (self: t): Promise.t<result<dict<JSON.t>, Errors.t>> => {

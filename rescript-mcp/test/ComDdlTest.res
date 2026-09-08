@@ -1556,12 +1556,13 @@ testAsync("ComDdl: linked-table chain — create/get/refresh/recreate/unlink", c
                 Promise.resolve()
               }
             | Ok(_) => {
-                let linkedTableName = "LinkedUsers_" ++ suffix
+                let linkedTableName = "LinkedCustomers_" ++ suffix
                 // Use test_db.accdb itself as the source so we have a valid ODBC/Access connect string
+                // Source table "Customers" exists in both generated-fixture and Northwind fixtures.
                 let connectStr = ";DATABASE=" ++ testDbPath
                 let attrs = linkedTableAttrs // dbAttachExclusive | dbAttachMake
 
-                ComDataAdapter.createLinkedTable(adapter, linkedTableName, "Users", connectStr)
+                ComDataAdapter.createLinkedTable(adapter, linkedTableName, "Customers", connectStr)
                   ->Promise.then(createResult => {
                     switch createResult {
                     | Error(e) => {
@@ -1618,7 +1619,7 @@ testAsync("ComDdl: linked-table chain — create/get/refresh/recreate/unlink", c
                                             } else {
                                               // recreateLinkedTable — new name, same source
                                               let recreatedName = linkedTableName ++ "_recreated"
-                                              ComDataAdapter.recreateLinkedTable(adapter, recreatedName, "Users", connectStr, ~attributes=attrs)
+                                              ComDataAdapter.recreateLinkedTable(adapter, recreatedName, "Customers", connectStr, ~attributes=attrs)
                                                 ->Promise.then(recreateResult => {
                                                   switch recreateResult {
                                                   | Error(e) => {
@@ -1751,9 +1752,32 @@ testAsync("ComDdl: executeSqlScript — parity script executes 3 statements", cb
             switch connectResult {
             | Error(e) => {
                 Console.log("ComDdl executeSqlScript: connect failed: " ++ Errors._message(e))
-                // Cleanup temp files even on connect failure
-                let _ = if NodeJs.Fs.existsSync(scriptPath) { NodeJs.Fs.unlinkSync(scriptPath) }
-                let _ = if NodeJs.Fs.existsSync(dbCopyPath) { NodeJs.Fs.unlinkSync(dbCopyPath) }
+                // Cleanup temp files even on connect failure.
+                // EBUSY tolerance: up to 3 retries so cleanup cannot crash the runner
+                // while COM still holds the temporary database lock.
+                let unlinkBusyTolerant = (p: string): unit => {
+                  let maxRetries = 3
+                  let rec retryLoop = (remaining: int): unit => {
+                    if remaining <= 0 { () } else {
+                      try {
+                        NodeJs.Fs.unlinkSync(p)
+                      } catch {
+                      | e => {
+                          let msg: string = %raw("String(e)")
+                          if String.includes(msg, "EBUSY") || String.includes(msg, "busy") {
+                            retryLoop(remaining - 1)
+                          } else {
+                            Console.log("unlinkBusyTolerant: " ++ msg ++ " on " ++ p)
+                            ()
+                          }
+                        }
+                      }
+                    }
+                  }
+                  retryLoop(maxRetries)
+                }
+                let _ = if NodeJs.Fs.existsSync(scriptPath) { unlinkBusyTolerant(scriptPath) }
+                let _ = if NodeJs.Fs.existsSync(dbCopyPath) { unlinkBusyTolerant(dbCopyPath) }
                 cb(~planned=1, ())
                 Promise.resolve()
               }
@@ -1763,14 +1787,41 @@ testAsync("ComDdl: executeSqlScript — parity script executes 3 statements", cb
                     ->Promise.then(_ => {
                       ComDataAdapter.DaoAdapter.disconnect(adapter)
                         ->Promise.then(_ => {
-                          let _ = if NodeJs.Fs.existsSync(scriptPath) { NodeJs.Fs.unlinkSync(scriptPath) }
-                          let _ = if NodeJs.Fs.existsSync(dbCopyPath) { NodeJs.Fs.unlinkSync(dbCopyPath) }
+                          let unlinkBusyTolerant = (p: string): unit => {
+                            let maxRetries = 3
+                            let rec retryLoop = (remaining: int): unit => {
+                              if remaining <= 0 { () } else {
+                                try {
+                                  NodeJs.Fs.unlinkSync(p)
+                                } catch {
+                                | e => {
+                                    let msg: string = %raw("String(e)")
+                                    if String.includes(msg, "EBUSY") || String.includes(msg, "busy") {
+                                      retryLoop(remaining - 1)
+                                    } else {
+                                      Console.log("unlinkBusyTolerant: " ++ msg ++ " on " ++ p)
+                                      ()
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                            retryLoop(maxRetries)
+                          }
+                          let _ = if NodeJs.Fs.existsSync(scriptPath) { unlinkBusyTolerant(scriptPath) }
+                          let _ = if NodeJs.Fs.existsSync(dbCopyPath) { unlinkBusyTolerant(dbCopyPath) }
                           Promise.resolve()
                         })
                     })
                 }
 
-                ComDataAdapter.executeSqlScript(adapter, scriptPath)
+                // Defensive pre-drop: clear any ParityScriptTest/ProbeScriptTest left
+                // over from prior runs so CREATE TABLE inside the script does not hit
+                // "Table already exists" (-2147217900). deleteTable returns Ok(false)
+                // when the table is absent, so calling unconditionally is safe.
+                ComDataAdapter.DaoAdapter.deleteTable(adapter, "ParityScriptTest")
+                  ->Promise.then(_ => ComDataAdapter.DaoAdapter.deleteTable(adapter, "ProbeScriptTest"))
+                  ->Promise.then(_ => ComDataAdapter.executeSqlScript(adapter, scriptPath))
                   ->Promise.then(scriptResult => {
                     switch scriptResult {
                     | Error(e) => {
@@ -1805,4 +1856,3 @@ testAsync("ComDdl: executeSqlScript — parity script executes 3 statements", cb
     })
     ->ignore
 })
-

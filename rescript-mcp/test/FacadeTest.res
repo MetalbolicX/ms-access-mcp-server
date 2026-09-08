@@ -2369,3 +2369,77 @@ testAsync("executeSqlScript: readonly rejects with Read-only mode error and does
     })
     ->ignore
 })
+
+// ---------------------------------------------------------------------------
+// Task 4.5: generateSql tests
+// Oracle: schema_inspector.py:664-800 — output_path is the EXACT file path
+// BUG (033-F-001): ComDataAdapter.generateSql discards _tableName param and
+// writes to $TEMP/schema/ instead of user-requested outputPath
+// ---------------------------------------------------------------------------
+
+describe("generateSql", () => {
+
+  // A. Facade.generateSql routes to schema adapter (like 401/403/404)
+  testAsync("generateSql: routes to schema adapter and returns success envelope", cb => {
+    let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+    Facade.connectAccess(facade, ~dbPath=testPath("gsq-routes"))
+      ->Promise.then(_r => {
+        Fakes.CallLog.reset()
+        Facade.generateSql(facade, ~outputPath="/tmp/ddl_output.sql")
+          ->Promise.then(result => {
+            let isSuccess = getDictBool(result, "success") == Some(true)
+            let adapterCalled = Fakes.CallLog.methodCalled("generateSql")
+            assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+            assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
+            cb(~planned=2, ())
+            Promise.resolve()
+          })
+      })
+      ->ignore
+  })
+
+  // B. Facade.generateSql passes the requested outputPath to the adapter
+  // This is the core parity gap: Python writes to exact outputPath; ReScript discards it
+  testAsync("generateSql: passes requested outputPath to adapter (not ignored)", cb => {
+    let facade = Facade.make(~factory=makeFakeFactory(), ~comAvailable=false, ~allowedDirs=() => [NodeJs.Os.homedir()])
+    Facade.connectAccess(facade, ~dbPath=testPath("gsq-path"))
+      ->Promise.then(_r => {
+        Fakes.CallLog.reset()
+        let requestedPath = "/custom/path/ddl_output.sql"
+        Facade.generateSql(facade, ~outputPath=requestedPath)
+          ->Promise.then(result => {
+            let isSuccess = getDictBool(result, "success") == Some(true)
+            // Verify the outputPath was passed through to FakeSchemaAdapter.generateSql
+            let pathForwarded = Fakes.CallLog.lastGenerateSqlPathRef.contents == Some(requestedPath)
+            assertion(~operator="equal", (a, b) => a == b, isSuccess, true)
+            assertion(~operator="equal", (a, b) => a == b, pathForwarded, true)
+            cb(~planned=2, ())
+            Promise.resolve()
+          })
+      })
+      ->ignore
+  })
+
+  // C. Disconnected returns "Not connected to database"
+  testAsync("generateSql: disconnected returns Not connected to database error", cb => {
+    let facade = makeTestFacade()
+    // No connect — directly call generateSql
+    Fakes.CallLog.reset()
+    Facade.generateSql(facade, ~outputPath="/tmp/ddl.sql")
+      ->Promise.then(result => {
+        let isFailure = getDictBool(result, "success") == Some(false)
+        let hasNotConnected = switch getDictStr(result, "error") {
+        | Some(msg) => String.includes(msg, "Not connected to database")
+        | None => false
+        }
+        assertion(~operator="equal", (a, b) => a == b, isFailure && hasNotConnected, true)
+        cb(~planned=1, ())
+        Promise.resolve()
+      })
+      ->Promise.catch(_e => {
+        cb(~planned=0, ())
+        Promise.resolve()
+      })
+      ->ignore
+  })
+})

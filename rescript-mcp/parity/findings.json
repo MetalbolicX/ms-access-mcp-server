@@ -1,30 +1,221 @@
 [
   {
-    "operation": "delete_table",
-    "case": "delete_table.json",
+    "operation": "connect_access",
+    "case": "connect_access.json",
+    "diff": {
+      "path": "$",
+      "expected": "missing",
+      "actual": [
+        "adapter_type"
+      ]
+    },
+    "pythonChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "",
+      "phase": {
+        "nativeOp": "python-start",
+        "processExit": "exit-0",
+        "serialization": "python-valid-json"
+      }
+    },
+    "rescriptChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "",
+      "phase": {
+        "nativeOp": "rescript-start",
+        "processExit": "exit-0",
+        "serialization": "rescript-valid-json"
+      }
+    }
+  },
+  {
+    "operation": "get_relationships",
+    "case": "get_relationships.json",
+    "diff": {
+      "path": "$.relationships[0].attributes",
+      "expected": "",
+      "actual": "1"
+    },
+    "pythonChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+      "phase": {
+        "nativeOp": "python-start",
+        "processExit": "exit-0",
+        "serialization": "python-valid-json"
+      }
+    },
+    "rescriptChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "",
+      "phase": {
+        "nativeOp": "rescript-start",
+        "processExit": "exit-0",
+        "serialization": "rescript-valid-json"
+      }
+    }
+  },
+  {
+    "operation": "get_table_schema",
+    "case": "get_table_schema-Customers.json",
+    "diff": {
+      "path": "$.table.fields",
+      "expected": "array length 11",
+      "actual": "array length 1"
+    },
+    "pythonChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+      "phase": {
+        "nativeOp": "python-start",
+        "processExit": "exit-0",
+        "serialization": "python-valid-json"
+      }
+    },
+    "rescriptChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "",
+      "phase": {
+        "nativeOp": "rescript-start",
+        "processExit": "exit-0",
+        "serialization": "rescript-valid-json"
+      }
+    }
+  },
+  {
+    "operation": "get_tables",
+    "case": "get_tables.json",
     "diff": {
       "path": "DRIVER",
       "expected": "ok",
       "actual": "driver error"
     },
-    "stderr": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n"
-  },
-  {
-    "operation": "recreate_linked_table",
-    "case": "recreate_linked_table.json",
-    "diff": {
-      "path": "$.error",
-      "expected": "(-2147352567, 'Exception occurred.', (0, 'DAO.TableDef', 'Invalid argument.', 'jeterr40.chm', 5003001, -2146825287), None)",
-      "actual": null
+    "stderr": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+    "pythonChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+      "phase": {
+        "nativeOp": "python-start",
+        "processExit": "exit-0",
+        "serialization": "python-valid-json"
+      }
+    },
+    "rescriptChild": {
+      "statusCode": 134,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": false,
+      "stdoutShapeValid": false,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "\r\n  #  C:\\nvm4w\\nodejs\\node.exe[39420]: void __cdecl node::RemoveEnvironmentCleanupHook(Isolate *, CleanupHook, void *) at src\\api\\hooks.cc:142\r\n  #  Assertion failed: (env) != nullptr\r\n\r\n----- Native stack trace -----\r\n\r\n 1: 00007FF784CE14AA node::MultiIsolatePlatform::DisposeIsolate+765370\r\n 2: 00007FF784DF343A node::RemoveEnvironmentCleanupHook+234\r\n 3: 00007FF9502F7B0B DispObject::`scalar deleting destructor'+203\r\n 4: 00007FF78376229A v8::ResourceConstraints::ResourceConstraints+6346\r\n 5: 00007FF7836F5A34 X509_STORE_get_lookup_certs+61556\r\n 6: 00007FF7837067E2 v8::internal::StrongRootAllocatorBase::deallocate_impl+15858\r\n 7: 00007FF78370630B v8::internal::StrongRootAllocatorBase::deallocate_impl+14619\r\n 8: 00007FF78500492D node::AsyncResource::CallbackScope::CallbackScope+2124541\r\n 9: 00007FF7836F1920 X509_STORE_get_lookup_certs+44896\r\n10: 00007FF78370C17A X509_STORE_set_cleanup+5098\r\n11: 00007FF783718616 uv_timer_set_repeat+20694\r\n12: 00007FF7832E9277 v8::CodeEvent::GetFunctionName+131959\r\n13: 0000023DD24375FA \r\n",
+      "phase": {
+        "nativeOp": "rescript-start",
+        "processExit": "exit-134",
+        "serialization": "rescript-nonzero-exit"
+      }
     }
   },
   {
-    "operation": "refresh_linked_table",
-    "case": "refresh_linked_table.json",
+    "operation": "query_data",
+    "case": "query_data-SelectTop5Customers.json",
     "diff": {
-      "path": "$.error",
-      "expected": null,
-      "actual": "message=Item not found in this collection. | description=Item not found in this collection. | code=-2146825023 | source=DAO.TableDefs"
+      "path": "DRIVER",
+      "expected": "ok",
+      "actual": "driver error"
+    },
+    "stderr": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+    "pythonChild": {
+      "statusCode": 0,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": true,
+      "stdoutShapeValid": true,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "Cleanup completed with 1 warning(s): Access.Quit(): Access.Application.Quit\r\n",
+      "phase": {
+        "nativeOp": "python-start",
+        "processExit": "exit-0",
+        "serialization": "python-valid-json"
+      }
+    },
+    "rescriptChild": {
+      "statusCode": 134,
+      "signal": null,
+      "timeout": false,
+      "spawnError": null,
+      "stdoutValidJson": false,
+      "stdoutShapeValid": false,
+      "envelopeBackend": null,
+      "logicalEquality": false,
+      "skipReason": null,
+      "stderrRedacted": "\r\n  #  C:\\nvm4w\\nodejs\\node.exe[22160]: void __cdecl node::RemoveEnvironmentCleanupHook(Isolate *, CleanupHook, void *) at src\\api\\hooks.cc:142\r\n  #  Assertion failed: (env) != nullptr\r\n\r\n----- Native stack trace -----\r\n\r\n 1: 00007FF784CE14AA node::MultiIsolatePlatform::DisposeIsolate+765370\r\n 2: 00007FF784DF343A node::RemoveEnvironmentCleanupHook+234\r\n 3: 00007FF9502F7B0B DispObject::`scalar deleting destructor'+203\r\n 4: 00007FF78376229A v8::ResourceConstraints::ResourceConstraints+6346\r\n 5: 00007FF7836F5A34 X509_STORE_get_lookup_certs+61556\r\n 6: 00007FF7837067E2 v8::internal::StrongRootAllocatorBase::deallocate_impl+15858\r\n 7: 00007FF78370630B v8::internal::StrongRootAllocatorBase::deallocate_impl+14619\r\n 8: 00007FF78500492D node::AsyncResource::CallbackScope::CallbackScope+2124541\r\n 9: 00007FF7836F1920 X509_STORE_get_lookup_certs+44896\r\n10: 00007FF78370C17A X509_STORE_set_cleanup+5098\r\n11: 00007FF783718616 uv_timer_set_repeat+20694\r\n12: 00007FF7832E9277 v8::CodeEvent::GetFunctionName+131959\r\n13: 00000232D50775FA \r\n",
+      "phase": {
+        "nativeOp": "rescript-start",
+        "processExit": "exit-134",
+        "serialization": "rescript-nonzero-exit"
+      }
     }
   }
 ]

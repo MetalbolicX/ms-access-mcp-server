@@ -440,9 +440,20 @@ if (!existsSync(casesDir)) {
   process.exit(1);
 }
 
-const caseFiles = readdirSync(casesDir)
-  .filter((f) => f.endsWith(".json"))
-  .sort();
+const caseFiles = (() => {
+  const all = readdirSync(casesDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+  if (exactCase !== null) {
+    const target = all.find((f) => f === exactCase || f === exactCase || join(casesDir, f) === resolve(casesDir, exactCase));
+    if (!target) {
+      console.error(`parity: --case "${exactCase}" not found in ${casesDir}`);
+      process.exit(1);
+    }
+    return [target];
+  }
+  return all;
+})();
 
 // --require-read-only guard: abort before opening any DB if any case is mutating
 if (requireReadOnly) {
@@ -461,22 +472,6 @@ let mismatched = 0;
 let errored = 0;
 let skipped = 0;
 const findings: Finding[] = [];
-
-// Exact-case filter: if --case was provided, only run that one
-const caseFiles = (() => {
-  const all = readdirSync(casesDir)
-    .filter((f) => f.endsWith(".json"))
-    .sort();
-  if (exactCase !== null) {
-    const target = all.find((f) => f === exactCase || f === exactCase || join(casesDir, f) === resolve(casesDir, exactCase));
-    if (!target) {
-      console.error(`parity: --case "${exactCase}" not found in ${casesDir}`);
-      process.exit(1);
-    }
-    return [target];
-  }
-  return all;
-})();
 
 interface Finding {
   operation: string;
@@ -620,12 +615,13 @@ for (const caseFile of caseFiles) {
   const pyN = normalize(pyResult.result, volatile);
   const rsN = normalize(rsResult.result, volatile);
 
+  const d = diff(pyN, rsN);
+
   // Record logical equality for diagnosis (NEVER as acceptance)
   const logicalEquality = d === null;
   if (pyChildStatus) pyChildStatus.logicalEquality = logicalEquality;
   if (rsChildStatus) rsChildStatus.logicalEquality = logicalEquality;
 
-  const d = diff(pyN, rsN);
   if (d === null) {
     passed++;
     console.log(`  PASS  ${caseFile}`);

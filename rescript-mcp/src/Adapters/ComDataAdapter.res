@@ -1415,10 +1415,10 @@ module DaoAdapter = {
     _getTableSchemaPlanImpl(self)
   }
 
-  let generateSql = (self: t, _tableName: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
+  let generateSql = (self: t, outputPath: string): Promise.t<result<Interfaces.ddlResult, Errors.t>> => {
     // dao.py:355 — generate_sql(output_path) delegates to SchemaSupport.
     // exportSchemaDdl writes ddl_tables.sql + ddl_relationships.sql to outputDir.
-    // The tableName arg is not used (exportSchemaDdl exports all tables).
+    // The outputPath arg is the exact file path for the consolidated DDL output.
     if !self.isConnected {
       Promise.resolve(Ok({success: false, error: Some("Not connected")}))
     } else {
@@ -1486,13 +1486,29 @@ module DaoAdapter = {
                 } else {
                   ""
                 }
+                // Write consolidated DDL to the exact requested outputPath (python oracle behavior)
+                // If this write fails, report the write error but preserve the original schema export result
+                let writeSucceeded = if schemaResult.success {
+                  try {
+                    NodeJs.Fs.writeFileSync(outputPath, NodeJs.Buffer.fromString(inlineDdl))
+                    true
+                  } catch {
+                  | _ => false
+                  }
+                } else {
+                  false
+                }
                 let result: Interfaces.ddlResult = {
-                  success: schemaResult.success,
-                  error: schemaResult.error,
-                  path: outputDir ++ "/schema",  // directory where files were written
+                  success: writeSucceeded && schemaResult.success,
+                  error: if !writeSucceeded && schemaResult.success {
+                    Some("Failed to write DDL to " ++ outputPath)
+                  } else {
+                    schemaResult.error
+                  },
+                  path: if writeSucceeded { outputPath } else { outputDir ++ "/schema" },
                   statements: schemaResult.tablesExported + schemaResult.relationshipsExported,
                   tables: tableNames,
-                  ddl: inlineDdl,
+                  ddl: if writeSucceeded { inlineDdl } else { "" },
                 }
                 Promise.resolve(Ok(result))
               })
