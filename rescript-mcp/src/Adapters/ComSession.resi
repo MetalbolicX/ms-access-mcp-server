@@ -21,6 +21,7 @@ type t = {
   mutable isConnected: bool,
   mutable pid: option<int>,
   mutable currentDb: option<ComInterfaces.comObject>,  // opened DAO Database (NOT DBEngine)
+  mutable tempHandles: list<ComInterfaces.comObject>,  // Phase 5: per-op temp COM handles
 }
 
 module type SESSION = {
@@ -41,3 +42,7 @@ let getCurrentDb: t => option<ComInterfaces.comObject>
 // Seam exports for test injection
 let setTestBinding: winaxBindingOps => unit
 let clearTestBinding: unit => unit
+
+// Phase 5: internal helpers for ComDataAdapter temp handle queue
+let _enqueueTempRelease: (t, ComInterfaces.comObject) => Promise.t<unit>
+let _flushTempHandles: t => Promise.t<unit>

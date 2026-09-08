@@ -11,6 +11,7 @@ type t = {
   mutable isConnected: bool,
   mutable pid: option<int>,  // PID of spawned MSACCESS process (for taskkill)
   mutable currentDb: option<ComInterfaces.comObject>,  // opened DAO Database (NOT DBEngine)
+  mutable tempHandles: list<ComInterfaces.comObject>,  // Phase 5: per-op temp COM handles (TableDefs, Fields, etc.)
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +144,7 @@ let _make: unit => t = () => {
     isConnected: false,
     pid: None,
     currentDb: None,
+    tempHandles: list{},
   }
 }
 
@@ -366,6 +368,43 @@ let _connect: (t, ~path: string, ~password: string=?) => Promise.t<result<bool, 
 )
 
 // ---------------------------------------------------------------------------
+// Phase 5 Fix A: per-call queue for orphan temp COM handles (TableDefs, Fields,
+// Recordsets, DAO property-probe results). Items enter the queue the moment
+// they are obtained and drain via _flushTempHandles in _disconnect LIFO order.
+// ---------------------------------------------------------------------------
+
+// _enqueueTempRelease — call this immediately after obtaining any temp COM handle
+// inside an adapter operation. The handle is queued for later deterministic release.
+// Accepts any JS value via %raw cast (get() returns JSON.t, invokeAsObject returns comObject).
+let _enqueueTempRelease: (t, ComInterfaces.comObject) => Promise.t<unit> = (
+  (session: t, handle: ComInterfaces.comObject) => {
+    session.tempHandles = list{handle, ...session.tempHandles}  // LIFO prepend
+    Promise.resolve()
+  }
+)
+
+// _flushTempHandles — drains the temp-handle queue in LIFO order during _disconnect.
+// Each release is error-tolerant (failed releases don't abort the drain).
+let _flushTempHandles: t => Promise.t<unit> = (
+  (session: t) => {
+    let rec drain: (list<ComInterfaces.comObject>) => Promise.t<unit> = (
+      (handles: list<ComInterfaces.comObject>) => {
+        switch handles {
+        | list{} => Promise.resolve()
+        | list{head, ...tail} =>
+          winaxBinding.releaseSyncAwait(head)
+          ->Promise.then(_ => drain(tail))
+          ->Promise.catch(_ => drain(tail))   // tolerant: continue on release failure
+        }
+      }
+    )
+    let pending = session.tempHandles
+    session.tempHandles = list{}
+    drain(pending)
+  }
+)
+
+// ---------------------------------------------------------------------------
 // disconnect — reverse-order (LIFO) release
 // Idempotent: calling twice returns Ok(()) both times
 // Non-fatal: returns Ok(()) even if cleanup fails
@@ -404,6 +443,9 @@ let _disconnect: t => Promise.t<result<unit, Errors.t>> = (
       })
       ->Promise.then(_ => {
         session.handles.accessApp = None
+        _flushTempHandles(session)  // Phase 5: drain temp-handle queue after LIFO chain
+      })
+      ->Promise.then(_ => {
         session.isConnected = false
         session.pid = None
         Promise.resolve(Ok(()))
@@ -453,3 +495,6 @@ let isConnected = _isConnected
 let getHandles = _getHandles
 let getCurrentDb = (session: t) => session.currentDb
 let make = _make
+// Phase 5: internal helpers exposed for ComDataAdapter to enqueue temp handles
+let _enqueueTempRelease = _enqueueTempRelease
+let _flushTempHandles = _flushTempHandles

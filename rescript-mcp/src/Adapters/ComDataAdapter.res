@@ -542,6 +542,8 @@ module DaoAdapter = {
                 switch rsResult {
                 | Error(e) => Promise.resolve(Error(e))
                 | Ok(rs) => {
+                    // Phase 5: enqueue recordset handle for deterministic release at disconnect
+                    ComSession._enqueueTempRelease(session, rs)->ignore
                     Bindings.Winax.WINAX_BINDING.get(rs, "EOF")
                       ->Promise.then(eofResult => {
                         switch eofResult {
@@ -1127,6 +1129,8 @@ module DaoAdapter = {
                 switch tableDefsResult {
                 | Error(e) => Promise.resolve(Error(e))
                 | Ok(tableDefs) => {
+                    // Phase 5: enqueue raw TableDefs handle for deterministic release at disconnect
+                    ComSession._enqueueTempRelease(session, %raw("(v) => v")(tableDefs))->ignore
                     // Wrap TableDefs COM handle for getCount/getItem
                     let tableDefsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefs)
                     Bindings.Winax.WINAX_BINDING.getCount(tableDefsHandle)
@@ -1287,6 +1291,8 @@ module DaoAdapter = {
                 switch relsResult {
                 | Error(_) => Promise.resolve(Ok([]))
                 | Ok(rels) => {
+                    // Phase 5: enqueue raw Relations handle for deterministic release at disconnect
+                    ComSession._enqueueTempRelease(session, %raw("(v) => v")(rels))->ignore
                     let relsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(rels)
                     Bindings.Winax.WINAX_BINDING.getCount(relsHandle)
                     ->Promise.then(countResult => {
@@ -1402,6 +1408,8 @@ module DaoAdapter = {
                 switch tableDefsResult {
                 | Error(e) => Promise.resolve(Error(e))
                 | Ok(tableDefs) => {
+                    // Phase 5: enqueue raw TableDefs handle for deterministic release at disconnect
+                    ComSession._enqueueTempRelease(session, %raw("(v) => v")(tableDefs))->ignore
                     let tableDefsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefs)
                     Bindings.Winax.WINAX_BINDING.getCount(tableDefsHandle)
                     ->Promise.then(countResult => {
@@ -1810,6 +1818,8 @@ module DaoAdapter = {
                     Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
                   }
                 | Ok(qdefs) => {
+                    // Phase 5: enqueue raw QueryDefs collection handle for deterministic release at disconnect
+                    ComSession._enqueueTempRelease(session, %raw("(v) => v")(qdefs))->ignore
                     // Wrap proxy in envelope so DAO collection methods (Delete) are reachable
                     let qdefsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(qdefs)
                     Bindings.Winax.WINAX_BINDING.invoke(qdefsHandle, "Delete", [ComInterfaces.VStr(name)])
@@ -3369,6 +3379,8 @@ let refreshLinkedTable = (
               switch tableDefsResult {
               | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
               | Ok(tableDefsJson) => {
+                  // Phase 5: enqueue raw TableDefs JSON handle for deterministic release at disconnect
+                  ComSession._enqueueTempRelease(session, %raw("(v) => v")(tableDefsJson))->ignore
                   let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
                   winaxBinding.getCount(tableDefs)
                   ->Promise.then(countResult =>
@@ -3527,6 +3539,8 @@ let recreateLinkedTable = (
                     switch tableDefsResult {
                     | Error(_) => Promise.resolve(-2147483648)
                     | Ok(tableDefsJson) => {
+                        // Phase 5: enqueue raw TableDefs JSON handle for deterministic release at disconnect
+                        ComSession._enqueueTempRelease(session, %raw("(v) => v")(tableDefsJson))->ignore
                         let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
                         winaxBinding.getCount(tableDefs)
                         ->Promise.then(countResult =>
