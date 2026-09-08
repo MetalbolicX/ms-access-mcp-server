@@ -2341,11 +2341,13 @@ testAsync("executeSqlScript: routes to schema adapter and returns sql_script res
         ->Promise.then(result => {
           let hasStatementsExecuted = Js.Dict.get(result, "statements_executed") != None
           let hasSuccess = Js.Dict.get(result, "success") != None
+          let hasNoError = Js.Dict.get(result, "error") == None
           let adapterCalled = Fakes.CallLog.methodCalled("executeSqlScript")
           assertion(~operator="equal", (a, b) => a == b, hasStatementsExecuted, true)
           assertion(~operator="equal", (a, b) => a == b, hasSuccess, true)
+          assertion(~operator="equal", (a, b) => a == b, hasNoError, true)
           assertion(~operator="equal", (a, b) => a == b, adapterCalled, true)
-          cb(~planned=3, ())
+          cb(~planned=4, ())
           Promise.resolve()
         })
     })

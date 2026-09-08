@@ -906,8 +906,8 @@ let _shapeLinkedTablesResult = (r: result<Interfaces.linkedTablesResult, Errors.
   }
 }
 
-// _shapeSqlScriptResult — Python envelopes always carry all 7 keys
-// (wincom.py:1103-1137). Emit per-outcome keys exactly.
+// _shapeSqlScriptResult — Python success envelopes omit `error`; failure paths
+// always include it (wincom.py:1070-1158).
 let _shapeSqlScriptResult = (r: result<Interfaces.sqlScriptResult, Errors.t>): dict<JSON.t> => {
   switch r {
   | Ok({success, error, statementsExecuted, failingStatement, failingLine, accessErrorCode, accessErrorMessage}) => {
@@ -930,10 +930,10 @@ let _shapeSqlScriptResult = (r: result<Interfaces.sqlScriptResult, Errors.t>): d
         | Some(s) => JSON.String(s)
         | None => JSON.Null
       })
-      Dict.set(result, "error", switch error {
-        | Some(e) => JSON.String(e)
-        | None => JSON.Null
-      })
+      switch error {
+      | Some(e) => Dict.set(result, "error", JSON.String(e))
+      | None => if !success { Dict.set(result, "error", JSON.Null) }
+      }
       result
     }
   | Error(e) => {

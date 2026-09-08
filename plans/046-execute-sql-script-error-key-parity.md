@@ -15,6 +15,8 @@
 
 ## Status
 
+**DONE** — success envelopes omit `error`; failure envelopes retain it.
+
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW
@@ -159,12 +161,12 @@ Run the single-case command from "Commands you will need" (after the MSACCESS ki
 
 ## Done criteria
 
-- [ ] `pnpm -C rescript-mcp build` exits 0
-- [ ] `pnpm -C rescript-mcp test` → 827 tests, 0 failed, with the updated success-shape assertion present
-- [ ] Single-case parity run prints `PASS execute_sql_script.json`
-- [ ] `pnpm -C rescript-mcp parity:northwind:com:ddl` summary: mismatch count for this case gone; no new ERROR lines
-- [ ] No files outside in-scope list modified
-- [ ] findings.md + plans/README.md updated
+- [x] `pnpm -C rescript-mcp build` exits 0
+- [x] `pnpm -C rescript-mcp test` → 827 tests, 0 failed, with the updated success-shape assertion present
+- [x] Single-case parity run prints `PASS execute_sql_script.json`
+- [x] `pnpm -C rescript-mcp parity:northwind:com:ddl` summary: mismatch count for this case gone; no new ERROR lines
+- [x] No files outside in-scope list modified
+- [x] findings.md + plans/README.md updated
 
 ## STOP conditions
 

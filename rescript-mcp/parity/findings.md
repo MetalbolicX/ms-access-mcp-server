@@ -1,5 +1,7 @@
 # Parity Findings Log
 
+2026-09-08 — Plan 046 resolved the `execute_sql_script` success-envelope mismatch by omitting `error` when there is no error; failure envelopes continue to include it.
+
 ## 028-F-001: D3 Parity Truth — Stub Attribution Wrong
 
 **Finding ID**: 028-F-001
