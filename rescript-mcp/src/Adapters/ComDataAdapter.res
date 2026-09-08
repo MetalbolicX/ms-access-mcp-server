@@ -568,6 +568,7 @@ module DaoAdapter = {
                                 | Ok(fields) => {
                                     // Wrap fields COM object in envelope for getCount/getItem
                                     let fieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(fields)
+                                    ComSession._enqueueTempRelease(session, fieldsHandle)->ignore
                                     Bindings.Winax.WINAX_BINDING.getCount(fieldsHandle)
                                       ->Promise.then(countResult => {
                                         switch countResult {
@@ -592,6 +593,7 @@ module DaoAdapter = {
                                                     switch itemResult {
                                                     | Error(e) => Promise.resolve(Error(e))
                                                     | Ok(fieldHandle) => {
+                                                        ComSession._enqueueTempRelease(session, fieldHandle)->ignore
                                                         Bindings.Winax.WINAX_BINDING.get(fieldHandle, "Name")
                                                           ->Promise.then(nameResult => {
                                                             Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldHandle)->ignore
@@ -638,6 +640,7 @@ module DaoAdapter = {
                                                                   | Error(e) => Promise.resolve(Error(e))
                                                                   | Ok(rowFieldsRaw) => {
                                                                       let rowFieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(rowFieldsRaw)
+                                                                      ComSession._enqueueTempRelease(session, rowFieldsHandle)->ignore
                                                                       Bindings.Winax.WINAX_BINDING.getCount(rowFieldsHandle)
                                                                         ->Promise.then(rfcResult => {
                                                                            switch rfcResult {
@@ -663,8 +666,9 @@ module DaoAdapter = {
                                                                                     ->Promise.then(ciResult => {
                                                                                       switch ciResult {
                                                                                       | Error(e) => Promise.resolve(Error(e))
-                                                                                      | Ok(cItem) => {
-                                                                                          Bindings.Winax.WINAX_BINDING.get(cItem, "Value")
+                                                                                   | Ok(cItem) => {
+                                                                                       ComSession._enqueueTempRelease(session, cItem)->ignore
+                                                                                       Bindings.Winax.WINAX_BINDING.get(cItem, "Value")
                                                                                             ->Promise.then(valResult => {
                                                                                               Bindings.Winax.WINAX_BINDING.releaseSyncAwait(cItem)->ignore
                                                                                               switch valResult {
@@ -1157,6 +1161,7 @@ module DaoAdapter = {
                                     Promise.resolve(Error(e))
                                   }
                                 | Ok(td) => {
+                                    ComSession._enqueueTempRelease(session, td)->ignore
                                     // Read Name + Type first (cheap, synchronous-feel);
                                     // td is owned by the success branch below, so do NOT
                                     // release td here — both the error path and the
@@ -1317,6 +1322,7 @@ module DaoAdapter = {
                                     iterate()
                                   }
                                 | Ok(relHandle) => {
+                                    ComSession._enqueueTempRelease(session, relHandle)->ignore
                                     // Read properties via raw accessors to bypass winax get/JSON.stringify.
                                     // relHandle is the envelope {__p__: realProxy}; access via __p__.
                                     let name: string = %raw("h => h && h.__p__ ? h.__p__.Name : ''")(relHandle)
@@ -3617,6 +3623,7 @@ let recreateLinkedTable = (
                 | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
                 | Ok(tableDefsJson) => {
                     let tableDefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tableDefsJson)
+                    ComSession._enqueueTempRelease(session, tableDefs)->ignore
                     winaxBinding.invoke(tableDefs, "Delete", [ComInterfaces.VStr(name)])
                     ->Promise.then(deleteResult =>
                       switch deleteResult {
@@ -3631,8 +3638,9 @@ let recreateLinkedTable = (
                         switch tdefResult {
                         | Error(e) => Promise.resolve(Ok({success: false, error: Some(Errors._message(e))}))
                         | Ok(tdefJson) => {
-                  let tdef: ComInterfaces.comObject = tdefJson
-                  winaxBinding.set(tdef, "SourceTableName", ComInterfaces.VStr(sourceTable))
+                            let tdef: ComInterfaces.comObject = tdefJson
+                            ComSession._enqueueTempRelease(session, tdef)->ignore
+                            winaxBinding.set(tdef, "SourceTableName", ComInterfaces.VStr(sourceTable))
                             ->Promise.then(_ => {
                     winaxBinding.set(tdef, "Connect", ComInterfaces.VStr(connectString))
                               ->Promise.then(_ => {
@@ -3647,6 +3655,7 @@ let recreateLinkedTable = (
                                       }
                                     | Ok(tdefsJson) => {
                                          let tdefs: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(tdefsJson)
+                                         ComSession._enqueueTempRelease(session, tdefs)->ignore
                                          let tdefAsVariant: ComInterfaces.variant = ComInterfaces.VComObject(tdef)
                                         winaxBinding.invoke(tdefs, "Append", [tdefAsVariant])
                                         ->Promise.then(_ => {

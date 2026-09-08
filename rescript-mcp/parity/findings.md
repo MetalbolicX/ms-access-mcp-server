@@ -911,6 +911,21 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 
 **Status**: SKIPPED via plan 041 escape hatch. Both attempted approaches were rejected and the case file `parity/cases/northwind/com/ddl/get_linked_tables.json` now carries `skip: true` with the prescribed skipReason. See "Plan 041 outcome" below.
 
+## 045-F-001: Phase 6 missed per-iteration COM handle enqueue sites
+
+**Finding ID**: 045-F-001
+**Phase**: Plan 045 Phase 6
+**Branch**: `rescript/045-winax-teardown` (commit `165d8d7` base)
+**Status**: RESOLVED
+
+Nine `_enqueueTempRelease` insertions added at previously-missed per-iteration obtain sites:
+- `_executeQueryImpl`: `fieldsHandle` (line ~570), `fieldHandle` (line ~594), `rowFieldsHandle` (line ~640), `cItem` (line ~666)
+- `recreateLinkedTable` main body (post-resolveAttrs): `tableDefs` (line ~3619), `tdef` (line ~3634), `tdefs` (line ~3649)
+- `_getTablesImpl`: per-table `td` handle (line ~1159)
+- `_getRelationshipsImpl`: per-relation `relHandle` (line ~1319)
+
+Total: 9 enqueue insertions. All 3 target cases (`query_data-SelectTop5Customers`, `recreate_linked_table`, `generate_sql`) PASS in single-case probe runs.
+
 ### Plan 041 outcome
 
 Plan 041 (commit pending at this writing) attempted two approaches against the live COM harness at HEAD `6a51380`:

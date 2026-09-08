@@ -325,3 +325,26 @@ Stop and report back (do not improvise) if:
 - If a new operation starts crashing with exit 134, run the crash-rate loop with its case added — the Step 4 settle (drain + gc + `--expose-gc`) is the safety net, and its absence in new spawn paths is the first suspect.
 - Plans 046-050 verify against a crash-free runner; land this plan first or expect their verification to be flaky.
 - The `node -e` require-wrapper invocation quirk (direct `node run.js` + `PARITY_VARIANT=com` fails the winax probe) is documented in "Commands you will need" — keep using the wrapper until the ESM `require` probe in `run.ts:104-122` is modernized (out of scope here).
+
+## Phase 5 outcome (landed at commits `bf47c97`, `a354667`, `165d8d7`)
+
+Four of the seven target cases fixed: `get_tables` and `delete_table` are PASS, `create_linked_table` recovered (Phase 2 win), `get_relationships` no longer crashes (now a content FAIL at `$.count`, plan 040 territory). One unclear: `get_table_schema-Customers` now errors with `python exit 1` (Python-oracle harness issue, not ReScript). Three cases still exit-134: `query_data-SelectTop5Customers`, `generate_sql`, `recreate_linked_table`.
+
+### Why three cases survived
+
+The Phase 5 implementation enqueued exactly one COM handle per operation. Recon at `165d8d7` revealed several operations obtain additional handles that were missed:
+
+- `_executeQueryImpl` (ComDataAdapter.res:508-740): `fields` collection at 561, per-row `Fields` collection re-obtained at 635 inside the row loop, per-row per-col `cItem` at 662, plus the per-col `fieldHandle` at 590. All released same-iteration via `releaseSyncAwait`, but the JS wrapper objects survive until GC.
+- `recreateLinkedTable` (ComDataAdapter.res:3517-3707): main-body `tableDefsJson` at 3614 (resolveAttrs enqueued at 3543 only), `CreateTableDef` result `tdefJson` at 3629, `tdefsJson` re-obtained before `Append` at 3641 (released fire-and-forget at 3653), and per-iteration `tdef` in `findLoop` at 3558.
+- `generateSql` (ComDataAdapter.res:1597-1698): zero direct obtain sites. Indirect crash: the operation runs `_getTablesImpl` twice and `_getRelationshipsImpl` once via callbacks. The inner functions' per-iteration handles (per-column `Field` items, per-row `Fields` collections) are the actual crash source — not the outer-level enqueues.
+
+### Phase 6 (committed — commit `165d8d7` + Phase 6 insertions)
+
+Nine `_enqueueTempRelease(session, handle)->ignore` insertions at previously-missed per-iteration obtain sites:
+
+- `_executeQueryImpl` (4 inserts): `fieldsHandle` after line ~570, `fieldHandle` after line ~594, `rowFieldsHandle` after line ~640, `cItem` after line ~666
+- `recreateLinkedTable` main body (3 inserts): `tableDefs` after line ~3619, `tdef` after line ~3634, `tdefs` after line ~3649
+- `_getTablesImpl` (1 insert): per-table `td` after line ~1159
+- `_getRelationshipsImpl` (1 insert): per-relation `relHandle` after line ~1319
+
+**Status**: Phase 6 complete. All 3 target cases now PASS in single-case probe runs (query_data-SelectTop5Customers, recreate_linked_table, generate_sql).
