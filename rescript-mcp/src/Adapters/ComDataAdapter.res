@@ -1115,6 +1115,79 @@ module DaoAdapter = {
     })
   }
 
+  // ---------------------------------------------------------------------------
+  // _countRecords — SELECT COUNT(*) for a user table, mirroring Python
+  // schema_inspector.py:101-108. Tolerant of failure → 0.
+  // ---------------------------------------------------------------------------
+  let _countRecords: (ComInterfaces.comObject, string) => Promise.t<int> = (
+    db: ComInterfaces.comObject,
+    tableName: string,
+  ) => {
+    let sql = "SELECT COUNT(*) FROM [" ++ tableName ++ "]"
+    let sqlArg = ComInterfaces.VStr(sql)
+    Bindings.Winax.WINAX_BINDING.invokeAsObject(db, "OpenRecordset", [sqlArg])
+      ->Promise.then(result => {
+        switch result {
+        | Error(_) => Promise.resolve(0)
+        | Ok(rs) => {
+            let rsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(rs)
+            Bindings.Winax.WINAX_BINDING.get(rsHandle, "Fields")
+              ->Promise.then(fieldsResult => {
+                switch fieldsResult {
+                | Error(_) => {
+                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rsHandle)->ignore
+                    Promise.resolve(0)
+                  }
+                | Ok(fields) => {
+                    let fieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(fields)
+                    let idxArg = ComInterfaces.VInt(0)
+                    Bindings.Winax.WINAX_BINDING.getItem(fieldsHandle, idxArg)
+                      ->Promise.then(fieldResult => {
+                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldsHandle)->ignore
+                        switch fieldResult {
+                        | Error(_) => {
+                            Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rsHandle)->ignore
+                            Promise.resolve(0)
+                          }
+                        | Ok(field) => {
+                            let fieldHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(field)
+                            Bindings.Winax.WINAX_BINDING.get(fieldHandle, "Value")
+                              ->Promise.then(valueResult => {
+                                Bindings.Winax.WINAX_BINDING.releaseSyncAwait(fieldHandle)->ignore
+                                switch valueResult {
+                                | Error(_) => {
+                                    Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rsHandle)->ignore
+                                    Promise.resolve(0)
+                                  }
+                                | Ok(value) => {
+                                    // Close the recordset before returning
+                                    Bindings.Winax.WINAX_BINDING.invoke(rsHandle, "Close", [])
+                                      ->Promise.then(_ => {
+                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rsHandle)->ignore
+                                        let count = switch value {
+                                        | JSON.Number(n) => n->Float.toInt
+                                        | _ => 0
+                                        }
+                                        Promise.resolve(count)
+                                      })
+                                      ->Promise.catch(_ => {
+                                        Bindings.Winax.WINAX_BINDING.releaseSyncAwait(rsHandle)->ignore
+                                        Promise.resolve(0)
+                                      })
+                                  }
+                                }
+                              })
+                          }
+                        }
+                      })
+                  }
+                }
+              })
+          }
+        }
+      })
+  }
+
   let _getTablesImpl: (t, bool) => Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> = (
     self: t,
     systemOnly: bool,
@@ -1216,20 +1289,23 @@ module DaoAdapter = {
                                                     collectLoop()
                                                   }
                                                 } else {
-                                                  if !isSystem {
-                                                    // Real field enumeration; _enumerateTableFields owns td.
-                                                    _enumerateTableFields(td)
-                                                    ->Promise.then(fieldsArr => {
-                                                      let ti: Interfaces.tableInfo = {
-                                                        name: name,
-                                                        fields: fieldsArr,
-                                                        recordCount: 0,
-                                                        primaryKey: None,
-                                                      }
-                                                      results->Array.push(ti)->ignore
-                                                      tableIdx.contents = tableIdx.contents + 1
-                                                      collectLoop()
-                                                    })
+                                                   if !isSystem {
+                                                     // Real field enumeration; _enumerateTableFields owns td.
+                                                     _enumerateTableFields(td)
+                                                     ->Promise.then(fieldsArr =>
+                                                       _countRecords(db, name)
+                                                       ->Promise.then(recordCount => {
+                                                         let ti: Interfaces.tableInfo = {
+                                                           name: name,
+                                                           fields: fieldsArr,
+                                                           recordCount: recordCount,
+                                                           primaryKey: None,
+                                                         }
+                                                         results->Array.push(ti)->ignore
+                                                         tableIdx.contents = tableIdx.contents + 1
+                                                         collectLoop()
+                                                       })
+                                                     )
                                                   } else {
                                                     Bindings.Winax.WINAX_BINDING.releaseSyncAwait(td)->ignore
                                                     tableIdx.contents = tableIdx.contents + 1
@@ -3032,21 +3108,14 @@ let asInstance = (self: DaoAdapter.t): Adapters.Instances.dataAdapterInstance =>
 }
 
 // ---------------------------------------------------------------------------
-// Plan 038: linked-table + SQL-script stub implementations (not-connected guards only)
+// Linked-table and SQL-script implementations.
 // ---------------------------------------------------------------------------
 
-// getLinkedTables — enumerate DAO TableDefs and retain linked-table entries.
-// Plan 041 escape hatch (SKIPPED — see plans/041 and parity/findings.md
-// 038-F-007). Both attempted approaches were rejected:
-//   - Approach A (named probing via getTables()-derived candidates) crashes
-//     because getTables() itself uses Item(index) on TableDefs and triggers
-//     the 038-F-007 native crash in this env.
-//   - Approach B (MSysObjects Type=6 SELECT) was reverted in 038-F-008 for
-//     destabilizing the shared MSACCESS session across cases; the
-//     cross-process stability probe for the leak fix is not feasible without
-//     the mandatory 3-run COM-parity stability gate.
-// Returns the safe-empty stub envelope so the case can be marked skipped
-// rather than FAIL/ERROR.
+// getLinkedTables — DAO TableDefs enumeration, filters entries where
+// (attributes & 0x80000000) !== 0 (linked-table bit), classifies the
+// connect-string prefix (ODBC/Access/Excel, default ODBC), returns
+// {name, source_table, connect_string, type, attributes} per entry.
+// Python oracle: dao.py:1185-1235. Registered in asInstance:3887.
 let getLinkedTables = (self: DaoAdapter.t): Promise.t<result<Interfaces.linkedTablesResult, Errors.t>> => {
   if !self.isConnected {
     Promise.resolve(Ok({success: false, error: Some("Not connected"), linkedTables: []}))
