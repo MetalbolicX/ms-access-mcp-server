@@ -17,6 +17,6 @@
     }
   ],
   "skip": true,
-  "skipReason": "Access ODBC driver cannot CREATE VIEW via SQL (brackets in identifier rejected); query DDL is DAO-only",
+  "skipReason": "PERMANENT skip — Access ODBC (ACE) driver cannot CREATE VIEW with bracketed identifiers ('is not a valid name'), so query DDL is DAO-only and the setup cannot establish prerequisite state on either side. The COM variant (cases/northwind/com/ddl/set_query_sql.json) is the parity vehicle for this operation and passes.",
   "volatileFields": []
 }

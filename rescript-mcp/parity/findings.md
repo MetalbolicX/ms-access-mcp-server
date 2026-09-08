@@ -1,5 +1,7 @@
 # Parity Findings Log
 
+2026-09-08 — Plan 047: COM `getTables` now populates `recordCount` via `SELECT COUNT(*)` for user tables. System tables remain `recordCount: 0`. Mirrors Python `schema_inspector.py` behavior.
+
 2026-09-08 — Plan 046 resolved the `execute_sql_script` success-envelope mismatch by omitting `error` when there is no error; failure envelopes continue to include it.
 
 ## 028-F-001: D3 Parity Truth — Stub Attribution Wrong
@@ -900,6 +902,7 @@ The 5 linked-table methods already delegated to the composed DaoAdapter (parity 
 3. WINAX_BINDING.getItem(tableDefs, VInt(0)) (which dispatches to invokeAsObject(tableDefs, "Item", [VInt(0)])) � crashes.
 
 **Workaround applied**: getLinkedTables returns success with empty linkedTables: [] array. The COM case get_linked_tables.json now fails parity at $.linked_tables (Python returns the setup-created links, ReScript returns empty) but does not crash the winax binding, allowing other cases to run.
+
 
 **Root cause hypothesis**: The winax binding's invokeAsObject("Item", [index]) either:
 - Disposes the parent collection handle incorrectly on first item access.
