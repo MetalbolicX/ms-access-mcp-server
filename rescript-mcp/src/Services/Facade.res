@@ -232,12 +232,12 @@ let connectAccess = (
                           // Step 5: Register binding
                           facade.bindings = Array.concat(facade.bindings, [(connName, binding)])
                           // Step 6: Return success shape
-                          // adapter_type reflects the actual backend the connection was built with.
+                          // NOTE: adapter_type is intentionally absent here — Python _format_connect_response
+                          // does not include it in the connect_access envelope (only listConnections uses it).
                           // listConnections (Facade.res:~306) already uses binding.adapterType.
                           let result = Dict.fromArray([
                             ("success", JSON.Boolean(true)),
                             ("connected", JSON.Boolean(true)),
-                            ("adapter_type", JSON.String(binding.adapterType)),
                             ("database", JSON.String(resolvedPath)),
                             ("name", JSON.String(connName)),
                           ])

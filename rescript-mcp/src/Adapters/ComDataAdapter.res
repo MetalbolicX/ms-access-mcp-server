@@ -960,6 +960,155 @@ module DaoAdapter = {
   // Schema operations
   // ---------------------------------------------------------------------------
 
+  // Plan 040 P1c: real DAO Field type names, mirroring Python oracle
+  // schema_inspector.py:47-68
+  let _daoFieldTypeName: int => string = (t: int): string => {
+    switch t {
+    | 1 => "Boolean"
+    | 2 => "Byte"
+    | 3 => "Integer"
+    | 4 => "Long Integer"
+    | 5 => "Currency"
+    | 6 => "Single"
+    | 7 => "Double"
+    | 8 => "Date/Time"
+    | 10 => "Text"
+    | 11 => "Binary"
+    | 12 => "Memo"
+    | 15 => "GUID"
+    | 16 => "Big Integer"
+    | 17 => "Unsigned Byte"
+    | 18 => "Unsigned Integer"
+    | 19 => "Unsigned Long Integer"
+    | 20 => "Decimal"
+    | n => "Unknown(" ++ Belt.Int.toString(n) ++ ")"
+    }
+  }
+
+  // Plan 040 P1c: read the six DAO field descriptor props from a single
+  // field COM handle. Returns a fully-populated fieldInfo. The caller owns
+  // releasing the field handle (so this helper never double-releases).
+  let _readDaoField: ComInterfaces.comObject => Promise.t<Interfaces.fieldInfo> = (
+    fld: ComInterfaces.comObject,
+  ) => {
+    Bindings.Winax.WINAX_BINDING.get(fld, "Name")
+    ->Promise.then(nr => {
+      Bindings.Winax.WINAX_BINDING.get(fld, "Type")
+      ->Promise.then(tr => {
+        Bindings.Winax.WINAX_BINDING.get(fld, "Size")
+        ->Promise.then(sr => {
+          Bindings.Winax.WINAX_BINDING.get(fld, "Required")
+          ->Promise.then(rr => {
+            Bindings.Winax.WINAX_BINDING.get(fld, "AllowZeroLength")
+            ->Promise.then(ar => {
+              Bindings.Winax.WINAX_BINDING.get(fld, "Attributes")
+              ->Promise.then(ar2 => {
+                let fName: string = switch nr {
+                | Ok(JSON.String(s)) => s
+                | _ => ""
+                }
+                let fTypeInt: int = switch tr {
+                | Ok(JSON.Number(n)) => n->Float.toInt
+                | _ => 0
+                }
+                let fSize: int = switch sr {
+                | Ok(JSON.Number(n)) => n->Float.toInt
+                | _ => 0
+                }
+                let fRequired: bool = switch rr {
+                | Ok(JSON.Boolean(b)) => b
+                | _ => false
+                }
+                let fAzl: bool = switch ar {
+                | Ok(JSON.Boolean(b)) => b
+                | _ => false
+                }
+                let fAuto: bool = switch ar2 {
+                | Ok(JSON.Number(n)) => {
+                    let iv: int = n->Float.toInt
+                    // DAO AutoIncr flag = bit 17 (0x20000) of Attributes
+                    land(iv, 0x20000) !== 0
+                  }
+                | _ => false
+                }
+                Promise.resolve({
+                  Interfaces.name: fName,
+                  type_: _daoFieldTypeName(fTypeInt),
+                  size: fSize,
+                  required: fRequired,
+                  allowZeroLength: fAzl,
+                  defaultValue: None,
+                  isAutoincrement: fAuto,
+                })
+              })
+            })
+          })
+        })
+      })
+    })
+  }
+
+  // Plan 040 P1c: enumerate td.Fields for a single TableDef. Returns real
+  // field descriptors. Takes ownership of `td` and releases it itself.
+  let _enumerateTableFields: (
+    ComInterfaces.comObject,
+  ) => Promise.t<array<Interfaces.fieldInfo>> = (td: ComInterfaces.comObject) => {
+    Bindings.Winax.WINAX_BINDING.get(td, "Fields")
+    ->Promise.then(fieldsResult => {
+      switch fieldsResult {
+      | Error(_) => {
+          Bindings.Winax.WINAX_BINDING.release(td)->ignore
+          Promise.resolve([])
+        }
+      | Ok(fields) => {
+          // Wrap fields COM object in envelope for getCount/getItem
+          let fieldsHandle: ComInterfaces.comObject = %raw("v => ({ __p__: v })")(fields)
+          Bindings.Winax.WINAX_BINDING.getCount(fieldsHandle)
+          ->Promise.then(countResult => {
+            switch countResult {
+            | Error(_) => {
+                Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
+                Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                Promise.resolve([])
+              }
+            | Ok(count) => {
+                let acc: array<Interfaces.fieldInfo> = []
+                let idx = ref(0)
+                let rec loop: unit => Promise.t<array<Interfaces.fieldInfo>> = () => {
+                  if idx.contents >= count {
+                    Bindings.Winax.WINAX_BINDING.release(fieldsHandle)->ignore
+                    Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                    Promise.resolve(acc)
+                  } else {
+                    let iv = ComInterfaces.VInt(idx.contents)
+                    Bindings.Winax.WINAX_BINDING.getItem(fieldsHandle, iv)
+                    ->Promise.then(itemResult => {
+                      switch itemResult {
+                      | Error(_) => {
+                          idx.contents = idx.contents + 1
+                          loop()
+                        }
+                      | Ok(fld) =>
+                        _readDaoField(fld)
+                        ->Promise.then(fi => {
+                          Bindings.Winax.WINAX_BINDING.release(fld)->ignore
+                          acc->Array.push(fi)->ignore
+                          idx.contents = idx.contents + 1
+                          loop()
+                        })
+                      }
+                    })
+                  }
+                }
+                loop()
+              }
+            }
+          })
+        }
+      }
+    })
+  }
+
   let _getTablesImpl: (t, bool) => Promise.t<result<array<Interfaces.tableInfo>, Errors.t>> = (
     self: t,
     systemOnly: bool,
@@ -1004,6 +1153,10 @@ module DaoAdapter = {
                                     Promise.resolve(Error(e))
                                   }
                                 | Ok(td) => {
+                                    // Read Name + Type first (cheap, synchronous-feel);
+                                    // td is owned by the success branch below, so do NOT
+                                    // release td here — both the error path and the
+                                    // _enumerateTableFields(td) path take ownership.
                                     Bindings.Winax.WINAX_BINDING.get(td, "Name")
                                     ->Promise.then(nameResult => {
                                       switch nameResult {
@@ -1015,9 +1168,9 @@ module DaoAdapter = {
                                       | Ok(JSON.String(name)) => {
                                           Bindings.Winax.WINAX_BINDING.get(td, "Type")
                                           ->Promise.then(typeResult => {
-                                            Bindings.Winax.WINAX_BINDING.release(td)->ignore
                                             switch typeResult {
                                             | Error(e) => {
+                                                Bindings.Winax.WINAX_BINDING.release(td)->ignore
                                                 Bindings.Winax.WINAX_BINDING.release(tableDefsHandle)->ignore
                                                 Promise.resolve(Error(e))
                                               }
@@ -1029,54 +1182,60 @@ module DaoAdapter = {
                                                 | _ => false
                                                 }
                                                 if isQuery {
+                                                  // No field enumeration needed; release td.
+                                                  Bindings.Winax.WINAX_BINDING.release(td)->ignore
                                                   tableIdx.contents = tableIdx.contents + 1
                                                   collectLoop()
                                                 } else if systemOnly {
                                                   if isSystem {
-                                                    let fi: Interfaces.fieldInfo = {
-                                                      name: name,
-                                                      type_: "SYSTEM",
-                                                      size: 0,
-                                                      required: false,
-                                                      allowZeroLength: false,
-                                                      defaultValue: None,
-                                                      isAutoincrement: false,
-                                                    }
-                                                    let ti: Interfaces.tableInfo = {
-                                                      name: name,
-                                                      fields: [fi],
-                                                      recordCount: 0,
-                                                      primaryKey: None,
-                                                    }
-                                                    results->Array.push(ti)
+                                                    // Real field enumeration; _enumerateTableFields owns td.
+                                                    _enumerateTableFields(td)
+                                                    ->Promise.then(fieldsArr => {
+                                                      let ti: Interfaces.tableInfo = {
+                                                        name: name,
+                                                        fields: fieldsArr,
+                                                        recordCount: 0,
+                                                        primaryKey: None,
+                                                      }
+                                                      results->Array.push(ti)->ignore
+                                                      tableIdx.contents = tableIdx.contents + 1
+                                                      collectLoop()
+                                                    })
+                                                  } else {
+                                                    Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                                                    tableIdx.contents = tableIdx.contents + 1
+                                                    collectLoop()
                                                   }
-                                                  tableIdx.contents = tableIdx.contents + 1
-                                                  collectLoop()
                                                 } else {
                                                   if !isSystem {
-                                                    let fi: Interfaces.fieldInfo = {
-                                                      name: name,
-                                                      type_: "TABLE",
-                                                      size: 0,
-                                                      required: false,
-                                                      allowZeroLength: false,
-                                                      defaultValue: None,
-                                                      isAutoincrement: false,
-                                                    }
-                                                    let ti: Interfaces.tableInfo = {
-                                                      name: name,
-                                                      fields: [fi],
-                                                      recordCount: 0,
-                                                      primaryKey: None,
-                                                    }
-                                                    results->Array.push(ti)
+                                                    // Real field enumeration; _enumerateTableFields owns td.
+                                                    _enumerateTableFields(td)
+                                                    ->Promise.then(fieldsArr => {
+                                                      let ti: Interfaces.tableInfo = {
+                                                        name: name,
+                                                        fields: fieldsArr,
+                                                        recordCount: 0,
+                                                        primaryKey: None,
+                                                      }
+                                                      results->Array.push(ti)->ignore
+                                                      tableIdx.contents = tableIdx.contents + 1
+                                                      collectLoop()
+                                                    })
+                                                  } else {
+                                                    Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                                                    tableIdx.contents = tableIdx.contents + 1
+                                                    collectLoop()
                                                   }
-                                                  tableIdx.contents = tableIdx.contents + 1
-                                                  collectLoop()
                                                 }
                                               }
                                             }
                                           })
+                                        }
+                                      | Ok(_) => {
+                                          // Name was not a string — release td and continue.
+                                          Bindings.Winax.WINAX_BINDING.release(td)->ignore
+                                          tableIdx.contents = tableIdx.contents + 1
+                                          collectLoop()
                                         }
                                       }
                                     })
@@ -1157,7 +1316,6 @@ module DaoAdapter = {
                                     let name: string = %raw("h => h && h.__p__ ? h.__p__.Name : ''")(relHandle)
                                     let tableName: string = %raw("h => h && h.__p__ ? h.__p__.Table : ''")(relHandle)
                                     let foreignTableName: string = %raw("h => h && h.__p__ ? h.__p__.ForeignTable : ''")(relHandle)
-                                    let attrsStr: string = %raw("h => h && h.__p__ ? String(h.__p__.Attributes) : ''")(relHandle)
                                     let fcount: int = %raw("h => h && h.__p__ && h.__p__.Fields ? h.__p__.Fields.Count : 0")(relHandle)
                                     let colNames: array<string> = []
                                     let foreignColNames: array<string> = []
@@ -1168,25 +1326,38 @@ module DaoAdapter = {
                                       foreignColNames->Array.push(fcn)->ignore
                                     }
                                     let _ = (colNames, foreignColNames)
-                                    // Skip MSys and temporary relations
-                                    if name->String.startsWith("MSys") || name->String.startsWith("~") || name == "" {
-                                      Bindings.Winax.WINAX_BINDING.release(relHandle)->ignore
-                                      relIdx.contents = relIdx.contents + 1
-                                      iterate()
-                                    } else {
-                                      let relInfo: Interfaces.relationshipInfo = {
-                                        name: name,
-                                        table: tableName,
-                                        foreignTable: foreignTableName,
-                                        attributes: attrsStr,
-                                        columns: colNames,
-                                        foreignColumns: foreignColNames,
-                                      }
-                                      results->Array.push(relInfo)->ignore
-                                      Bindings.Winax.WINAX_BINDING.release(relHandle)->ignore
-                                      relIdx.contents = relIdx.contents + 1
-                                      iterate()
-                                    }
+                                    // Get rel.Attributes via WINAX_BINDING.get which properly invokes the COM getter.
+                                    // rel.Attributes is a dbRelation* flag long; coerce to decimal string (e.g. "1").
+                                    Bindings.Winax.WINAX_BINDING.get(relHandle, "Attributes")
+                                      ->Promise.then(attrsResult => {
+                                        let attrsStr: string = switch attrsResult {
+                                        | Ok(JSON.Number(n)) => {
+                                          let intVal: int = Pervasives.int_of_float(n)
+                                          Belt.Int.toString(intVal)
+                                        }
+                                        | Ok(JSON.String(s)) => s
+                                        | _ => ""
+                                        }
+                                        // Skip MSys and temporary relations
+                                        if name->String.startsWith("MSys") || name->String.startsWith("~") || name == "" {
+                                          Bindings.Winax.WINAX_BINDING.release(relHandle)->ignore
+                                          relIdx.contents = relIdx.contents + 1
+                                          iterate()
+                                        } else {
+                                          let relInfo: Interfaces.relationshipInfo = {
+                                            name: name,
+                                            table: tableName,
+                                            foreignTable: foreignTableName,
+                                            attributes: attrsStr,
+                                            columns: colNames,
+                                            foreignColumns: foreignColNames,
+                                          }
+                                          results->Array.push(relInfo)->ignore
+                                          Bindings.Winax.WINAX_BINDING.release(relHandle)->ignore
+                                          relIdx.contents = relIdx.contents + 1
+                                          iterate()
+                                        }
+                                      })
                                   }
                                 }
                               })

@@ -218,18 +218,28 @@ describe("connectAccess", () => {
       ->ignore
   })
 
-  // B4: success dict includes adapter_type: "odbc"
-  testAsync("connectAccess: success dict includes adapter_type: odbc", cb => {
+  // B4: success dict matches Python _format_connect_response contract.
+  // Python's connect_access envelope has success, connected, database, name (NO adapter_type).
+  // listConnections (a different op) still exposes adapter_type.
+  testAsync("connectAccess: success dict matches python envelope shape (no adapter_type)", cb => {
     let facade = makeTestFacade()
     Facade.connectAccess(facade, ~dbPath=testPath("adapter-type"))
       ->Promise.then(result => {
         let successOk = getDictBool(result, "success") == Some(true)
-        let hasAdapterType = switch getDictStr(result, "adapter_type") {
-        | Some(t) => t == "odbc"
+        let connectedOk = getDictBool(result, "connected") == Some(true)
+        let nameOk = getDictStr(result, "name") == Some("default")
+        let databaseOk = switch getDictStr(result, "database") {
+        | Some(s) => s->String.endsWith("adapter-type.accdb")
         | None => false
         }
-        assertion(~operator="equal", (a, b) => a == b, successOk && hasAdapterType, true)
-        cb(~planned=1, ())
+        // adapter_type MUST NOT be present in the connect envelope
+        let noAdapterType = getDictStr(result, "adapter_type") == None
+        assertion(~operator="equal", (a, b) => a == b, successOk, true)
+        assertion(~operator="equal", (a, b) => a == b, connectedOk, true)
+        assertion(~operator="equal", (a, b) => a == b, nameOk, true)
+        assertion(~operator="equal", (a, b) => a == b, databaseOk, true)
+        assertion(~operator="equal", (a, b) => a == b, noAdapterType, true)
+        cb(~planned=5, ())
         Promise.resolve()
       })
       ->Promise.catch(_e => {
