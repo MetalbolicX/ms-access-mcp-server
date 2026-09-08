@@ -137,8 +137,25 @@ systemic failure modes. Every NEW or AMENDED plan must follow them:
 
 | 043 | Winax dispose-ordering fix - sync release + session teardown (unblocks 033-F-001, 038-F-007, 042 v2, 040-F-001) | 43 | PROBE-FIRST | P1 | M | none | DONE (v3 landed at d8b7e91: added `releaseSyncAwait` to BOTH the `Winax.resi` module TYPE AND the local `module type WINAX_BINDING` block in `Winax.res` - the local module type constraint was the actual blocker; `_winaxModule` lazy-ref cache + `_getWinax` accessor + LIFO `releaseChain` in `ComSession._disconnect`; 4 surgical `release`→`releaseSyncAwait` edits in `ComDataAdapter.res`; `main.mjs` gets `setImmediate(() => process.exit(0))` AFTER `run()` resolves; `Server.res` UNTOUCHED; COM DDL parity: 11+2+0+2 - EXACT baseline, zero regressions, `create_linked_table.json` and `delete_table.json` PASS; `refresh/recreate_linked_table.json` remain FAIL - now unblocked for plan 042 v2 + 040; artifact `plans/043-winax-dispose-ordering.md`, planned at `c21d313`, landed at `d8b7e91`) |
 | 044 | Recover and complete Python-to-Rescript parity | 44 | NEITHER | P0 | S | none | READY FOR REVIEW (dependency recovery of 040/042/043 unverified; c8fe6a2 with dirty109/109 caveat; artifact `plans/044-python-rescript-parity-recovery.md`, planned at `c8fe6a2`) |
+| 045 | Eliminate the 033-F-001 winax teardown crash (exit 134) from COM parity runs | 45 | PROBE-FIRST | P1 | L | none | TODO (await _disconnect LIFO chain + releaseSyncAwait on crash-path per-op releases + drain/gc settle before child exit; blocks 7 of 9 remaining parity failures; artifact `plans/045-winax-teardown-crash-elimination.md`, planned at `016ebdb`) |
+| 046 | Match the execute_sql_script success envelope — omit the `error` key | 46 | BUGFIX | P2 | S | none | TODO (Facade.res:933 emits `error: null` on success, python omits it; only non-crash content mismatch left in COM DDL; artifact `plans/046-execute-sql-script-error-key-parity.md`, planned at `016ebdb`) |
+| 047 | Populate recordCount via SELECT COUNT(*) in the COM adapter | 47 | STRICT TDD | P2 | M | 045 (verification only) | TODO (COM _getTablesImpl hard-codes recordCount: 0, python counts — latent mismatch that surfaces once crashes stop; artifact `plans/047-com-recordcount-count.md`, planned at `016ebdb`) |
+| 048 | Un-skip get_linked_tables — the enumeration is already implemented | 48 | NEITHER | P3 | S | 045 (recommended) | TODO (real enumeration landed via 042/043; only stale skip flag + stale stub comment remain; content diff if any = plan 040 scope; artifact `plans/048-unskip-get-linked-tables.md`, planned at `016ebdb`) |
+| 049 | Land recreate_linked_table — crash-blocked sibling of the passing refresh case | 49 | NEITHER | P2 | S | 045 | TODO (refresh passes; recreate exit-134s; expected to pass post-045, one targeted releaseSyncAwait probe site if not; content divergence = plan 040; artifact `plans/049-recreate-linked-table-landing.md`, planned at `016ebdb`) |
+| 050 | Mark the ODBC delete_query / set_query_sql skips as permanent | 50 | NEITHER | P3 | S | none | TODO (driver limitation, COM variants are the parity vehicle and pass; wording change only; artifact `plans/050-odbc-query-ddl-permanent-skips.md`, planned at `016ebdb`) |
 
 ## Dependency notes
+
+- **045 is the critical path for 044-era parity completion**: it unblocks the 7
+  exit-134 cases (get_relationships, get_table_schema-Customers, get_tables,
+  query_data-SelectTop5Customers, delete_table, generate_sql,
+  recreate_linked_table). 047/048/049 verify on a crash-free runner — land 045
+  first or expect flaky verification.
+- 046 is independent of 045 (its case exits 0 today) and can land in parallel.
+- 049 depends on 045; its worst-case content diff belongs to plan 040
+  (still BLOCKED — see its row). If 048 and 049 both pass without 040 work,
+  propose marking 040 REJECTED-superseded with rationale.
+- 050 is docs-only and independent.
 
 - 002 needs 001 (toolchain); 003 needs 002 (Errors/Config/PathGuard).
 - 004 can start its SDD stages while 003 applies, but its adapter must
