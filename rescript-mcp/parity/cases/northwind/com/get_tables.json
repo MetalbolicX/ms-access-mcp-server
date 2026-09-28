@@ -1,9 +1,0 @@
-{
-  "operation": "get_tables",
-  "args": {
-    "connection_name": "northwind"
-  },
-  "variant": "com",
-  "mutating": false,
-  "volatileFields": []
-}

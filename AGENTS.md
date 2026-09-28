@@ -41,14 +41,6 @@ uv run python -m ms_access_mcp.mcp.server      # same as stdio
 - **E2E HTTP tests**: Starlette `TestClient` with monkeypatched env. Reset server module globals before each fixture.
 - **LLM tools** (`ai_tools.py`): guarded by `LlmConfig.enabled` (default `False`). Returning `{"disabled": True}` dict, not raising errors.
 - **Formatting**: ruff line-length 100, double quotes, space indent. pyright strict with basic mode.
-- **`pnpm -C rescript-mcp clean` DOES clear rescript-test compiled output** inside `node_modules/.pnpm/rescript-test@*/`. Recovery after accidental `clean`: `pnpm -C rescript-mcp clean:all`. Use `clean:all` as the standard clean target; never `clean` alone.
-
-## Verification commands
-
-```bash
-pnpm -C rescript-mcp clean:all && pnpm -C rescript-mcp build && pnpm -C rescript-mcp test   # full suite
-npm run build && npm test     # root-level (delegates to pnpm -C rescript-mcp after clean:all setup)
-```
 
 ## Env Vars
 

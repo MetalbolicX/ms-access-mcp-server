@@ -1,8 +1,0 @@
-{
-  "packageManager": "pnpm@11.25.0",
-  "scripts": {
-    "build": "pnpm -C rescript-mcp build",
-    "test": "pnpm -C rescript-mcp test",
-    "clean": "pnpm -C rescript-mcp clean:all"
-  }
-}

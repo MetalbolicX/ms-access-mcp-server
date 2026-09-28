@@ -1,7 +1,0 @@
-{
-  "operation": "update_data",
-  "args": {"table": "products", "setDict": {"Name": "ParityUpdated"}, "whereDict": {"Name": "ParityTestWidget"}},
-  "variant": "odbc",
-  "mutating": true,
-  "description": "update_data on products — targeted update by Name WHERE; envelope: success, affected=1"
-}
